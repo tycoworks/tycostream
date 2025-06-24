@@ -12,7 +12,7 @@
 
 ---
 
-## Why tycoworks
+## Why tycostream
 
 Getting  data from streaming databases (like Materialize) to a frontend or agent normally involves:
 
