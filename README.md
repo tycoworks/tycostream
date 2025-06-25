@@ -45,7 +45,7 @@ See the [vision](./docs/VISION.md) and [roadmap](./docs/ROADMAP.md) for more det
 ### Start the server:
 
 ```
-git clone https://github.com/your-org/tycostream.git
+git clone https://github.com/tycoworks/tycostream.git
 cd tycostream
 docker-compose up
 ```
