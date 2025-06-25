@@ -34,7 +34,9 @@ Getting data from streaming databases (like Materialize) to a frontend or agent 
 
 ## Vision & Roadmap
 
-See [VISION.md](./docs/VISION.md) for full details.
+**tycostream** aims to become the  **Hasura for streaming databases**.
+
+See the [vision](./docs/VISION.md) and [roadmap](./docs/ROADMAP.md) for more details.
 
 ---
 
