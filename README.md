@@ -1,26 +1,26 @@
 # tycostream
 
-**tycostream** is a streaming server for Materialize. It turns any Materialize view into a real-time push API over Server-Sent Events (SSE).
+**tycostream** turns any Materialize view into a real-time GraphQL API over WebSockets.
 
 ---
 
 ## Features
 
-* Streams updates over Server-Sent Events (SSE)
-* Fan-out support to many connected clients
-* Authorize clients using signed JWTs
+* Streams live updates over GraphQL subscriptions (WebSockets)
+* Instant setup from Materialize views with minimal config
+* Works with standard GraphQL clients (e.g. Apollo)
 
 ---
 
 ## Why tycostream
 
-Getting  data from streaming databases (like Materialize) to a frontend or agent normally involves:
+Getting data from streaming databases (like Materialize) to a frontend or agent normally involves:
 
-* Polling a view or materializing it to a static table - defeating the point of real-time
+* Polling a view or materializing it to a static table — defeating the point of real-time
 * Setting up a Kafka sink and managing complex Kafka infrastructure
 * Hacking together a WebSocket or SSE relay using `SUBSCRIBE`
 
-tycostream makes it easy to push real-time data over SSE with minimal configuration.
+**tycostream** makes it easy to expose real-time data over GraphQL with minimal boilerplate.
 
 ---
 
@@ -34,39 +34,40 @@ tycostream makes it easy to push real-time data over SSE with minimal configurat
 
 ## Vision & Roadmap
 
-The vision for tycostream is to become the 'Hasura for streaming databases' - a real-time, streaming GraphQL layer with minimal config and support for multiple streaming databases (Materialize, RisingWave, etc.).
-
-* Scalability / high-availability
-* Schema introspection / generation
-* GraphQL subscription support
-* Advanced filtering + entitlements
-* RisingWave compatibility
-* Live query layer
+See [VISION.md](./docs/VISION.md) for full details.
 
 ---
 
 ## 🏁 Quickstart & Configuration
 
-Start the server:
+### Start the server:
 
-```bash
+```
 git clone https://github.com/your-org/tycostream.git
 cd tycostream
 docker-compose up
 ```
 
-Connect from your browser or frontend:
+### Connect from your frontend using Apollo Client:
 
 ```js
-const source = new EventSource("http://localhost:8000/stream");
-source.onmessage = (e) => console.log(JSON.parse(e.data));
+import { gql, useSubscription } from '@apollo/client';
+
+const TRADE_SUBSCRIPTION = gql`
+  subscription {
+    live_pnl {
+      id
+      value
+    }
+  }
+`;
+
+const { data } = useSubscription(TRADE_SUBSCRIPTION);
 ```
 
-You’ll see real-time updates flowing in from your configured view.
+### Configure via `.env` or environment variables:
 
-Configure via `.env` or environment variables:
-
-```env
+```
 SOURCE_HOST=your-mz-host
 SOURCE_PORT=6875
 SOURCE_USER=materialize
@@ -74,5 +75,3 @@ SOURCE_PASSWORD=materialize
 SOURCE_DB=materialize
 VIEW_NAME=live_pnl
 ```
-
----
