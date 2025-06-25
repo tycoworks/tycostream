@@ -1,6 +1,6 @@
 # tycostream
 
-**tycostream** turns any Materialize view into a real-time GraphQL API over WebSockets.
+tycostream turns any Materialize view into a real-time GraphQL API over WebSockets.
 
 ---
 
@@ -20,7 +20,7 @@ Getting data from streaming databases (like Materialize) to a frontend or agent 
 * Setting up a Kafka sink and managing complex Kafka infrastructure
 * Hacking together a WebSocket or SSE relay using `SUBSCRIBE`
 
-**tycostream** makes it easy to expose real-time data over GraphQL with minimal boilerplate.
+tycostream makes it easy to expose real-time data over GraphQL with minimal boilerplate.
 
 ---
 
@@ -34,7 +34,7 @@ Getting data from streaming databases (like Materialize) to a frontend or agent 
 
 ## Vision & Roadmap
 
-**tycostream** aims to become the  **Hasura for streaming databases**.
+tycostream aims to become the '**Hasura for streaming databases**.'
 
 See the [vision](./docs/VISION.md) and [roadmap](./docs/ROADMAP.md) for more details.
 
