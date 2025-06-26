@@ -1,6 +1,6 @@
 # tycostream
 
-tycostream turns any Materialize view into a real-time GraphQL API over WebSockets.
+tycostream turns any [Materialize](https://materialize.com/) view into a real-time GraphQL API over WebSockets.
 
 ---
 
