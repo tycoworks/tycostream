@@ -67,6 +67,9 @@
 * Row-level entitlements — control which data rows users can access
 * Observability: Prometheus metrics, structured logs, health checks
 * High-availability support for real-time transport (WebSockets or SSE) using Redis or NATS
+* Reconnect handling for dropped client WebSocket connections
+* Fan-out support for multi-client subscriptions per view
+* Backpressure
 * Support for Live Query over SSE
 * Support for RisingWave as an alternative backend
 * Support for multi-source configuration (e.g. Materialize and RisingWave in one deployment)

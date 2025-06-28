@@ -1,0 +1,15 @@
+# VS Code
+*.code-workspace
+.vscode/
+
+# Node / Encore / TypeScript
+node_modules/
+dist/
+.env
+.env.*
+
+# Logs
+*.log
+
+# Docker
+*.local
