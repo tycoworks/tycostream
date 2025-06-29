@@ -1,4 +1,5 @@
 # Specifications
+*User-visible functionality, requirements, and behavior expectations for tycostream*
 
 ## Milestone 1.1: Minimal Streaming
 
@@ -11,6 +12,13 @@ Enable a developer to stream real-time updates from a single Materialize view us
 * Apollo Client should be able to subscribe to a GraphQL field (e.g. `live_pnl`) and receive live updates into a frontend grid or table.
 
 The process must fail fast on startup if any critical requirement is missing or invalid — such as malformed schema files, misconfigured environment variables, or unreachable database hosts. This ensures predictable behavior and consistent state before serving subscriptions.
+
+#### 2.0.1 Error Handling and Recovery
+* Connection failures trigger automatic reconnection
+* Stream failures trigger automatic restart
+* System continuously retries until manual shutdown
+* All errors are logged for debugging
+* System exits immediately on critical startup failures (missing schema, bad config, unreachable database)
 
 #### 2.1 Configure
 
@@ -45,15 +53,36 @@ type Subscription {
 ```
 
 * Schema is statically defined and must exist at `./schema/{VIEW_NAME}.sdl` unless overridden.
+* Schema files are automatically discovered in both Docker and local development environments
 * No query parameters or filtering logic are supported in 1.1.
+
+#### 2.1.1 Schema Requirements  
+* Schema files must be valid GraphQL SDL format
+* Exactly one field of type `ID!` must be present to serve as the primary key
+* Primary key field name can be anything (e.g., `instrument_id: ID!`)
 
 #### 2.2 Start
 
-* The backend subscribes to the specified Materialize view.
-* Incoming rows are published to an internal event bus.
-* The embedded GraphQL server loads the schema and exposes a WebSocket endpoint (`graphql-ws`).
-* Each schema field maps to a view name (1:1).
-* Subscribed clients receive an initial snapshot followed by live updates.
+* The backend subscribes to the specified Materialize view
+* The GraphQL server loads the schema and exposes a WebSocket endpoint
+* Each schema field maps to a view name (1:1) 
+* Subscribed clients receive an initial snapshot followed by live updates
+
+#### 2.2.1 Initial Snapshot Delivery
+* When a client subscribes, the server immediately sends ALL current rows
+* No pagination or batching - complete dataset is delivered at once
+* After snapshot delivery, live updates begin flowing
+
+#### 2.2.2 Row Ordering Preservation
+* Rows are delivered to clients in the same order they arrive from Materialize
+* No sorting or reordering is performed by tycostream
+* Updates preserve the original stream order for consistency
+
+#### 2.2.3 View and Schema Validation
+* System validates that the specified view exists in the database before starting
+* Schema files are validated for proper GraphQL format
+* Exactly one field of type `ID!` must be present to serve as primary key
+* System provides clear error messages for invalid configurations
 
 #### 2.3 Expected Behavior
 
@@ -64,9 +93,6 @@ type Subscription {
 ### 3. Acceptance Criteria
 
 * A user can `docker-compose up` the system with just the `.env` file.
-* Subscribing to the `live_pnl` field in the schema returns live updates via GraphQL subscription.
+* Subscribing to the configured view field in the schema returns live updates via GraphQL subscription.
 * No uncaught errors in stream handling, and system logs connection/subscription lifecycle events.
 
-### 4. Open Questions / TODOs
-
-* If the schema file is missing, the process must fail fast and exit with a clear error message.

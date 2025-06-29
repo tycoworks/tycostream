@@ -5,6 +5,9 @@
 # Node / Encore / TypeScript
 node_modules/
 dist/
+shared/*.d.ts
+shared/*.js
+shared/*.js.map
 .env
 .env.*
 
@@ -13,4 +16,3 @@ dist/
 
 # Docker
 *.local
-CLAUDE.md

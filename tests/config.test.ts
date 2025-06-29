@@ -1,0 +1,136 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { loadDatabaseConfig, loadSchema, ConfigError } from '../backend/src/config.js';
+import { writeFileSync, mkdirSync, rmSync } from 'fs';
+import { join } from 'path';
+
+describe('loadDatabaseConfig', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('should load valid database configuration', () => {
+    process.env.SOURCE_HOST = 'localhost';
+    process.env.SOURCE_PORT = '6875';
+    process.env.SOURCE_USER = 'materialize';
+    process.env.SOURCE_PASSWORD = 'password';
+    process.env.SOURCE_DB = 'materialize';
+    process.env.VIEW_NAME = 'test_view';
+
+    const config = loadDatabaseConfig();
+
+    expect(config).toEqual({
+      host: 'localhost',
+      port: 6875,
+      user: 'materialize',
+      password: 'password',
+      database: 'materialize',
+      viewName: 'test_view',
+    });
+  });
+
+  it('should throw ConfigError for missing SOURCE_HOST', () => {
+    process.env.SOURCE_PORT = '6875';
+    process.env.SOURCE_USER = 'materialize';
+    process.env.SOURCE_PASSWORD = 'password';
+    process.env.SOURCE_DB = 'materialize';
+    process.env.VIEW_NAME = 'test_view';
+
+    expect(() => loadDatabaseConfig()).toThrow(ConfigError);
+    expect(() => loadDatabaseConfig()).toThrow('Missing required environment variable: SOURCE_HOST');
+  });
+
+  it('should throw ConfigError for invalid port', () => {
+    process.env.SOURCE_HOST = 'localhost';
+    process.env.SOURCE_PORT = 'invalid';
+    process.env.SOURCE_USER = 'materialize';
+    process.env.SOURCE_PASSWORD = 'password';
+    process.env.SOURCE_DB = 'materialize';
+    process.env.VIEW_NAME = 'test_view';
+
+    expect(() => loadDatabaseConfig()).toThrow(ConfigError);
+    expect(() => loadDatabaseConfig()).toThrow('SOURCE_PORT must be a valid port number');
+  });
+});
+
+describe('loadSchema', () => {
+  const testSchemaDir = join(process.cwd(), 'test-schemas');
+
+  beforeEach(() => {
+    mkdirSync(testSchemaDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(testSchemaDir, { recursive: true, force: true });
+  });
+
+  it('should load valid schema file', () => {
+    const schemaContent = `
+type TestType {
+  id: ID!
+  name: String!
+  value: Float!
+}
+
+type Subscription {
+  test_view: TestType!
+}
+`;
+
+    // Create the schema file in a location that the path resolution will find
+    const realSchemaDir = join(process.cwd(), 'graphql');
+    mkdirSync(realSchemaDir, { recursive: true });
+    writeFileSync(join(realSchemaDir, 'test_view.sdl'), schemaContent);
+
+    try {
+      const schema = loadSchema('test_view');
+      
+      expect(schema.typeDefs).toContain('type TestType');
+      expect(schema.primaryKeyField).toBe('id');
+      expect(schema.fields).toHaveLength(3);
+      expect(schema.fields[0]).toEqual({
+        name: 'id',
+        type: 'ID',
+        nullable: false,
+        isPrimaryKey: true,
+      });
+    } finally {
+      // Clean up
+      rmSync(realSchemaDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should throw ConfigError for missing schema file', () => {
+    expect(() => loadSchema('nonexistent')).toThrow(ConfigError);
+    expect(() => loadSchema('nonexistent')).toThrow('Schema file not found');
+  });
+
+  it('should throw ConfigError for schema without ID field', () => {
+    const invalidSchema = `
+type TestType {
+  name: String!
+  value: Float!
+}
+
+type Subscription {
+  test_view: TestType!
+}
+`;
+
+    const realSchemaDir = join(process.cwd(), 'graphql');
+    mkdirSync(realSchemaDir, { recursive: true });
+    writeFileSync(join(realSchemaDir, 'invalid.sdl'), invalidSchema);
+
+    try {
+      expect(() => loadSchema('invalid')).toThrow(ConfigError);
+      expect(() => loadSchema('invalid')).toThrow('Schema must contain exactly one field of type ID!');
+    } finally {
+      rmSync(realSchemaDir, { recursive: true, force: true });
+    }
+  });
+});

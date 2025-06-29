@@ -1,0 +1,286 @@
+import { Client } from 'pg';
+import QueryStream from 'pg-query-stream';
+import type { DatabaseConfig, StreamEvent } from '../../shared/types.js';
+import { logger } from '../../shared/logger.js';
+import { ViewCache } from '../../shared/viewCache.js';
+import { pubsub, type PubSub } from './pubsub.js';
+import { EVENTS } from '../../shared/events.js';
+
+export class MaterializeStreamer {
+  private client: Client | null = null;
+  private log = logger.child({ component: 'materialize' });
+  private isConnected = false;
+  private isStreaming = false;
+  private viewCache: ViewCache;
+
+  constructor(
+    private config: DatabaseConfig, 
+    primaryKeyField: string,
+    private eventBus: PubSub = pubsub,
+    viewCache?: ViewCache
+  ) {
+    this.viewCache = viewCache || new ViewCache(primaryKeyField, config.viewName);
+  }
+
+  async connect(): Promise<void> {
+    try {
+      this.log.info('Connecting to Materialize', { 
+        host: this.config.host, 
+        port: this.config.port,
+        database: this.config.database,
+        user: this.config.user
+      });
+
+      this.client = new Client({
+        host: this.config.host,
+        port: this.config.port,
+        database: this.config.database,
+        user: this.config.user,
+        password: this.config.password,
+        // Connection timeout and keep-alive settings
+        connectionTimeoutMillis: 10000,
+        query_timeout: 0, // No timeout for streaming queries
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000,
+      });
+
+      this.client.on('error', (error) => {
+        this.log.error('Postgres client error', {}, error);
+        this.handleConnectionError(error);
+      });
+
+      this.client.on('end', () => {
+        this.log.warn('Postgres connection ended');
+        this.isConnected = false;
+        this.eventBus.publish(EVENTS.STREAM_DISCONNECTED, { viewName: this.config.viewName });
+      });
+
+      await this.client.connect();
+      this.isConnected = true;
+
+      this.log.info('Connected to Materialize successfully');
+      this.eventBus.publish(EVENTS.STREAM_CONNECTED, { viewName: this.config.viewName });
+
+    } catch (error) {
+      this.log.error('Failed to connect to Materialize', {}, error as Error);
+      throw new Error(`Database connection failed: ${(error as Error).message}`);
+    }
+  }
+
+  async startStreaming(): Promise<void> {
+    if (!this.client || !this.isConnected) {
+      throw new Error('Must connect to database before starting stream');
+    }
+
+    if (this.isStreaming) {
+      this.log.warn('Stream already active', { viewName: this.config.viewName });
+      return;
+    }
+
+    try {
+      this.log.info('Starting stream subscription', { viewName: this.config.viewName });
+      
+      // First, validate that the view exists
+      await this.validateView();
+
+      // Start the SUBSCRIBE query with proper streaming
+      const subscribeQuery = `SUBSCRIBE (SELECT * FROM ${this.config.viewName}) WITH (SNAPSHOT)`;
+      this.log.debug('Executing SUBSCRIBE query', { query: subscribeQuery });
+
+      // Use pg's streaming interface for long-running queries
+      const query = new QueryStream(subscribeQuery);
+      const stream = this.client.query(query);
+      
+      // Handle streaming rows as they arrive
+      stream.on('data', (row: any) => {
+        this.handleStreamRow(row);
+      });
+
+      stream.on('error', (error: Error) => {
+        this.log.error('SUBSCRIBE query error', { viewName: this.config.viewName }, error);
+        this.handleStreamError(error);
+      });
+
+      stream.on('end', () => {
+        this.log.warn('SUBSCRIBE stream ended unexpectedly', { viewName: this.config.viewName });
+        this.isStreaming = false;
+      });
+
+      this.isStreaming = true;
+      this.log.info('Stream subscription started successfully', { viewName: this.config.viewName });
+
+    } catch (error) {
+      this.log.error('Failed to start streaming', { viewName: this.config.viewName }, error as Error);
+      throw new Error(`Stream initialization failed: ${(error as Error).message}`);
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    this.log.info('Disconnecting from Materialize');
+    
+    this.isShuttingDown = true;
+    this.isStreaming = false;
+    
+    if (this.client) {
+      try {
+        await this.client.end();
+        this.log.info('Disconnected from Materialize successfully');
+      } catch (error) {
+        this.log.error('Error during disconnect', {}, error as Error);
+      } finally {
+        this.client = null;
+        this.isConnected = false;
+      }
+    }
+  }
+
+  private async validateView(): Promise<void> {
+    if (!this.client) {
+      throw new Error('No database connection');
+    }
+
+    try {
+      const result = await this.client.query(
+        'SELECT schemaname, tablename FROM pg_tables WHERE tablename = $1',
+        [this.config.viewName]
+      );
+
+      if (result.rows.length === 0) {
+        // Also check views
+        const viewResult = await this.client.query(
+          'SELECT schemaname, viewname FROM pg_views WHERE viewname = $1',
+          [this.config.viewName]
+        );
+
+        if (viewResult.rows.length === 0) {
+          throw new Error(`View or table '${this.config.viewName}' does not exist`);
+        }
+      }
+
+      this.log.debug('View validation successful', { viewName: this.config.viewName });
+    } catch (error) {
+      this.log.error('View validation failed', { viewName: this.config.viewName }, error as Error);
+      throw error;
+    }
+  }
+
+  private handleStreamRow(row: any): void {
+    try {
+      this.eventBus.publish(EVENTS.STREAM_UPDATE_RECEIVED, { viewName: this.config.viewName, row });
+      
+      // Materialize SUBSCRIBE format: includes 'diff' column (1 = insert/update, -1 = delete)
+      // and 'mz_timestamp' column (excluded from cached data)
+      const diff = row.diff;
+      if (typeof diff !== 'number') {
+        this.log.warn('Received row without valid diff column', { 
+          viewName: this.config.viewName, 
+          rowKeys: Object.keys(row) 
+        });
+        return;
+      }
+
+      // Extract actual row data (exclude Materialize metadata columns)
+      const rowData = { ...row };
+      delete rowData.diff;
+      delete rowData.mz_timestamp;
+
+      const streamEvent: StreamEvent = {
+        row: rowData,
+        diff,
+      };
+
+      this.log.debug('Processing stream event', {
+        viewName: this.config.viewName,
+        diff,
+        rowKeys: Object.keys(rowData)
+      });
+
+      // Update view cache with the stream event
+      this.viewCache.applyStreamEvent(streamEvent);
+
+      // Publish to subscribers
+      this.eventBus.publishStreamEvent(this.config.viewName, streamEvent);
+      this.eventBus.publish(EVENTS.STREAM_UPDATE_PARSED, { 
+        viewName: this.config.viewName, 
+        diff,
+        rowKeys: Object.keys(rowData),
+        cacheSize: this.viewCache.size()
+      });
+
+    } catch (error) {
+      this.log.error('Error processing stream row', { 
+        viewName: this.config.viewName,
+        row: JSON.stringify(row)
+      }, error as Error);
+    }
+  }
+
+  private handleConnectionError(error: Error): void {
+    this.log.error('Connection error occurred', { 
+      viewName: this.config.viewName,
+      host: this.config.host,
+      port: this.config.port
+    }, error);
+    
+    this.isConnected = false;
+    this.isStreaming = false;
+    
+    this.eventBus.publish(EVENTS.STREAM_ERROR, { 
+      viewName: this.config.viewName, 
+      error: error.message,
+      errorType: 'connection'
+    });
+
+    // Attempt reconnection after delay (basic retry logic)
+    if (!this.isShuttingDown) {
+      setTimeout(() => {
+        this.log.info('Attempting to reconnect to Materialize', { 
+          viewName: this.config.viewName 
+        });
+        this.connect().catch(err => {
+          this.log.error('Reconnection failed', {}, err);
+        });
+      }, 5000);
+    }
+  }
+
+  private handleStreamError(error: Error): void {
+    this.log.error('Stream error occurred', { 
+      viewName: this.config.viewName 
+    }, error);
+    
+    this.isStreaming = false;
+    
+    this.eventBus.publish(EVENTS.STREAM_ERROR, { 
+      viewName: this.config.viewName, 
+      error: error.message,
+      errorType: 'stream'
+    });
+
+    // Attempt to restart streaming after delay
+    if (this.isConnected && !this.isShuttingDown) {
+      setTimeout(() => {
+        this.log.info('Attempting to restart stream', { 
+          viewName: this.config.viewName 
+        });
+        this.startStreaming().catch(err => {
+          this.log.error('Stream restart failed', {}, err);
+        });
+      }, 3000);
+    }
+  }
+
+  private isShuttingDown = false;
+
+  get connected(): boolean {
+    return this.isConnected;
+  }
+
+  get streaming(): boolean {
+    return this.isStreaming;
+  }
+
+  get cache(): ViewCache {
+    return this.viewCache;
+  }
+}
