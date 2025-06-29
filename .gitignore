@@ -9,7 +9,8 @@ shared/*.d.ts
 shared/*.js
 shared/*.js.map
 .env
-.env.*
+.env.local
+.env.*.local
 
 # Logs
 *.log

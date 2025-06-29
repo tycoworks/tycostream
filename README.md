@@ -44,9 +44,11 @@ See the [vision](./docs/VISION.md) and [roadmap](./docs/ROADMAP.md) for more det
 
 ### Start the server:
 
-```
+```bash
 git clone https://github.com/tycoworks/tycostream.git
 cd tycostream
+cp .env.example .env
+# Edit .env with your Materialize connection details
 docker-compose up
 ```
 
@@ -55,16 +57,20 @@ docker-compose up
 ```js
 import { gql, useSubscription } from '@apollo/client';
 
-const TRADE_SUBSCRIPTION = gql`
+const LIVE_PNL_SUBSCRIPTION = gql`
   subscription {
     live_pnl {
-      id
-      value
+      instrument_id
+      symbol
+      net_position
+      latest_price
+      market_value
+      theoretical_pnl
     }
   }
 `;
 
-const { data } = useSubscription(TRADE_SUBSCRIPTION);
+const { data } = useSubscription(LIVE_PNL_SUBSCRIPTION);
 ```
 
 ### Configure via `.env` or environment variables:
