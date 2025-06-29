@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document outlines the system design for tycostream's first milestone: a real-time GraphQL API that streams updates from a Materialize view to subscribed clients. The system is composed of modular services that cleanly separate concerns between data streaming, transport, and API exposure. It covers the full scope of Milestone 1, including:
+This document outlines the system design for tycostream's first milestone: a real-time GraphQL API that streams updates from a Materialize view to subscribed clients. The system is implemented as a single process in Milestone 1, combining Materialize streaming and GraphQL delivery logic in one modular backend. The architecture maintains modular separation internally to support process-level decomposition in future milestones.
+
+It covers the full scope of Milestone 1, including:
 
 * Minimal streaming (1.1)
 * Filtering and nested queries (1.2)
@@ -98,9 +100,6 @@ This sub-milestone introduces the foundational components:
 
 ## Deployment Model (Milestone 1)
 
-* The system is composed of two independently deployable services:
-
-  * `encore`: backend service for database streaming
-  * `graphql`: GraphQL Yoga API server
-* The architecture supports containerized deployment and can be orchestrated using Docker Compose or equivalent tools.
-* Each service operates independently but communicates via a shared in-memory pub/sub mechanism in Milestone 1.
+* The system is implemented as a single Encore-based process in Milestone 1.
+* Both the Materialize streaming logic and GraphQL Yoga server run inside the same service.
+* The codebase is modularized to allow clean separation between streaming and GraphQL layers, supporting future extraction into multiple processes if needed (e.g. for scalability or fault isolation).

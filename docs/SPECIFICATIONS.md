@@ -15,7 +15,7 @@ Unless otherwise stated, tycostream services are expected to follow an all-or-no
 #### 2.1 Configure
 
 * The system expects a schema file at `./schema/{VIEW_NAME}.sdl`.
-* If the schema file is missing or malformed, both Encore and Yoga services must fail fast at startup and exit with an appropriate error.
+* If the schema file is missing or malformed, the single service must fail fast at startup and exit with an appropriate error.
 
 ```env
 SOURCE_HOST=your-mz-host
@@ -49,10 +49,9 @@ type Subscription {
 
 #### 2.2 Start
 
-* On startup, Encore subscribes to the specified Materialize view.
-* Each incoming row is published to an internal event bus.
-* GraphQL Yoga loads the corresponding schema.
-* Yoga exposes a WebSocket endpoint (using `graphql-ws`) to which clients can subscribe.
+* The backend subscribes to the specified Materialize view.
+* Incoming rows are published to an internal event bus.
+* The embedded GraphQL server loads the schema and exposes a WebSocket endpoint (`graphql-ws`).
 * Each schema field maps to a view name (1:1).
 * Subscribed clients receive an initial snapshot followed by live updates.
 

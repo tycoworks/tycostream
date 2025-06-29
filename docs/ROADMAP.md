@@ -12,6 +12,7 @@
 
 **Key Features:**
 
+* Single-process implementation: both GraphQL and streaming logic run in one backend service.
 * Initial snapshot + live updates from one view
 * WebSocket / GraphQL endpoint
 * Simple config
@@ -66,6 +67,7 @@
 * Role-based access control (RBAC) — control operations available to user roles
 * Row-level entitlements — control which data rows users can access
 * Observability: Prometheus metrics, structured logs, health checks
+* Separation of Materialize and GraphQL services for independent scaling and deployment.
 * High-availability support for real-time transport (WebSockets or SSE) using Redis or NATS
 * Reconnect handling for dropped client WebSocket connections
 * Fan-out support for multi-client subscriptions per view

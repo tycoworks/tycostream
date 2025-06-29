@@ -16,8 +16,8 @@ Key points:
 
 Outline how code should be organized:
 
-- `/encore/` – Materialize streaming client
-- `/graphql/` – Yoga schema, resolvers, field logic
+- `/backend/` – Main backend service (Materialize streaming + GraphQL Yoga server)
+- `/graphql/` – SDL schemas and metadata config
 - `/shared/` – event definitions, config, logging, types
 - `/tests/` – isolated unit tests per module, integration tests
 
