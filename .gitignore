@@ -5,9 +5,11 @@
 # Node / Encore / TypeScript
 node_modules/
 dist/
-shared/*.d.ts
-shared/*.js
-shared/*.js.map
+*.d.ts
+*.js
+*.js.map
+!backend/src/*.js
+!*.config.js
 .env
 .env.local
 .env.*.local
