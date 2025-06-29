@@ -10,7 +10,7 @@ Enable a developer to stream real-time updates from a single Materialize view us
 
 * Apollo Client should be able to subscribe to a GraphQL field (e.g. `live_pnl`) and receive live updates into a frontend grid or table.
 
-Unless otherwise stated, tycostream services are expected to follow an all-or-nothing startup policy: if one process fails (e.g. due to missing config, schema mismatch, or invalid view), the other must also fail fast. This ensures predictable behavior and consistent state during system initialization.
+The process must fail fast on startup if any critical requirement is missing or invalid — such as malformed schema files, misconfigured environment variables, or unreachable database hosts. This ensures predictable behavior and consistent state before serving subscriptions.
 
 #### 2.1 Configure
 
@@ -69,4 +69,4 @@ type Subscription {
 
 ### 4. Open Questions / TODOs
 
-* If the schema file is missing, both Encore and Yoga must fail fast and exit with a clear error message.
+* If the schema file is missing, the process must fail fast and exit with a clear error message.

@@ -16,7 +16,7 @@ Key points:
 
 Outline how code should be organized:
 
-- `/backend/` – Main backend service (Materialize streaming + GraphQL Yoga server)
+- `/backend/` – Node.js + TypeScript service that handles both streaming and GraphQL delivery logic
 - `/graphql/` – SDL schemas and metadata config
 - `/shared/` – event definitions, config, logging, types
 - `/tests/` – isolated unit tests per module, integration tests

@@ -32,15 +32,16 @@ This sub-milestone introduces the foundational components:
 
 #### Internal Event Format
 
-* Internal messages emitted from Encore to Yoga must conform to a shared structure aligned with Materialize’s `SUBSCRIBE` protocol.
+* Internal messages published from the Materialize streaming layer to the GraphQL subscription layer must conform to a shared structure aligned with Materialize’s `SUBSCRIBE` protocol.
 * Format: `{ row: Record<string, any>, diff: number }`
 * This format preserves compatibility with the source stream and keeps messaging efficient.
 
-#### Encore Backend Service
+#### Backend Service
 
-* Built using [Encore.dev](https://encore.dev), a TypeScript backend framework powered by a Rust engine.
-* Responsible for connecting to Materialize using the Postgres wire protocol.
-* Emits incoming row updates to the GraphQL layer through an internal pub/sub mechanism (e.g. a simple in-memory event emitter). This will be replaced with a distributed pub/sub mechanism (e.g. Redis, NATS) in future milestones.
+* Built using standard Node.js + TypeScript.
+* Connects to Materialize using the Postgres wire protocol.
+* Emits incoming row updates to the GraphQL layer through an internal pub/sub mechanism (e.g. a simple in-memory EventEmitter).
+* May be re-evaluated in Milestone 2 to incorporate a Rust-based engine or high-performance runtime.
 
 #### GraphQL API Server (GraphQL Yoga)
 
@@ -89,17 +90,16 @@ This sub-milestone introduces the foundational components:
 
 ## Data Flow
 
-1. Encore opens a connection to Materialize.
-2. It issues a `SUBSCRIBE` query against a single view.
-3. As rows stream in, Encore publishes structured events to a local event bus.
-4. Yoga listens for GraphQL subscription requests over WebSocket.
-5. Each subscription field maps to a specific view/topic.
-6. Yoga delivers matching events to subscribed clients.
+1. The backend connects to Materialize using the Postgres wire protocol.
+2. It issues a `SUBSCRIBE` query against a configured view.
+3. As row updates arrive, they are published to a local in-memory event bus.
+4. The integrated GraphQL server receives subscription requests via WebSocket.
+5. Subscription resolvers map each field to a corresponding view stream on the event bus.
+6. Matching updates are delivered to subscribed clients in real time.
 
 ---
 
 ## Deployment Model (Milestone 1)
-
-* The system is implemented as a single Encore-based process in Milestone 1.
+* The system is implemented as a single Node.js-based process in Milestone 1.
 * Both the Materialize streaming logic and GraphQL Yoga server run inside the same service.
 * The codebase is modularized to allow clean separation between streaming and GraphQL layers, supporting future extraction into multiple processes if needed (e.g. for scalability or fault isolation).
