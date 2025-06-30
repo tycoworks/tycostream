@@ -6,12 +6,12 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 10000,
     setupFiles: [],
-    include: ['../tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+    include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
   },
   resolve: {
     alias: {
       '@': new URL('./src', import.meta.url).pathname,
-      '@shared': new URL('../shared', import.meta.url).pathname,
+      '@shared': new URL('./shared', import.meta.url).pathname,
     },
   },
 });

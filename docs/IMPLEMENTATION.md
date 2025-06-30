@@ -17,8 +17,8 @@ Key points:
 
 Outline how code should be organized:
 
-- `/backend/` – Node.js + TypeScript service that handles both streaming and GraphQL delivery logic
-- `/graphql/` – SDL schemas and metadata config
+- `/src/` – Node.js + TypeScript service that handles both streaming and GraphQL delivery logic
+- `/schema/` – SDL schemas and metadata config
 - `/shared/` – event definitions, config, logging, types
 - `/tests/` – isolated unit tests per module, integration tests
 
@@ -81,9 +81,9 @@ npm run test -- --watch  # watch mode during dev
 
 ### 5.2 Schema Path Resolution
 * Schema path resolution supports both Docker and local development:
-  - Docker: `./graphql/{VIEW_NAME}.sdl` relative to working directory
-  - Local dev: `../graphql/{VIEW_NAME}.sdl` relative to backend directory
-  - System automatically detects which environment and uses appropriate path
+  - Docker: `./schema/{VIEW_NAME}.sdl` relative to working directory  
+  - Local dev: `./schema/{VIEW_NAME}.sdl` relative to project root
+  - System automatically detects schema directory location
 
 ### 5.3 GraphQL Server Configuration
 * GraphQL Yoga with WebSocket support (`graphql-ws` protocol)

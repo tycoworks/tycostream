@@ -3,13 +3,14 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copy package files
-COPY backend/package*.json ./
+COPY package*.json ./
 RUN npm ci --only=production
 
 # Copy source code
-COPY backend/ ./
-COPY shared/ ../shared/
-COPY graphql/ ../graphql/
+COPY src/ ./src/
+COPY shared/ ./shared/
+COPY schema/ ./schema/
+COPY tsconfig.json vitest.config.ts ./
 
 # Build the application
 RUN npm run build

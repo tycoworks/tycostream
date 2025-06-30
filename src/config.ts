@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import type { DatabaseConfig, LoadedSchema, SchemaField } from '../../shared/types.js';
+import type { DatabaseConfig, LoadedSchema, SchemaField } from '../shared/types.js';
 
 export class ConfigError extends Error {
   constructor(message: string, public readonly field?: string) {
@@ -51,32 +51,22 @@ export function loadDatabaseConfig(): DatabaseConfig {
 }
 
 function findProjectRoot(): string {
-  // In Docker, we're in /app, schemas are in /app/graphql
-  // In local dev, we're in /backend, schemas are in ../graphql
+  // In Docker, we're in /app, schemas are in /app/schema
+  // In local dev, we're in project root, schemas are in ./schema
   
-  const dockerPath = join(process.cwd(), 'graphql');
-  const localPath = join(process.cwd(), '..', 'graphql');
+  const schemaPath = join(process.cwd(), 'schema');
   
-  // Check if we're in Docker environment (schemas at ./graphql)
+  // Check if schema directory exists
   try {
-    if (existsSync(dockerPath)) {
-      return dockerPath;
+    if (existsSync(schemaPath)) {
+      return schemaPath;
     }
   } catch {
-    // Continue to check local path
+    // Continue with default
   }
   
-  // Check if we're in local development (schemas at ../graphql)
-  try {
-    if (existsSync(localPath)) {
-      return localPath;
-    }
-  } catch {
-    // Fall back to Docker path
-  }
-  
-  // Default to Docker-style path
-  return dockerPath;
+  // Default to schema directory
+  return schemaPath;
 }
 
 export function loadSchema(viewName: string): LoadedSchema {

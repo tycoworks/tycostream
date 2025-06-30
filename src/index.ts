@@ -1,9 +1,9 @@
 import { loadDatabaseConfig, loadSchema, ConfigError } from './config.js';
 import { MaterializeStreamer } from './materialize.js';
 import { GraphQLServer } from './yoga.js';
-import { logger } from '../../shared/logger.js';
-import { shutdownManager } from '../../shared/shutdown.js';
-import { EVENTS } from '../../shared/events.js';
+import { logger } from '../shared/logger.js';
+import { shutdownManager } from '../shared/shutdown.js';
+import { EVENTS } from '../shared/events.js';
 import { pubsub } from './pubsub.js';
 
 async function main(): Promise<void> {

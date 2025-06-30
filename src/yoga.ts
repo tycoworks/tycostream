@@ -3,11 +3,11 @@ import { createServer } from 'http';
 import { useServer } from 'graphql-ws/lib/use/ws';
 import { WebSocketServer } from 'ws';
 import { buildSchema } from 'graphql';
-import type { LoadedSchema, StreamEvent } from '../../shared/types.js';
-import { logger } from '../../shared/logger.js';
-import { ViewCache } from '../../shared/viewCache.js';
+import type { LoadedSchema, StreamEvent } from '../shared/types.js';
+import { logger } from '../shared/logger.js';
+import { ViewCache } from '../shared/viewCache.js';
 import { pubsub, type PubSub } from './pubsub.js';
-import { EVENTS } from '../../shared/events.js';
+import { EVENTS } from '../shared/events.js';
 
 export class GraphQLServer {
   private log = logger.child({ component: 'graphql' });

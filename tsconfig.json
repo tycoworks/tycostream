@@ -19,22 +19,14 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
     "types": ["vitest/globals"]
   },
   "include": [
-    "backend/src/**/*",
+    "src/**/*", 
     "shared/**/*",
     "tests/**/*"
   ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "backend/dist",
-    "**/*.d.ts",
-    "**/*.js",
-    "**/*.js.map"
-  ],
-  "references": [
-    { "path": "./backend" }
-  ]
+  "exclude": ["node_modules", "dist"]
 }

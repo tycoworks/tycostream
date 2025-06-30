@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadDatabaseConfig, loadSchema, ConfigError } from '../backend/src/config.js';
+import { loadDatabaseConfig, loadSchema, ConfigError } from '../src/config.js';
 import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 
@@ -83,7 +83,7 @@ type Subscription {
 `;
 
     // Create the schema file in a location that the path resolution will find
-    const realSchemaDir = join(process.cwd(), 'graphql');
+    const realSchemaDir = join(process.cwd(), 'schema');
     mkdirSync(realSchemaDir, { recursive: true });
     writeFileSync(join(realSchemaDir, 'test_view.sdl'), schemaContent);
 
@@ -122,7 +122,7 @@ type Subscription {
 }
 `;
 
-    const realSchemaDir = join(process.cwd(), 'graphql');
+    const realSchemaDir = join(process.cwd(), 'schema');
     mkdirSync(realSchemaDir, { recursive: true });
     writeFileSync(join(realSchemaDir, 'invalid.sdl'), invalidSchema);
 

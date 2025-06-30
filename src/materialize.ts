@@ -1,10 +1,10 @@
 import { Client } from 'pg';
 import QueryStream from 'pg-query-stream';
-import type { DatabaseConfig, StreamEvent } from '../../shared/types.js';
-import { logger } from '../../shared/logger.js';
-import { ViewCache } from '../../shared/viewCache.js';
+import type { DatabaseConfig, StreamEvent } from '../shared/types.js';
+import { logger } from '../shared/logger.js';
+import { ViewCache } from '../shared/viewCache.js';
 import { pubsub, type PubSub } from './pubsub.js';
-import { EVENTS } from '../../shared/events.js';
+import { EVENTS } from '../shared/events.js';
 
 export class MaterializeStreamer {
   private client: Client | null = null;

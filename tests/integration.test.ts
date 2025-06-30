@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { MaterializeStreamer } from '../backend/src/materialize.js';
-import { GraphQLServer } from '../backend/src/yoga.js';
-import { loadSchema } from '../backend/src/config.js';
-import { pubsub } from '../backend/src/pubsub.js';
+import { MaterializeStreamer } from '../src/materialize.js';
+import { GraphQLServer } from '../src/yoga.js';
+import { loadSchema } from '../src/config.js';
+import { pubsub } from '../src/pubsub.js';
 import { EVENTS } from '../shared/events.js';
 import type { DatabaseConfig, StreamEvent } from '../shared/types.js';
 

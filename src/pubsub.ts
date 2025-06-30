@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
-import type { StreamEvent } from '../../shared/types.js';
-import type { EventType } from '../../shared/events.js';
-import { logger } from '../../shared/logger.js';
+import type { StreamEvent } from '../shared/types.js';
+import type { EventType } from '../shared/events.js';
+import { logger } from '../shared/logger.js';
 
 class PubSub extends EventEmitter {
   private log = logger.child({ component: 'pubsub' });
