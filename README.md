@@ -51,7 +51,7 @@ cp .env.example .env
 # Edit .env with your Materialize connection details
 
 cp config/schema.example.sdl config/schema.sdl
-# Edit config/schema.sdl to match your Materialize view structure
+# Edit config/schema.sdl type name to match your Materialize view name
 docker-compose up
 ```
 

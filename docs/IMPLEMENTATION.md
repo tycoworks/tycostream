@@ -72,19 +72,16 @@ npm run test -- --watch  # watch mode during dev
 ## 5. Technical Implementation Details
 
 ### 5.1 Materialize Streaming Protocol
-* Uses Postgres wire protocol with `SUBSCRIBE` queries
-* Implements `pg-query-stream` for real-time row streaming
-* Stream format: `{ row: Record<string, any>, diff: number }` (mz_timestamp excluded from cached data)
-* Automatic reconnection on connection failures (5s) and stream failures (3s)
-* Strips `mz_timestamp` and `diff` metadata columns from Materialize before caching
-* Validates view existence before starting streaming operations
+* Implementation details for the Backend Service described in [ARCHITECTURE.md](ARCHITECTURE.md#backend-service)
+* Uses Postgres wire protocol with `SUBSCRIBE` queries via `pg-query-stream`
+* Stream format: `{ row: Record<string, any>, diff: number }`
+* Automatic reconnection logic with configured timeouts
+* Metadata column handling (`mz_timestamp`, `diff`) and view validation
 
 ### 5.2 Schema Path Resolution
-* Schema path resolution supports both Docker and local development:
-  - Docker: `./config/schema.sdl` relative to working directory  
-  - Local dev: `./config/schema.sdl` relative to project root
-  - System automatically detects config directory location
-  - Users copy `schema.example.sdl` to `schema.sdl` and customize
+* Schema path resolution supports both Docker and local development environments
+* System automatically detects config directory location
+* Path resolution logic implemented in `findConfigRoot()` function
 
 ### 5.2.1 View Name Resolution
 * View name is automatically extracted from the first data type in the SDL schema
@@ -93,24 +90,17 @@ npm run test -- --watch  # watch mode during dev
 * Eliminates need for separate `VIEW_NAME` environment variable
 
 ### 5.3 GraphQL Server Configuration
+* Implementation details for the GraphQL API Server described in [ARCHITECTURE.md](ARCHITECTURE.md#graphql-api-server-graphql-yoga)
 * GraphQL Yoga with WebSocket support (`graphql-ws` protocol)
-* Async generator-based subscription resolvers that:
-  1. Yield initial snapshot from ViewCache (all current rows)
-  2. Subscribe to pub/sub events for live updates
-  3. Yield new updates as they arrive from Materialize
+* Async generator-based subscription resolvers for real-time streaming
 * Single endpoint at `/graphql` with WebSocket upgrade support
-* Schema loading from static SDL files with path auto-detection
 * GraphiQL integration for development
-* Specific WebSocket configuration including timeouts and connection limits
 
 ### 5.4 View Cache Implementation
+* Implementation details for the View Cache component described in [ARCHITECTURE.md](ARCHITECTURE.md#view-cache)
 * ViewCache preserves insertion order using JavaScript Map data structure
-* On update (existing key): replace row in-place, preserving position
-* On delete: remove the row from cache
-* On insert (new key): append row to end of cache
-* In-memory HashMap keyed by primary key field from schema
-* Supports insert, update, delete operations based on diff values
-* Maintains current state for serving initial snapshots
+* Row operations: insert (append), update (replace in-place), delete (remove)
+* In-memory HashMap keyed by primary key field extracted from schema
 
 ### 5.5 Schema Validation Implementation
 * Regex-based parsing to detect ID! field in SDL schema files
