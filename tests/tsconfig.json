@@ -1,0 +1,13 @@
+{
+  "extends": "../backend/tsconfig.json",
+  "compilerOptions": {
+    "types": ["vitest/globals"],
+    "composite": true,
+    "outDir": "./dist"
+  },
+  "include": [
+    "./**/*",
+    "../shared/**/*"
+  ],
+  "exclude": []
+}
