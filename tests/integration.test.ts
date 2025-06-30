@@ -37,9 +37,9 @@ describe('Integration Tests', () => {
   };
 
   beforeEach(() => {
-    // Create schema directory and config file for tests
-    const schemaDir = join(process.cwd(), 'schema');
-    mkdirSync(schemaDir, { recursive: true });
+    // Ensure config directory exists and create schema file for tests
+    const configDir = join(process.cwd(), 'config');
+    mkdirSync(configDir, { recursive: true });
     
     const schemaContent = `type LivePNL {
   instrument_id: ID!
@@ -55,13 +55,7 @@ type Subscription {
   live_pnl: LivePNL!
 }`;
     
-    writeFileSync(join(schemaDir, 'config.sdl'), schemaContent);
-  });
-
-  afterEach(() => {
-    // Clean up schema directory
-    const schemaDir = join(process.cwd(), 'schema');
-    rmSync(schemaDir, { recursive: true, force: true });
+    writeFileSync(join(configDir, 'schema.sdl'), schemaContent);
   });
 
   it('should integrate MaterializeStreamer with ViewCache', async () => {

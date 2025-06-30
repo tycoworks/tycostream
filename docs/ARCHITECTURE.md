@@ -41,7 +41,7 @@ This sub-milestone introduces the foundational components:
 #### GraphQL API Server (GraphQL Yoga)
 
 * Serves a WebSocket endpoint for GraphQL subscriptions using the `graphql-ws` protocol
-* Loads a statically defined GraphQL schema file corresponding to the configured view
+* Loads a statically defined GraphQL schema file from `./config/schema.sdl`
 * Each GraphQL subscription field corresponds to a specific data stream/topic
 * Subscription resolvers provide initial snapshots and live updates
 * Schema files are automatically discovered across deployment environments
@@ -67,7 +67,7 @@ This sub-milestone introduces the foundational components:
 #### Schema Registry Abstraction
 
 * Introduced to support multiple concurrent view schemas
-* Backed by a static YAML metadata file that maps view names to SDL files
+* Backed by a static YAML metadata file that maps view names to SDL schema definitions
 * Maps view names to their corresponding schema definitions
 * Used at startup to build the combined schema or route incoming subscription requests
 
@@ -83,7 +83,7 @@ This sub-milestone introduces the foundational components:
 
 ## Data Flow
 
-1. **Startup**: Backend validates configuration and loads GraphQL schema from SDL file
+1. **Startup**: Backend validates configuration and loads GraphQL schema
 2. **Connection**: Backend connects to Materialize using Postgres wire protocol
 3. **Streaming**: Issues `SUBSCRIBE` query against configured view
 4. **Event Processing**: As row updates arrive, they are:

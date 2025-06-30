@@ -45,7 +45,7 @@
 **Experience:**
 
 * Define GraphQL schema using SDL to map to multiple Materialize views
-* Start tycostream with updated config pointing to new views and schema file
+* Start tycostream with updated config pointing to new views and schema files
 * Use Apollo Client to subscribe to any view defined in the schema
 * Iterate on your schema independently of the Materialize SQL shape
 

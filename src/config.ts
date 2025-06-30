@@ -50,28 +50,28 @@ export function loadDatabaseConfig(): DatabaseConfig {
   };
 }
 
-function findProjectRoot(): string {
-  // In Docker, we're in /app, schemas are in /app/schema
-  // In local dev, we're in project root, schemas are in ./schema
+function findConfigRoot(): string {
+  // In Docker, we're in /app, config is in /app/config
+  // In local dev, we're in project root, config is in ./config
   
-  const schemaPath = join(process.cwd(), 'schema');
+  const configPath = join(process.cwd(), 'config');
   
-  // Check if schema directory exists
+  // Check if config directory exists
   try {
-    if (existsSync(schemaPath)) {
-      return schemaPath;
+    if (existsSync(configPath)) {
+      return configPath;
     }
   } catch {
     // Continue with default
   }
   
-  // Default to schema directory
-  return schemaPath;
+  // Default to config directory
+  return configPath;
 }
 
 export function loadSchema(): LoadedSchema {
-  const schemaDir = findProjectRoot();
-  const schemaPath = join(schemaDir, 'config.sdl');
+  const configDir = findConfigRoot();
+  const schemaPath = join(configDir, 'schema.sdl');
   
   let typeDefs: string;
   try {
@@ -80,9 +80,8 @@ export function loadSchema(): LoadedSchema {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new ConfigError(
         `Schema file not found: ${schemaPath}. ` +
-        `Please create a GraphQL schema file at this location. ` +
-        `The schema must define types and a Subscription. ` +
-        `Example schema structure can be found in the documentation.`,
+        `Please copy config/schema.example.sdl to config/schema.sdl and customize it. ` +
+        `The schema must define exactly one type and a Subscription.`,
         'SCHEMA_FILE'
       );
     }
@@ -110,10 +109,26 @@ export function loadSchema(): LoadedSchema {
 function parseSchemaFields(typeDefs: string): SchemaField[] {
   const fields: SchemaField[] = [];
   
-  // Simple regex-based parsing for SDL
-  const typeMatch = typeDefs.match(/type\s+\w+\s*\{([^}]+)\}/);
+  // Check for multiple type definitions - we only support one data type (excluding Subscription)
+  const allTypeMatches = typeDefs.match(/type\s+\w+\s*\{[^}]+\}/g) || [];
+  const dataTypeMatches = allTypeMatches.filter(match => !match.includes('type Subscription'));
+  
+  if (dataTypeMatches.length === 0) {
+    throw new ConfigError('Invalid schema: no data type definition found', 'SCHEMA_FORMAT');
+  }
+  
+  if (dataTypeMatches.length > 1) {
+    throw new ConfigError(
+      `Schema must contain exactly one data type definition (found ${dataTypeMatches.length}). ` +
+      `Multiple data types will be supported in future versions.`,
+      'SCHEMA_FORMAT'
+    );
+  }
+  
+  // Parse the single data type definition
+  const typeMatch = dataTypeMatches[0]!.match(/type\s+\w+\s*\{([^}]+)\}/);
   if (!typeMatch) {
-    throw new ConfigError('Invalid schema: no type definition found', 'SCHEMA_FORMAT');
+    throw new ConfigError('Invalid schema: malformed type definition', 'SCHEMA_FORMAT');
   }
 
   const fieldsText = typeMatch[1]!;

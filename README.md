@@ -50,8 +50,8 @@ cd tycostream
 cp .env.example .env
 # Edit .env with your Materialize connection details
 
-# The schema/config.sdl file defines your GraphQL schema  
-# Edit it to match your Materialize view structure
+cp config/schema.example.sdl config/schema.sdl
+# Edit config/schema.sdl to match your Materialize view structure
 docker-compose up
 ```
 

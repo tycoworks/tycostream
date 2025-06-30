@@ -83,9 +83,9 @@ type Subscription {
 `;
 
     // Create the schema file in a location that the path resolution will find
-    const realSchemaDir = join(process.cwd(), 'schema');
-    mkdirSync(realSchemaDir, { recursive: true });
-    writeFileSync(join(realSchemaDir, 'config.sdl'), schemaContent);
+    const realConfigDir = join(process.cwd(), 'config');
+    mkdirSync(realConfigDir, { recursive: true });
+    writeFileSync(join(realConfigDir, 'schema.sdl'), schemaContent);
 
     try {
       const schema = loadSchema();
@@ -101,7 +101,7 @@ type Subscription {
       });
     } finally {
       // Clean up
-      rmSync(realSchemaDir, { recursive: true, force: true });
+      rmSync(realConfigDir, { recursive: true, force: true });
     }
   });
 
@@ -122,15 +122,44 @@ type Subscription {
 }
 `;
 
-    const realSchemaDir = join(process.cwd(), 'schema');
-    mkdirSync(realSchemaDir, { recursive: true });
-    writeFileSync(join(realSchemaDir, 'config.sdl'), invalidSchema);
+    const realConfigDir = join(process.cwd(), 'config');
+    mkdirSync(realConfigDir, { recursive: true });
+    writeFileSync(join(realConfigDir, 'schema.sdl'), invalidSchema);
 
     try {
       expect(() => loadSchema()).toThrow(ConfigError);
       expect(() => loadSchema()).toThrow('Schema must contain exactly one field of type ID!');
     } finally {
-      rmSync(realSchemaDir, { recursive: true, force: true });
+      rmSync(realConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should throw ConfigError for schema with multiple data types', () => {
+    const multiTypeSchema = `
+type TestType1 {
+  id: ID!
+  name: String!
+}
+
+type TestType2 {
+  id: ID!
+  value: Float!
+}
+
+type Subscription {
+  test_view: TestType1!
+}
+`;
+
+    const realConfigDir = join(process.cwd(), 'config');
+    mkdirSync(realConfigDir, { recursive: true });
+    writeFileSync(join(realConfigDir, 'schema.sdl'), multiTypeSchema);
+
+    try {
+      expect(() => loadSchema()).toThrow(ConfigError);
+      expect(() => loadSchema()).toThrow('Schema must contain exactly one data type definition (found 2)');
+    } finally {
+      rmSync(realConfigDir, { recursive: true, force: true });
     }
   });
 });

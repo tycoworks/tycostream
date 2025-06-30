@@ -18,7 +18,7 @@ Key points:
 Outline how code should be organized:
 
 - `/src/` – Node.js + TypeScript service that handles both streaming and GraphQL delivery logic
-- `/schema/` – SDL schemas and metadata config
+- `/config/` – SDL schemas and metadata config
 - `/shared/` – event definitions, config, logging, types
 - `/tests/` – isolated unit tests per module, integration tests
 
@@ -81,9 +81,9 @@ npm run test -- --watch  # watch mode during dev
 
 ### 5.2 Schema Path Resolution
 * Schema path resolution supports both Docker and local development:
-  - Docker: `./schema/{VIEW_NAME}.sdl` relative to working directory  
-  - Local dev: `./schema/{VIEW_NAME}.sdl` relative to project root
-  - System automatically detects schema directory location
+  - Docker: `./config/schema.sdl` relative to working directory  
+  - Local dev: `./config/schema.sdl` relative to project root
+  - System automatically detects config directory location
 
 ### 5.3 GraphQL Server Configuration
 * GraphQL Yoga with WebSocket support (`graphql-ws` protocol)
@@ -108,6 +108,9 @@ npm run test -- --watch  # watch mode during dev
 ### 5.5 Schema Validation Implementation
 * Regex-based parsing to detect ID! field in SDL schema files
 * File system validation for schema file existence
+* Validates exactly one data type definition (excluding `type Subscription`)
+* Fails fast with helpful error if multiple data types found
+* Multiple data types will be supported in future versions
 * GraphQL format validation using string parsing
 * Detailed error messaging with examples for common mistakes
 * Primary key field extraction and caching for view operations

@@ -22,7 +22,7 @@ The process must fail fast on startup if any critical requirement is missing or 
 
 #### 2.1 Configure
 
-* The system expects a schema file at `./schema/{VIEW_NAME}.sdl`.
+* The system expects a schema file at `./config/schema.sdl`.
 * If the schema file is missing or malformed, the single service must fail fast at startup and exit with an appropriate error.
 
 ```env
@@ -34,7 +34,7 @@ SOURCE_DB=materialize
 VIEW_NAME=live_pnl
 ```
 
-##### Example SDL Schema (live\_pnl.sdl)
+##### Example SDL Schema (schema.sdl)
 
 ```graphql
 type LivePNL {
@@ -52,14 +52,17 @@ type Subscription {
 }
 ```
 
-* Schema is statically defined and must exist at `./schema/{VIEW_NAME}.sdl` unless overridden.
-* Schema files are automatically discovered in both Docker and local development environments
+* Schema is statically defined and must exist at `./config/schema.sdl`.
+* Schema file location is automatically discovered in both Docker and local development environments
 * No query parameters or filtering logic are supported in 1.1.
 
 #### 2.1.1 Schema Requirements  
 * Schema files must be valid GraphQL SDL format
+* Must contain exactly one data type definition (excluding `type Subscription`)
+* Multiple data types will be supported in future versions - system fails fast if more than one is found
 * Exactly one field of type `ID!` must be present to serve as the primary key
 * Primary key field name can be anything (e.g., `instrument_id: ID!`)
+* Must include a `type Subscription` that references the data type
 
 #### 2.2 Start
 
