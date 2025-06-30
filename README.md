@@ -76,7 +76,7 @@ const { data } = useSubscription(LIVE_PNL_SUBSCRIPTION);
 ### Configure via `.env` or environment variables:
 
 ```
-SOURCE_HOST=your-mz-host
+SOURCE_HOST=localhost
 SOURCE_PORT=6875
 SOURCE_USER=materialize
 SOURCE_PASSWORD=materialize
