@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { MaterializeStreamer } from '../src/materialize.js';
 import { GraphQLServer } from '../src/yoga.js';
 import { loadSchema } from '../src/config.js';
@@ -6,6 +6,8 @@ import { pubsub } from '../src/pubsub.js';
 import { EVENTS } from '../shared/events.js';
 import type { DatabaseConfig, StreamEvent } from '../shared/types.js';
 import { Client } from 'pg';
+import { writeFileSync, mkdirSync, rmSync } from 'fs';
+import { join } from 'path';
 
 // Create a mock client instance that can be accessed in tests
 const mockClientInstance = {
@@ -34,8 +36,36 @@ describe('Integration Tests', () => {
     viewName: 'live_pnl',
   };
 
+  beforeEach(() => {
+    // Create schema directory and config file for tests
+    const schemaDir = join(process.cwd(), 'schema');
+    mkdirSync(schemaDir, { recursive: true });
+    
+    const schemaContent = `type LivePNL {
+  instrument_id: ID!
+  symbol: String!
+  net_position: Float!
+  latest_price: Float!
+  market_value: Float!
+  avg_cost_basis: Float!
+  theoretical_pnl: Float!
+}
+
+type Subscription {
+  live_pnl: LivePNL!
+}`;
+    
+    writeFileSync(join(schemaDir, 'config.sdl'), schemaContent);
+  });
+
+  afterEach(() => {
+    // Clean up schema directory
+    const schemaDir = join(process.cwd(), 'schema');
+    rmSync(schemaDir, { recursive: true, force: true });
+  });
+
   it('should integrate MaterializeStreamer with ViewCache', async () => {
-    const schema = loadSchema('live_pnl');
+    const schema = loadSchema();
     const streamer = new MaterializeStreamer(testConfig, schema.primaryKeyField);
     
     // Mock successful connection
@@ -108,7 +138,7 @@ describe('Integration Tests', () => {
   });
 
   it('should handle error scenarios gracefully', async () => {
-    const schema = loadSchema('live_pnl');
+    const schema = loadSchema();
     const streamer = new MaterializeStreamer(testConfig, schema.primaryKeyField);
     
     // Mock connection failure

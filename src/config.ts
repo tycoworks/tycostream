@@ -69,9 +69,9 @@ function findProjectRoot(): string {
   return schemaPath;
 }
 
-export function loadSchema(viewName: string): LoadedSchema {
+export function loadSchema(): LoadedSchema {
   const schemaDir = findProjectRoot();
-  const schemaPath = join(schemaDir, `${viewName}.sdl`);
+  const schemaPath = join(schemaDir, 'config.sdl');
   
   let typeDefs: string;
   try {
@@ -81,7 +81,7 @@ export function loadSchema(viewName: string): LoadedSchema {
       throw new ConfigError(
         `Schema file not found: ${schemaPath}. ` +
         `Please create a GraphQL schema file at this location. ` +
-        `The schema must define types and a Subscription with field '${viewName}'. ` +
+        `The schema must define types and a Subscription. ` +
         `Example schema structure can be found in the documentation.`,
         'SCHEMA_FILE'
       );

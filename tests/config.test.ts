@@ -85,10 +85,10 @@ type Subscription {
     // Create the schema file in a location that the path resolution will find
     const realSchemaDir = join(process.cwd(), 'schema');
     mkdirSync(realSchemaDir, { recursive: true });
-    writeFileSync(join(realSchemaDir, 'test_view.sdl'), schemaContent);
+    writeFileSync(join(realSchemaDir, 'config.sdl'), schemaContent);
 
     try {
-      const schema = loadSchema('test_view');
+      const schema = loadSchema();
       
       expect(schema.typeDefs).toContain('type TestType');
       expect(schema.primaryKeyField).toBe('id');
@@ -106,8 +106,8 @@ type Subscription {
   });
 
   it('should throw ConfigError for missing schema file', () => {
-    expect(() => loadSchema('nonexistent')).toThrow(ConfigError);
-    expect(() => loadSchema('nonexistent')).toThrow('Schema file not found');
+    expect(() => loadSchema()).toThrow(ConfigError);
+    expect(() => loadSchema()).toThrow('Schema file not found');
   });
 
   it('should throw ConfigError for schema without ID field', () => {
@@ -124,11 +124,11 @@ type Subscription {
 
     const realSchemaDir = join(process.cwd(), 'schema');
     mkdirSync(realSchemaDir, { recursive: true });
-    writeFileSync(join(realSchemaDir, 'invalid.sdl'), invalidSchema);
+    writeFileSync(join(realSchemaDir, 'config.sdl'), invalidSchema);
 
     try {
-      expect(() => loadSchema('invalid')).toThrow(ConfigError);
-      expect(() => loadSchema('invalid')).toThrow('Schema must contain exactly one field of type ID!');
+      expect(() => loadSchema()).toThrow(ConfigError);
+      expect(() => loadSchema()).toThrow('Schema must contain exactly one field of type ID!');
     } finally {
       rmSync(realSchemaDir, { recursive: true, force: true });
     }

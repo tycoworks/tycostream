@@ -24,7 +24,7 @@ async function main(): Promise<void> {
 
     // Phase 2: Load and validate schema
     log.info('📄 Loading schema...', { viewName: dbConfig.viewName });
-    const schema = loadSchema(dbConfig.viewName);
+    const schema = loadSchema();
     log.info('✅ Schema loaded successfully', {
       primaryKeyField: schema.primaryKeyField,
       fieldsCount: schema.fields.length

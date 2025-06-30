@@ -50,8 +50,8 @@ cd tycostream
 cp .env.example .env
 # Edit .env with your Materialize connection details
 
-# The schema/live_pnl.sdl file defines your GraphQL schema
-# Edit it to match your Materialize view structure if needed
+# The schema/config.sdl file defines your GraphQL schema  
+# Edit it to match your Materialize view structure
 docker-compose up
 ```
 
