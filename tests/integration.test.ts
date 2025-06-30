@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { MaterializeStreamer } from '../src/materialize.js';
 import { GraphQLServer } from '../src/yoga.js';
-import { loadSchema } from '../src/config.js';
 import { pubsub } from '../src/pubsub.js';
 import { EVENTS } from '../shared/events.js';
-import type { DatabaseConfig, StreamEvent } from '../shared/types.js';
+import type { DatabaseConfig, StreamEvent, LoadedSchema } from '../shared/types.js';
 import { Client } from 'pg';
 import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -35,12 +34,9 @@ describe('Integration Tests', () => {
     database: 'materialize',
   };
 
-  beforeEach(() => {
-    // Ensure config directory exists and create schema file for tests
-    const configDir = join(process.cwd(), 'config');
-    mkdirSync(configDir, { recursive: true });
-    
-    const schemaContent = `type LivePNL {
+  // Use a shared schema for integration tests that don't need to test schema loading
+  const testSchema: LoadedSchema = {
+    typeDefs: `type LivePNL {
   instrument_id: ID!
   symbol: String!
   net_position: Float!
@@ -52,14 +48,22 @@ describe('Integration Tests', () => {
 
 type Subscription {
   live_pnl: LivePNL!
-}`;
-    
-    writeFileSync(join(configDir, 'schema.sdl'), schemaContent);
-  });
+}`,
+    fields: [
+      { name: 'instrument_id', type: 'ID', nullable: false, isPrimaryKey: true },
+      { name: 'symbol', type: 'String', nullable: false, isPrimaryKey: false },
+      { name: 'net_position', type: 'Float', nullable: false, isPrimaryKey: false },
+      { name: 'latest_price', type: 'Float', nullable: false, isPrimaryKey: false },
+      { name: 'market_value', type: 'Float', nullable: false, isPrimaryKey: false },
+      { name: 'avg_cost_basis', type: 'Float', nullable: false, isPrimaryKey: false },
+      { name: 'theoretical_pnl', type: 'Float', nullable: false, isPrimaryKey: false },
+    ],
+    primaryKeyField: 'instrument_id',
+    viewName: 'LivePNL'
+  };
 
   it('should integrate MaterializeStreamer with ViewCache', async () => {
-    const schema = loadSchema();
-    const streamer = new MaterializeStreamer(testConfig, schema.viewName, schema.primaryKeyField);
+    const streamer = new MaterializeStreamer(testConfig, testSchema.viewName, testSchema.primaryKeyField);
     
     // Mock successful connection
     await streamer.connect();
@@ -131,8 +135,7 @@ type Subscription {
   });
 
   it('should handle error scenarios gracefully', async () => {
-    const schema = loadSchema();
-    const streamer = new MaterializeStreamer(testConfig, schema.viewName, schema.primaryKeyField);
+    const streamer = new MaterializeStreamer(testConfig, testSchema.viewName, testSchema.primaryKeyField);
     
     // Mock connection failure
     mockClientInstance.connect.mockReset();

@@ -78,10 +78,14 @@ type Subscription {
 }
 `;
 
-    // Create the schema file in a location that the path resolution will find
-    const realConfigDir = join(process.cwd(), 'config');
-    mkdirSync(realConfigDir, { recursive: true });
-    writeFileSync(join(realConfigDir, 'schema.sdl'), schemaContent);
+    // Create schema file in test directory structure
+    const testConfigDir = join(testSchemaDir, 'config');
+    mkdirSync(testConfigDir, { recursive: true });
+    writeFileSync(join(testConfigDir, 'schema.sdl'), schemaContent);
+
+    // Temporarily override process.cwd() for this test
+    const originalCwd = process.cwd;
+    process.cwd = () => testSchemaDir;
 
     try {
       const schema = loadSchema();
@@ -97,12 +101,8 @@ type Subscription {
         isPrimaryKey: true,
       });
     } finally {
-      // Only clean up the test file, preserve schema.example.sdl
-      try {
-        rmSync(join(realConfigDir, 'schema.sdl'), { force: true });
-      } catch {
-        // File doesn't exist, that's fine
-      }
+      // Restore original cwd
+      process.cwd = originalCwd;
     }
   });
 
@@ -123,20 +123,21 @@ type Subscription {
 }
 `;
 
-    const realConfigDir = join(process.cwd(), 'config');
-    mkdirSync(realConfigDir, { recursive: true });
-    writeFileSync(join(realConfigDir, 'schema.sdl'), invalidSchema);
+    // Create schema file in test directory structure
+    const testConfigDir = join(testSchemaDir, 'config');
+    mkdirSync(testConfigDir, { recursive: true });
+    writeFileSync(join(testConfigDir, 'schema.sdl'), invalidSchema);
+
+    // Temporarily override process.cwd() for this test
+    const originalCwd = process.cwd;
+    process.cwd = () => testSchemaDir;
 
     try {
       expect(() => loadSchema()).toThrow(ConfigError);
       expect(() => loadSchema()).toThrow('Schema must contain exactly one field of type ID!');
     } finally {
-      // Only clean up the test file, preserve schema.example.sdl
-      try {
-        rmSync(join(realConfigDir, 'schema.sdl'), { force: true });
-      } catch {
-        // File doesn't exist, that's fine
-      }
+      // Restore original cwd
+      process.cwd = originalCwd;
     }
   });
 
@@ -157,29 +158,21 @@ type Subscription {
 }
 `;
 
-    const realConfigDir = join(process.cwd(), 'config');
-    const schemaPath = join(realConfigDir, 'schema.sdl');
-    
-    // Only remove schema.sdl if it exists, preserve schema.example.sdl
-    try {
-      rmSync(schemaPath, { force: true });
-    } catch {
-      // File doesn't exist, that's fine
-    }
-    
-    mkdirSync(realConfigDir, { recursive: true });
-    writeFileSync(schemaPath, multiTypeSchema);
+    // Create schema file in test directory structure
+    const testConfigDir = join(testSchemaDir, 'config');
+    mkdirSync(testConfigDir, { recursive: true });
+    writeFileSync(join(testConfigDir, 'schema.sdl'), multiTypeSchema);
+
+    // Temporarily override process.cwd() for this test
+    const originalCwd = process.cwd;
+    process.cwd = () => testSchemaDir;
 
     try {
       expect(() => loadSchema()).toThrow(ConfigError);
       expect(() => loadSchema()).toThrow('Schema must contain exactly one data type definition (found 2)');
     } finally {
-      // Only clean up the test file, preserve schema.example.sdl
-      try {
-        rmSync(schemaPath, { force: true });
-      } catch {
-        // File doesn't exist, that's fine
-      }
+      // Restore original cwd
+      process.cwd = originalCwd;
     }
   });
 });
