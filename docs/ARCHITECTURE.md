@@ -41,17 +41,15 @@ This sub-milestone introduces the foundational components:
 #### GraphQL API Server (GraphQL Yoga)
 
 * Serves a WebSocket endpoint for GraphQL subscriptions using the `graphql-ws` protocol
-* Loads a statically defined GraphQL schema file from `./config/schema.sdl`
+* Loads a statically defined GraphQL schema file
 * Each GraphQL subscription field corresponds to a specific data stream/topic
 * Subscription resolvers provide initial snapshots and live updates
-* Schema files are automatically discovered across deployment environments
 
 ### 1.2 Components — Filtering + Nested Queries
 
 #### View Cache
 
 * **Required in 1.1** for initial snapshot delivery (originally planned for 1.2)
-* The primary key is determined by the field annotated with `ID!` in the SDL schema
 * Maintains an up-to-date in-memory representation of the latest view state
 * Supports row-level operations based on streaming diff values
 * Acts as a queryable cache used by GraphQL resolvers to evaluate filter conditions
@@ -73,7 +71,6 @@ This sub-milestone introduces the foundational components:
 
 #### Multi-View Routing
 
-* In 1.1, field names are assumed to directly map to view names by convention
 * In 1.3, routing becomes explicit via metadata configuration in the schema registry
 * GraphQL Yoga must resolve subscription fields across multiple views
 * Each field is mapped to a corresponding view name and cache
@@ -92,7 +89,6 @@ This sub-milestone introduces the foundational components:
 5. **Client Subscription**: GraphQL server receives subscription requests via WebSocket
 6. **Initial Snapshot**: Subscription resolver immediately yields all current rows from ViewCache
 7. **Live Updates**: Resolver subscribes to pub/sub events and yields new updates in real time
-8. **Row Ordering**: Updates preserve insertion order - rows delivered in stream arrival order
 
 ---
 

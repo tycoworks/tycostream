@@ -18,33 +18,33 @@ async function main(): Promise<void> {
     log.info('✅ Database configuration loaded', {
       host: dbConfig.host,
       port: dbConfig.port,
-      database: dbConfig.database,
-      viewName: dbConfig.viewName
+      database: dbConfig.database
     });
 
     // Phase 2: Load and validate schema
-    log.info('📄 Loading schema...', { viewName: dbConfig.viewName });
+    log.info('📄 Loading schema...');
     const schema = loadSchema();
     log.info('✅ Schema loaded successfully', {
       primaryKeyField: schema.primaryKeyField,
-      fieldsCount: schema.fields.length
+      fieldsCount: schema.fields.length,
+      viewName: schema.viewName
     });
-    pubsub.publish(EVENTS.SCHEMA_LOADED, { viewName: dbConfig.viewName, schema });
+    pubsub.publish(EVENTS.SCHEMA_LOADED, { viewName: schema.viewName, schema });
 
     // Phase 3: Connect to Materialize
     log.info('🔌 Connecting to Materialize...');
-    const streamer = new MaterializeStreamer(dbConfig, schema.primaryKeyField);
+    const streamer = new MaterializeStreamer(dbConfig, schema.viewName, schema.primaryKeyField);
     await streamer.connect();
     log.info('✅ Connected to Materialize successfully');
 
     // Phase 4: Start streaming from view
-    log.info('📡 Starting view subscription...', { viewName: dbConfig.viewName });
+    log.info('📡 Starting view subscription...', { viewName: schema.viewName });
     await streamer.startStreaming();
     log.info('✅ View subscription started successfully');
 
     // Phase 5: Start GraphQL server
     log.info('🌐 Starting GraphQL server...');
-    const graphqlServer = new GraphQLServer(schema, dbConfig.viewName, streamer.cache, 4000);
+    const graphqlServer = new GraphQLServer(schema, schema.viewName, streamer.cache, 4000);
     await graphqlServer.start();
     log.info('✅ GraphQL server started successfully');
 
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
     log.info('🎉 tycostream is ready!', {
       graphqlEndpoint: 'http://localhost:4000/graphql',
       subscriptionsEndpoint: 'ws://localhost:4000/graphql',
-      viewName: dbConfig.viewName
+      viewName: schema.viewName
     });
 
   } catch (error) {

@@ -14,12 +14,13 @@ export class MaterializeStreamer {
   private viewCache: ViewCache;
 
   constructor(
-    private config: DatabaseConfig, 
+    private config: DatabaseConfig,
+    private viewName: string,
     primaryKeyField: string,
     private eventBus: PubSub = pubsub,
     viewCache?: ViewCache
   ) {
-    this.viewCache = viewCache || new ViewCache(primaryKeyField, config.viewName);
+    this.viewCache = viewCache || new ViewCache(primaryKeyField, viewName);
   }
 
   async connect(): Promise<void> {
@@ -52,14 +53,14 @@ export class MaterializeStreamer {
       this.client.on('end', () => {
         this.log.warn('Postgres connection ended');
         this.isConnected = false;
-        this.eventBus.publish(EVENTS.STREAM_DISCONNECTED, { viewName: this.config.viewName });
+        this.eventBus.publish(EVENTS.STREAM_DISCONNECTED, { viewName: this.viewName });
       });
 
       await this.client.connect();
       this.isConnected = true;
 
       this.log.info('Connected to Materialize successfully');
-      this.eventBus.publish(EVENTS.STREAM_CONNECTED, { viewName: this.config.viewName });
+      this.eventBus.publish(EVENTS.STREAM_CONNECTED, { viewName: this.viewName });
 
     } catch (error) {
       this.log.error('Failed to connect to Materialize', {}, error as Error);
@@ -73,18 +74,18 @@ export class MaterializeStreamer {
     }
 
     if (this.isStreaming) {
-      this.log.warn('Stream already active', { viewName: this.config.viewName });
+      this.log.warn('Stream already active', { viewName: this.viewName });
       return;
     }
 
     try {
-      this.log.info('Starting stream subscription', { viewName: this.config.viewName });
+      this.log.info('Starting stream subscription', { viewName: this.viewName });
       
       // First, validate that the view exists
       await this.validateView();
 
       // Start the SUBSCRIBE query with proper streaming
-      const subscribeQuery = `SUBSCRIBE (SELECT * FROM ${this.config.viewName}) WITH (SNAPSHOT)`;
+      const subscribeQuery = `SUBSCRIBE (SELECT * FROM ${this.viewName}) WITH (SNAPSHOT)`;
       this.log.debug('Executing SUBSCRIBE query', { query: subscribeQuery });
 
       // Use pg's streaming interface for long-running queries
@@ -97,20 +98,20 @@ export class MaterializeStreamer {
       });
 
       stream.on('error', (error: Error) => {
-        this.log.error('SUBSCRIBE query error', { viewName: this.config.viewName }, error);
+        this.log.error('SUBSCRIBE query error', { viewName: this.viewName }, error);
         this.handleStreamError(error);
       });
 
       stream.on('end', () => {
-        this.log.warn('SUBSCRIBE stream ended unexpectedly', { viewName: this.config.viewName });
+        this.log.warn('SUBSCRIBE stream ended unexpectedly', { viewName: this.viewName });
         this.isStreaming = false;
       });
 
       this.isStreaming = true;
-      this.log.info('Stream subscription started successfully', { viewName: this.config.viewName });
+      this.log.info('Stream subscription started successfully', { viewName: this.viewName });
 
     } catch (error) {
-      this.log.error('Failed to start streaming', { viewName: this.config.viewName }, error as Error);
+      this.log.error('Failed to start streaming', { viewName: this.viewName }, error as Error);
       throw new Error(`Stream initialization failed: ${(error as Error).message}`);
     }
   }
@@ -142,38 +143,38 @@ export class MaterializeStreamer {
     try {
       const result = await this.client.query(
         'SELECT schemaname, tablename FROM pg_tables WHERE tablename = $1',
-        [this.config.viewName]
+        [this.viewName]
       );
 
       if (result.rows.length === 0) {
         // Also check views
         const viewResult = await this.client.query(
           'SELECT schemaname, viewname FROM pg_views WHERE viewname = $1',
-          [this.config.viewName]
+          [this.viewName]
         );
 
         if (viewResult.rows.length === 0) {
-          throw new Error(`View or table '${this.config.viewName}' does not exist`);
+          throw new Error(`View or table '${this.viewName}' does not exist`);
         }
       }
 
-      this.log.debug('View validation successful', { viewName: this.config.viewName });
+      this.log.debug('View validation successful', { viewName: this.viewName });
     } catch (error) {
-      this.log.error('View validation failed', { viewName: this.config.viewName }, error as Error);
+      this.log.error('View validation failed', { viewName: this.viewName }, error as Error);
       throw error;
     }
   }
 
   private handleStreamRow(row: any): void {
     try {
-      this.eventBus.publish(EVENTS.STREAM_UPDATE_RECEIVED, { viewName: this.config.viewName, row });
+      this.eventBus.publish(EVENTS.STREAM_UPDATE_RECEIVED, { viewName: this.viewName, row });
       
       // Materialize SUBSCRIBE format: includes 'diff' column (1 = insert/update, -1 = delete)
       // and 'mz_timestamp' column (excluded from cached data)
       const diff = row.diff;
       if (typeof diff !== 'number') {
         this.log.warn('Received row without valid diff column', { 
-          viewName: this.config.viewName, 
+          viewName: this.viewName, 
           rowKeys: Object.keys(row) 
         });
         return;
@@ -190,7 +191,7 @@ export class MaterializeStreamer {
       };
 
       this.log.debug('Processing stream event', {
-        viewName: this.config.viewName,
+        viewName: this.viewName,
         diff,
         rowKeys: Object.keys(rowData)
       });
@@ -199,9 +200,9 @@ export class MaterializeStreamer {
       this.viewCache.applyStreamEvent(streamEvent);
 
       // Publish to subscribers
-      this.eventBus.publishStreamEvent(this.config.viewName, streamEvent);
+      this.eventBus.publishStreamEvent(this.viewName, streamEvent);
       this.eventBus.publish(EVENTS.STREAM_UPDATE_PARSED, { 
-        viewName: this.config.viewName, 
+        viewName: this.viewName, 
         diff,
         rowKeys: Object.keys(rowData),
         cacheSize: this.viewCache.size()
@@ -209,7 +210,7 @@ export class MaterializeStreamer {
 
     } catch (error) {
       this.log.error('Error processing stream row', { 
-        viewName: this.config.viewName,
+        viewName: this.viewName,
         row: JSON.stringify(row)
       }, error as Error);
     }
@@ -217,7 +218,7 @@ export class MaterializeStreamer {
 
   private handleConnectionError(error: Error): void {
     this.log.error('Connection error occurred', { 
-      viewName: this.config.viewName,
+      viewName: this.viewName,
       host: this.config.host,
       port: this.config.port
     }, error);
@@ -226,7 +227,7 @@ export class MaterializeStreamer {
     this.isStreaming = false;
     
     this.eventBus.publish(EVENTS.STREAM_ERROR, { 
-      viewName: this.config.viewName, 
+      viewName: this.viewName, 
       error: error.message,
       errorType: 'connection'
     });
@@ -235,7 +236,7 @@ export class MaterializeStreamer {
     if (!this.isShuttingDown) {
       setTimeout(() => {
         this.log.info('Attempting to reconnect to Materialize', { 
-          viewName: this.config.viewName 
+          viewName: this.viewName 
         });
         this.connect().catch(err => {
           this.log.error('Reconnection failed', {}, err);
@@ -246,13 +247,13 @@ export class MaterializeStreamer {
 
   private handleStreamError(error: Error): void {
     this.log.error('Stream error occurred', { 
-      viewName: this.config.viewName 
+      viewName: this.viewName 
     }, error);
     
     this.isStreaming = false;
     
     this.eventBus.publish(EVENTS.STREAM_ERROR, { 
-      viewName: this.config.viewName, 
+      viewName: this.viewName, 
       error: error.message,
       errorType: 'stream'
     });
@@ -261,7 +262,7 @@ export class MaterializeStreamer {
     if (this.isConnected && !this.isShuttingDown) {
       setTimeout(() => {
         this.log.info('Attempting to restart stream', { 
-          viewName: this.config.viewName 
+          viewName: this.viewName 
         });
         this.startStreaming().catch(err => {
           this.log.error('Stream restart failed', {}, err);

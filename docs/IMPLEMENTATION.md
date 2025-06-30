@@ -84,6 +84,13 @@ npm run test -- --watch  # watch mode during dev
   - Docker: `./config/schema.sdl` relative to working directory  
   - Local dev: `./config/schema.sdl` relative to project root
   - System automatically detects config directory location
+  - Users copy `schema.example.sdl` to `schema.sdl` and customize
+
+### 5.2.1 View Name Resolution
+* View name is automatically extracted from the first data type in the SDL schema
+* Type name must match the Materialize view name exactly (e.g., `type live_pnl` → view `live_pnl`)
+* Subscription field names can be customized independently for GraphQL API design
+* Eliminates need for separate `VIEW_NAME` environment variable
 
 ### 5.3 GraphQL Server Configuration
 * GraphQL Yoga with WebSocket support (`graphql-ws` protocol)

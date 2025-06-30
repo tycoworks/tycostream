@@ -33,7 +33,6 @@ describe('Integration Tests', () => {
     user: 'materialize',
     password: 'password',
     database: 'materialize',
-    viewName: 'live_pnl',
   };
 
   beforeEach(() => {
@@ -60,7 +59,7 @@ type Subscription {
 
   it('should integrate MaterializeStreamer with ViewCache', async () => {
     const schema = loadSchema();
-    const streamer = new MaterializeStreamer(testConfig, schema.primaryKeyField);
+    const streamer = new MaterializeStreamer(testConfig, schema.viewName, schema.primaryKeyField);
     
     // Mock successful connection
     await streamer.connect();
@@ -133,7 +132,7 @@ type Subscription {
 
   it('should handle error scenarios gracefully', async () => {
     const schema = loadSchema();
-    const streamer = new MaterializeStreamer(testConfig, schema.primaryKeyField);
+    const streamer = new MaterializeStreamer(testConfig, schema.viewName, schema.primaryKeyField);
     
     // Mock connection failure
     mockClientInstance.connect.mockReset();

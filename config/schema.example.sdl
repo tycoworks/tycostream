@@ -1,4 +1,4 @@
-type LivePNL {
+type live_pnl {
   instrument_id: ID!
   symbol: String!
   net_position: Float!
@@ -9,5 +9,5 @@ type LivePNL {
 }
 
 type Subscription {
-  live_pnl: LivePNL!
+  live_pnl: live_pnl!
 }

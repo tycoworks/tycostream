@@ -23,6 +23,7 @@ The process must fail fast on startup if any critical requirement is missing or 
 #### 2.1 Configure
 
 * The system expects a schema file at `./config/schema.sdl`.
+* Users must copy `./config/schema.example.sdl` to `./config/schema.sdl` and customize it.
 * If the schema file is missing or malformed, the single service must fail fast at startup and exit with an appropriate error.
 
 ```env
@@ -31,13 +32,13 @@ SOURCE_PORT=6875
 SOURCE_USER=materialize
 SOURCE_PASSWORD=materialize
 SOURCE_DB=materialize
-VIEW_NAME=live_pnl
 ```
 
 ##### Example SDL Schema (schema.sdl)
 
 ```graphql
-type LivePNL {
+# Type name matches your Materialize view name exactly
+type live_pnl {
   instrument_id: ID!
   symbol: String!
   net_position: Float!
@@ -48,12 +49,13 @@ type LivePNL {
 }
 
 type Subscription {
-  live_pnl: LivePNL!
+  # You control the GraphQL API naming
+  livePnl: live_pnl!  # camelCase subscription field
 }
 ```
 
-* Schema is statically defined and must exist at `./config/schema.sdl`.
-* Schema file location is automatically discovered in both Docker and local development environments
+* Copy `schema.example.sdl` to `schema.sdl` and customize for your view
+* Type name must match your Materialize view name exactly
 * No query parameters or filtering logic are supported in 1.1.
 
 #### 2.1.1 Schema Requirements  
@@ -81,11 +83,9 @@ type Subscription {
 * No sorting or reordering is performed by tycostream
 * Updates preserve the original stream order for consistency
 
-#### 2.2.3 View and Schema Validation
-* System validates that the specified view exists in the database before starting
-* Schema files are validated for proper GraphQL format
-* Exactly one field of type `ID!` must be present to serve as primary key
-* System provides clear error messages for invalid configurations
+#### 2.2.3 Schema Configuration
+* Type name in SDL schema must match your Materialize view name exactly
+* Subscription field names can be customized independently for GraphQL API design
 
 #### 2.3 Expected Behavior
 

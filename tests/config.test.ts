@@ -20,7 +20,6 @@ describe('loadDatabaseConfig', () => {
     process.env.SOURCE_USER = 'materialize';
     process.env.SOURCE_PASSWORD = 'password';
     process.env.SOURCE_DB = 'materialize';
-    process.env.VIEW_NAME = 'test_view';
 
     const config = loadDatabaseConfig();
 
@@ -30,7 +29,6 @@ describe('loadDatabaseConfig', () => {
       user: 'materialize',
       password: 'password',
       database: 'materialize',
-      viewName: 'test_view',
     });
   });
 
@@ -39,7 +37,6 @@ describe('loadDatabaseConfig', () => {
     process.env.SOURCE_USER = 'materialize';
     process.env.SOURCE_PASSWORD = 'password';
     process.env.SOURCE_DB = 'materialize';
-    process.env.VIEW_NAME = 'test_view';
 
     expect(() => loadDatabaseConfig()).toThrow(ConfigError);
     expect(() => loadDatabaseConfig()).toThrow('Missing required environment variable: SOURCE_HOST');
@@ -51,7 +48,6 @@ describe('loadDatabaseConfig', () => {
     process.env.SOURCE_USER = 'materialize';
     process.env.SOURCE_PASSWORD = 'password';
     process.env.SOURCE_DB = 'materialize';
-    process.env.VIEW_NAME = 'test_view';
 
     expect(() => loadDatabaseConfig()).toThrow(ConfigError);
     expect(() => loadDatabaseConfig()).toThrow('SOURCE_PORT must be a valid port number');
@@ -92,6 +88,7 @@ type Subscription {
       
       expect(schema.typeDefs).toContain('type TestType');
       expect(schema.primaryKeyField).toBe('id');
+      expect(schema.viewName).toBe('TestType');
       expect(schema.fields).toHaveLength(3);
       expect(schema.fields[0]).toEqual({
         name: 'id',
@@ -100,8 +97,12 @@ type Subscription {
         isPrimaryKey: true,
       });
     } finally {
-      // Clean up
-      rmSync(realConfigDir, { recursive: true, force: true });
+      // Only clean up the test file, preserve schema.example.sdl
+      try {
+        rmSync(join(realConfigDir, 'schema.sdl'), { force: true });
+      } catch {
+        // File doesn't exist, that's fine
+      }
     }
   });
 
@@ -130,7 +131,12 @@ type Subscription {
       expect(() => loadSchema()).toThrow(ConfigError);
       expect(() => loadSchema()).toThrow('Schema must contain exactly one field of type ID!');
     } finally {
-      rmSync(realConfigDir, { recursive: true, force: true });
+      // Only clean up the test file, preserve schema.example.sdl
+      try {
+        rmSync(join(realConfigDir, 'schema.sdl'), { force: true });
+      } catch {
+        // File doesn't exist, that's fine
+      }
     }
   });
 
@@ -152,14 +158,28 @@ type Subscription {
 `;
 
     const realConfigDir = join(process.cwd(), 'config');
+    const schemaPath = join(realConfigDir, 'schema.sdl');
+    
+    // Only remove schema.sdl if it exists, preserve schema.example.sdl
+    try {
+      rmSync(schemaPath, { force: true });
+    } catch {
+      // File doesn't exist, that's fine
+    }
+    
     mkdirSync(realConfigDir, { recursive: true });
-    writeFileSync(join(realConfigDir, 'schema.sdl'), multiTypeSchema);
+    writeFileSync(schemaPath, multiTypeSchema);
 
     try {
       expect(() => loadSchema()).toThrow(ConfigError);
       expect(() => loadSchema()).toThrow('Schema must contain exactly one data type definition (found 2)');
     } finally {
-      rmSync(realConfigDir, { recursive: true, force: true });
+      // Only clean up the test file, preserve schema.example.sdl
+      try {
+        rmSync(schemaPath, { force: true });
+      } catch {
+        // File doesn't exist, that's fine
+      }
     }
   });
 });

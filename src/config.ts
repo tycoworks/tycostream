@@ -16,7 +16,6 @@ export function loadDatabaseConfig(): DatabaseConfig {
     SOURCE_USER: process.env.SOURCE_USER,
     SOURCE_PASSWORD: process.env.SOURCE_PASSWORD,
     SOURCE_DB: process.env.SOURCE_DB,
-    VIEW_NAME: process.env.VIEW_NAME,
   };
 
   for (const [key, value] of Object.entries(requiredEnvVars)) {
@@ -46,7 +45,6 @@ export function loadDatabaseConfig(): DatabaseConfig {
     user: requiredEnvVars.SOURCE_USER!,
     password: requiredEnvVars.SOURCE_PASSWORD!,
     database: requiredEnvVars.SOURCE_DB!,
-    viewName: requiredEnvVars.VIEW_NAME!,
   };
 }
 
@@ -98,12 +96,32 @@ export function loadSchema(): LoadedSchema {
 
   const fields = parseSchemaFields(typeDefs);
   const primaryKeyField = findPrimaryKeyField(fields);
+  const viewName = extractViewName(typeDefs);
 
   return {
     typeDefs,
     fields,
     primaryKeyField,
+    viewName,
   };
+}
+
+function extractViewName(typeDefs: string): string {
+  // Find all type definitions and filter out Subscription types
+  const allTypeMatches = typeDefs.match(/type\s+(\w+)\s*\{[^}]+\}/g) || [];
+  const dataTypeMatches = allTypeMatches.filter(match => !match.includes('type Subscription'));
+  
+  if (dataTypeMatches.length === 0) {
+    throw new ConfigError('Invalid schema: no data type definition found', 'SCHEMA_FORMAT');
+  }
+  
+  // Extract the type name from the first data type
+  const typeNameMatch = dataTypeMatches[0]!.match(/type\s+(\w+)\s*\{/);
+  if (!typeNameMatch) {
+    throw new ConfigError('Invalid schema: malformed type definition', 'SCHEMA_FORMAT');
+  }
+  
+  return typeNameMatch[1]!;
 }
 
 function parseSchemaFields(typeDefs: string): SchemaField[] {
@@ -187,7 +205,6 @@ function getExampleValue(envVar: string): string {
     SOURCE_USER: 'materialize',
     SOURCE_PASSWORD: 'materialize',
     SOURCE_DB: 'materialize',
-    VIEW_NAME: 'live_pnl',
   };
   return examples[envVar] || 'your-value-here';
 }

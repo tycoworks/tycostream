@@ -4,7 +4,6 @@ export interface DatabaseConfig {
   user: string;
   password: string;
   database: string;
-  viewName: string;
 }
 
 export interface StreamEvent {
@@ -23,6 +22,7 @@ export interface LoadedSchema {
   typeDefs: string;
   fields: SchemaField[];
   primaryKeyField: string;
+  viewName: string;
 }
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';

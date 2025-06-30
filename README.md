@@ -84,5 +84,6 @@ SOURCE_PORT=6875
 SOURCE_USER=materialize
 SOURCE_PASSWORD=materialize
 SOURCE_DB=materialize
-VIEW_NAME=live_pnl
 ```
+
+The view name is automatically determined from your GraphQL schema type name.
