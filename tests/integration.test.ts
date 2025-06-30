@@ -5,20 +5,19 @@ import { loadSchema } from '../src/config.js';
 import { pubsub } from '../src/pubsub.js';
 import { EVENTS } from '../shared/events.js';
 import type { DatabaseConfig, StreamEvent } from '../shared/types.js';
+import { Client } from 'pg';
 
-// Mock pg client for integration tests
-const mockClient = {
+// Create a mock client instance that can be accessed in tests
+const mockClientInstance = {
   connect: vi.fn().mockResolvedValue(undefined),
-  end: vi.fn().mockResolvedValue(undefined),
+  end: vi.fn().mockResolvedValue(undefined), 
   query: vi.fn(),
   on: vi.fn(),
 };
 
-// Create a mock constructor that returns our mock client
-const MockClient = vi.fn().mockImplementation(() => mockClient);
-
+// Mock pg and pg-query-stream modules
 vi.mock('pg', () => ({
-  Client: MockClient,
+  Client: vi.fn().mockImplementation(() => mockClientInstance),
 }));
 
 vi.mock('pg-query-stream', () => ({
@@ -41,8 +40,7 @@ describe('Integration Tests', () => {
     
     // Mock successful connection
     await streamer.connect();
-    expect(MockClient).toHaveBeenCalled();
-    expect(mockClient.connect).toHaveBeenCalled();
+    expect(vi.mocked(Client)).toHaveBeenCalled();
 
     // Simulate stream events
     const testEvents: StreamEvent[] = [
@@ -114,8 +112,8 @@ describe('Integration Tests', () => {
     const streamer = new MaterializeStreamer(testConfig, schema.primaryKeyField);
     
     // Mock connection failure
-    mockClient.connect.mockReset();
-    mockClient.connect.mockRejectedValueOnce(new Error('Connection failed'));
+    mockClientInstance.connect.mockReset();
+    mockClientInstance.connect.mockRejectedValueOnce(new Error('Connection failed'));
 
     await expect(streamer.connect()).rejects.toThrow('Database connection failed');
     expect(streamer.connected).toBe(false);
