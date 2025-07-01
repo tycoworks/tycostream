@@ -5,6 +5,7 @@ import { logger } from '../shared/logger.js';
 import { ViewCache } from '../shared/viewCache.js';
 import { pubsub, type PubSub } from './pubsub.js';
 import { EVENTS } from '../shared/events.js';
+import type { GraphQLServer } from './yoga.js';
 
 export class MaterializeStreamer {
   private client: Client | null = null;
@@ -12,6 +13,7 @@ export class MaterializeStreamer {
   private isConnected = false;
   private isStreaming = false;
   private viewCache: ViewCache;
+  private graphqlServer: GraphQLServer | null = null;
 
   constructor(
     private config: DatabaseConfig,
@@ -21,6 +23,10 @@ export class MaterializeStreamer {
     viewCache?: ViewCache
   ) {
     this.viewCache = viewCache || new ViewCache(primaryKeyField, viewName);
+  }
+
+  setGraphQLServer(server: GraphQLServer): void {
+    this.graphqlServer = server;
   }
 
   async connect(): Promise<void> {
@@ -45,9 +51,9 @@ export class MaterializeStreamer {
         keepAliveInitialDelayMillis: 10000,
       });
 
-      this.client.on('error', (error) => {
+      this.client.on('error', async (error) => {
         this.log.error('Postgres client error', {}, error);
-        this.handleConnectionError(error);
+        await this.handleConnectionError(error);
       });
 
       this.client.on('end', () => {
@@ -97,9 +103,9 @@ export class MaterializeStreamer {
         this.handleStreamRow(row);
       });
 
-      stream.on('error', (error: Error) => {
+      stream.on('error', async (error: Error) => {
         this.log.error('SUBSCRIBE query error', { viewName: this.viewName }, error);
-        this.handleStreamError(error);
+        await this.handleStreamError(error);
       });
 
       stream.on('end', () => {
@@ -216,8 +222,8 @@ export class MaterializeStreamer {
     }
   }
 
-  private handleConnectionError(error: Error): void {
-    this.log.error('Connection error occurred', { 
+  private async handleConnectionError(error: Error): Promise<void> {
+    this.log.error('❌ Fatal connection error - service will exit', { 
       viewName: this.viewName,
       host: this.config.host,
       port: this.config.port
@@ -232,21 +238,14 @@ export class MaterializeStreamer {
       errorType: 'connection'
     });
 
-    // Attempt reconnection after delay (basic retry logic)
-    if (!this.isShuttingDown) {
-      setTimeout(() => {
-        this.log.info('Attempting to reconnect to Materialize', { 
-          viewName: this.viewName 
-        });
-        this.connect().catch(err => {
-          this.log.error('Reconnection failed', {}, err);
-        });
-      }, 5000);
-    }
+    // Graceful shutdown before exit
+    await this.gracefulShutdown();
+    this.log.error('🔌 Materialize connection lost - restart tycostream to resume service');
+    process.exit(1);
   }
 
-  private handleStreamError(error: Error): void {
-    this.log.error('Stream error occurred', { 
+  private async handleStreamError(error: Error): Promise<void> {
+    this.log.error('❌ Fatal stream error - service will exit', { 
       viewName: this.viewName 
     }, error);
     
@@ -258,16 +257,33 @@ export class MaterializeStreamer {
       errorType: 'stream'
     });
 
-    // Attempt to restart streaming after delay
-    if (this.isConnected && !this.isShuttingDown) {
-      setTimeout(() => {
-        this.log.info('Attempting to restart stream', { 
-          viewName: this.viewName 
-        });
-        this.startStreaming().catch(err => {
-          this.log.error('Stream restart failed', {}, err);
-        });
-      }, 3000);
+    // Graceful shutdown before exit
+    await this.gracefulShutdown();
+    this.log.error('📡 Materialize stream failed - restart tycostream to resume service');
+    process.exit(1);
+  }
+
+  private async gracefulShutdown(): Promise<void> {
+    this.log.info('🔄 Beginning graceful shutdown');
+    
+    if (this.graphqlServer) {
+      try {
+        this.log.info('📡 Closing GraphQL subscriptions');
+        await this.graphqlServer.stop();
+        this.log.info('✅ GraphQL server shut down gracefully');
+      } catch (error) {
+        this.log.error('Failed to shutdown GraphQL server gracefully', {}, error as Error);
+      }
+    }
+    
+    if (this.client) {
+      try {
+        this.log.info('🔌 Closing Materialize connection');
+        await this.client.end();
+        this.log.info('✅ Materialize connection closed');
+      } catch (error) {
+        this.log.error('Failed to close Materialize connection gracefully', {}, error as Error);
+      }
     }
   }
 

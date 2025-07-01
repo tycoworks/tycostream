@@ -1,7 +1,6 @@
 # Implementation details and approach
 *Development practices, coding standards, testing strategies, and technical implementation details*
 ## 1. Philosophy
-
 > This project is a foundation-layer service. Our goal is correctness, modularity, testability, and maintainability — not premature optimization.
 > 
 
@@ -14,7 +13,6 @@ Key points:
 ---
 
 ## 2. Project Structure
-
 Outline how code should be organized:
 
 - `/src/` – Node.js + TypeScript service that handles both streaming and GraphQL delivery logic
@@ -25,7 +23,6 @@ Outline how code should be organized:
 ---
 
 ## 3. Modularity Guidelines
-
 - Each component must expose a **clear interface**.
 - No circular dependencies — isolate read/update responsibilities.
 - Pub/sub, cache, filters, schema loaders — all should be **plug-and-play**.
@@ -34,7 +31,6 @@ Outline how code should be organized:
 ---
 
 ## 4. Test-Driven Development
-
 - Every function must be **unit tested** — no untested logic.
 - Every component must have **contract-level integration tests**.
 - Prefer:
@@ -70,31 +66,32 @@ npm run test -- --watch  # watch mode during dev
 ---
 
 ## 5. Technical Implementation Details
-
 ### 5.1 Materialize Streaming Protocol
 * Implementation details for the Backend Service described in [ARCHITECTURE.md](ARCHITECTURE.md#backend-service)
 * Uses Postgres wire protocol with `SUBSCRIBE` queries via `pg-query-stream`
 * Stream format: `{ row: Record<string, any>, diff: number }`
-* Automatic reconnection logic with configured timeouts
 * Metadata column handling (`mz_timestamp`, `diff`) and view validation
 
+### 5.1.1 Error Handling Implementation
+* Technical implementation uses `process.exit(1)` for immediate termination
+* Graceful shutdown sequence implemented: close GraphQL subscriptions, then close database connection
+* Structured error logging with context (view name, error type, debug info)
+* Async error handlers coordinate shutdown between MaterializeStreamer and GraphQLServer
+
 ### 5.2 Schema Path Resolution
-* Schema path resolution supports both Docker and local development environments
-* System automatically detects config directory location
 * Path resolution logic implemented in `findConfigRoot()` function
+* Config directory detection using `process.cwd()` and `existsSync()` checks
 
 ### 5.2.1 View Name Resolution
-* View name is automatically extracted from the first data type in the SDL schema
-* Type name must match the Materialize view name exactly (e.g., `type live_pnl` → view `live_pnl`)
-* Subscription field names can be customized independently for GraphQL API design
-* Eliminates need for separate `VIEW_NAME` environment variable
+* Implementation uses `extractViewName()` function with regex parsing
+* Regex pattern `/type\s+(\w+)\s*\{/` extracts type names from SDL
+* Filters out `type Subscription` definitions to find data types only
 
 ### 5.3 GraphQL Server Configuration
 * Implementation details for the GraphQL API Server described in [ARCHITECTURE.md](ARCHITECTURE.md#graphql-api-server-graphql-yoga)
-* GraphQL Yoga with WebSocket support (`graphql-ws` protocol)
-* Async generator-based subscription resolvers for real-time streaming
-* Single endpoint at `/graphql` with WebSocket upgrade support
-* GraphiQL integration for development
+* GraphQL Yoga server implementation with `createYoga()` and WebSocket configuration
+* Async generator-based subscription resolvers using `buildSchema()` from GraphQL
+* WebSocket server implementation using `WebSocketServer` from `ws` package
 
 ### 5.4 View Cache Implementation
 * Implementation details for the View Cache component described in [ARCHITECTURE.md](ARCHITECTURE.md#view-cache)
@@ -115,7 +112,6 @@ npm run test -- --watch  # watch mode during dev
 ---
 
 ## 6. Event Structure and Internal APIs
-
 ### Stream Event Format
 ```typescript
 interface StreamEvent {
@@ -154,7 +150,6 @@ interface PubSub {
 ---
 
 ## 7. Logging & Observability
-
 ### Structured Logging Implementation
 - Component-specific child loggers (e.g., 'materialize', 'viewCache', 'pubsub')
 - Structured log format with consistent field naming
@@ -171,7 +166,6 @@ interface PubSub {
 ---
 
 ## 8. Performance
-
 > This system should be efficient — but not at the cost of maintainability (yet).
 > 
 - In 1.x, **favor clarity over micro-optimization**.

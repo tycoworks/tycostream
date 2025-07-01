@@ -48,6 +48,9 @@ async function main(): Promise<void> {
     await graphqlServer.start();
     log.info('✅ GraphQL server started successfully');
 
+    // Phase 6: Wire up graceful shutdown coordination
+    streamer.setGraphQLServer(graphqlServer);
+
     // Register shutdown handlers
     shutdownManager.addHandler(async () => {
       log.info('🛑 Shutting down GraphQL server...');

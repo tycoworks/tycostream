@@ -51,7 +51,7 @@ cp .env.example .env
 # Edit .env with your Materialize connection details
 
 cp config/schema.example.sdl config/schema.sdl
-# Edit config/schema.sdl type name to match your Materialize view name
+# Edit config/schema.sdl type name and fields to match your Materialize view
 docker-compose up
 ```
 
@@ -85,5 +85,3 @@ SOURCE_USER=materialize
 SOURCE_PASSWORD=materialize
 SOURCE_DB=materialize
 ```
-
-The view name is automatically determined from your GraphQL schema type name.
