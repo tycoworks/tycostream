@@ -146,30 +146,34 @@ export class GraphQLServer {
           yield { [viewName]: row };
         }
 
-        // Then subscribe to live updates
+        // Create event queue for live updates
+        const eventQueue: StreamEvent[] = [];
         let isActive = true;
+        
+        // Single subscription that queues events
         const unsubscribe = pubsub.subscribeToStream(viewName, (streamEvent: StreamEvent) => {
-          // This callback doesn't need to return anything - 
-          // we handle the events in the main loop below
+          if (isActive) {
+            eventQueue.push(streamEvent);
+          }
         });
 
         try {
-          // Keep subscription alive and yield stream events
+          // Process queued events as they arrive
           while (isActive) {
-            const streamEvent: StreamEvent = await new Promise((resolve) => {
-              const handler = (event: StreamEvent) => {
-                resolve(event);
-              };
-              const unsub = pubsub.subscribeToStream(viewName, handler);
-              
-              // Clean up after getting one event
-              setTimeout(() => unsub(), 100);
-            });
-
-            if (streamEvent.diff === 1) {
-              yield { [viewName]: streamEvent.row };
+            // Wait for events to arrive
+            while (eventQueue.length === 0 && isActive) {
+              await new Promise(resolve => setTimeout(resolve, 10)); // Small delay to prevent busy waiting
             }
-            // Skip deletes for now
+            
+            // Process all queued events
+            while (eventQueue.length > 0 && isActive) {
+              const streamEvent = eventQueue.shift()!;
+              
+              if (streamEvent.diff === 1) {
+                yield { [viewName]: streamEvent.row };
+              }
+              // Skip deletes for now
+            }
           }
         } finally {
           isActive = false;
