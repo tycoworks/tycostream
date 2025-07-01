@@ -14,10 +14,11 @@ export class ViewCache {
     const primaryKey = event.row[this.primaryKeyField];
     
     if (primaryKey === undefined || primaryKey === null) {
-      this.log.warn('Stream event missing primary key', {
+      this.log.warn('Data row missing required ID field', {
         viewName: this.viewName,
         primaryKeyField: this.primaryKeyField,
-        rowKeys: Object.keys(event.row)
+        rowKeys: Object.keys(event.row),
+        suggestion: `Check that your view has a field named '${this.primaryKeyField}' with type ID!`
       });
       return;
     }

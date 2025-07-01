@@ -163,6 +163,20 @@ interface PubSub {
 - GraphQL subscription lifecycle
 - Error categorization (connection vs stream vs validation errors)
 
+### Log Message Format Standards
+- Use structured logging with consistent field naming
+- No emojis in log messages (professional output)
+- Consistent punctuation: use commas instead of dashes for message flow
+- Remove unnecessary adverbs like "successfully" - actions either complete or fail
+- Component-specific child loggers maintain context automatically
+
+### Log Message Content Principles
+- **No technical jargon**: Avoid terms like "unhandled promise rejection", "uncaught exception", "SUBSCRIBE query"
+- **User-facing language**: Use "database connection", "view streaming", "unexpected error" instead
+- **Actionable guidance**: Include next steps users should take ("restart tycostream", "check .env file")
+- **Context-aware**: Provide specific suggestions based on the error scenario
+- **Clear exit reasons**: Explain why tycostream is shutting down and how to resume service
+
 ---
 
 ## 8. Performance

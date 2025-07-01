@@ -52,12 +52,12 @@ export class MaterializeStreamer {
       });
 
       this.client.on('error', async (error) => {
-        this.log.error('Postgres client error', {}, error);
+        this.log.error('Database connection error', {}, error);
         await this.handleConnectionError(error);
       });
 
       this.client.on('end', () => {
-        this.log.warn('Postgres connection ended');
+        this.log.warn('Database connection closed');
         this.isConnected = false;
         this.eventBus.publish(EVENTS.STREAM_DISCONNECTED, { viewName: this.viewName });
       });
@@ -65,7 +65,7 @@ export class MaterializeStreamer {
       await this.client.connect();
       this.isConnected = true;
 
-      this.log.info('Connected to Materialize successfully');
+      this.log.info('Connected to Materialize');
       this.eventBus.publish(EVENTS.STREAM_CONNECTED, { viewName: this.viewName });
 
     } catch (error) {
@@ -104,17 +104,17 @@ export class MaterializeStreamer {
       });
 
       stream.on('error', async (error: Error) => {
-        this.log.error('SUBSCRIBE query error', { viewName: this.viewName }, error);
+        this.log.error('View streaming error', { viewName: this.viewName }, error);
         await this.handleStreamError(error);
       });
 
       stream.on('end', () => {
-        this.log.warn('SUBSCRIBE stream ended unexpectedly', { viewName: this.viewName });
+        this.log.warn('View stream ended unexpectedly', { viewName: this.viewName });
         this.isStreaming = false;
       });
 
       this.isStreaming = true;
-      this.log.info('Stream subscription started successfully', { viewName: this.viewName });
+      this.log.info('Stream subscription started', { viewName: this.viewName });
 
     } catch (error) {
       this.log.error('Failed to start streaming', { viewName: this.viewName }, error as Error);
@@ -131,7 +131,7 @@ export class MaterializeStreamer {
     if (this.client) {
       try {
         await this.client.end();
-        this.log.info('Disconnected from Materialize successfully');
+        this.log.info('Disconnected from Materialize');
       } catch (error) {
         this.log.error('Error during disconnect', {}, error as Error);
       } finally {
@@ -179,9 +179,10 @@ export class MaterializeStreamer {
       // and 'mz_timestamp' column (excluded from cached data)
       const diff = row.diff;
       if (typeof diff !== 'number') {
-        this.log.warn('Received row without valid diff column', { 
+        this.log.warn('Received invalid data from Materialize view', { 
           viewName: this.viewName, 
-          rowKeys: Object.keys(row) 
+          rowKeys: Object.keys(row),
+          issue: 'Missing diff column - check view compatibility'
         });
         return;
       }
@@ -215,7 +216,7 @@ export class MaterializeStreamer {
       });
 
     } catch (error) {
-      this.log.error('Error processing stream row', { 
+      this.log.error('Failed to process data from Materialize view', { 
         viewName: this.viewName,
         row: JSON.stringify(row)
       }, error as Error);
@@ -223,7 +224,7 @@ export class MaterializeStreamer {
   }
 
   private async handleConnectionError(error: Error): Promise<void> {
-    this.log.error('❌ Fatal connection error - service will exit', { 
+    this.log.error('Database connection lost, tycostream will exit', { 
       viewName: this.viewName,
       host: this.config.host,
       port: this.config.port
@@ -240,12 +241,12 @@ export class MaterializeStreamer {
 
     // Graceful shutdown before exit
     await this.gracefulShutdown();
-    this.log.error('🔌 Materialize connection lost - restart tycostream to resume service');
+    this.log.error('Database connection failed - restart tycostream and check Materialize server status');
     process.exit(1);
   }
 
   private async handleStreamError(error: Error): Promise<void> {
-    this.log.error('❌ Fatal stream error - service will exit', { 
+    this.log.error('View streaming failed, tycostream will exit', { 
       viewName: this.viewName 
     }, error);
     
@@ -259,18 +260,18 @@ export class MaterializeStreamer {
 
     // Graceful shutdown before exit
     await this.gracefulShutdown();
-    this.log.error('📡 Materialize stream failed - restart tycostream to resume service');
+    this.log.error('View streaming failed - restart tycostream and verify view exists in Materialize');
     process.exit(1);
   }
 
   private async gracefulShutdown(): Promise<void> {
-    this.log.info('🔄 Beginning graceful shutdown');
+    this.log.info('Beginning graceful shutdown');
     
     if (this.graphqlServer) {
       try {
-        this.log.info('📡 Closing GraphQL subscriptions');
+        this.log.info('Closing GraphQL subscriptions');
         await this.graphqlServer.stop();
-        this.log.info('✅ GraphQL server shut down gracefully');
+        this.log.info('GraphQL server shut down gracefully');
       } catch (error) {
         this.log.error('Failed to shutdown GraphQL server gracefully', {}, error as Error);
       }
@@ -278,9 +279,9 @@ export class MaterializeStreamer {
     
     if (this.client) {
       try {
-        this.log.info('🔌 Closing Materialize connection');
+        this.log.info('Closing Materialize connection');
         await this.client.end();
-        this.log.info('✅ Materialize connection closed');
+        this.log.info('Materialize connection closed');
       } catch (error) {
         this.log.error('Failed to close Materialize connection gracefully', {}, error as Error);
       }

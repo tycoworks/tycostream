@@ -95,7 +95,7 @@ export class GraphQLServer {
         });
       });
 
-      this.log.info('GraphQL server started successfully', { 
+      this.log.info('GraphQL server started', { 
         port: this.port,
         endpoint: `http://localhost:${this.port}/graphql`,
         subscriptions: `ws://localhost:${this.port}/graphql`

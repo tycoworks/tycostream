@@ -58,12 +58,12 @@ export class ShutdownManager {
     }
 
     process.on('uncaughtException', (error) => {
-      this.log.error('Uncaught exception - initiating emergency shutdown', {}, error);
+      this.log.error('Critical system error detected, shutting down tycostream', {}, error);
       void this.shutdown('uncaughtException');
     });
 
     process.on('unhandledRejection', (reason, promise) => {
-      this.log.error('Unhandled promise rejection - initiating emergency shutdown', { 
+      this.log.error('Unexpected error detected, shutting down tycostream', { 
         reason: String(reason),
         promise: String(promise)
       });
