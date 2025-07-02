@@ -52,6 +52,29 @@ export class GraphQLServer {
           viewCache: this.viewCache,
           primaryKeyField: this.schema!.primaryKeyField,
         }),
+        plugins: [
+          {
+            onRequest: ({ request, url }) => {
+              this.log.debug('GraphQL HTTP Request', {
+                method: request.method,
+                url: url.pathname,
+                userAgent: request.headers.get('user-agent')?.substring(0, 50) || 'unknown'
+              });
+            },
+            onParse: ({ params }: any) => {
+              const query = params.query;
+              const queryText = typeof query === 'string' 
+                ? query.replace(/\s+/g, ' ').trim().substring(0, 150) + (query.length > 150 ? '...' : '')
+                : `${typeof query} query`;
+                
+              this.log.info('GraphQL Operation', {
+                operationName: params.operationName || 'unnamed',
+                operation: queryText.split(' ')[0] || 'unknown', // query, mutation, subscription
+                hasVariables: !!params.variables && Object.keys(params.variables).length > 0
+              });
+            }
+          }
+        ],
       });
 
       this.server = createServer(yoga);
@@ -72,13 +95,13 @@ export class GraphQLServer {
             primaryKeyField: this.schema!.primaryKeyField,
           }),
           onConnect: (ctx) => {
-            this.log.info('GraphQL WebSocket client connected', { 
+            this.log.debug('GraphQL WebSocket client connected', { 
               connectionParams: ctx.connectionParams 
             });
             this.eventBus.publish(EVENTS.CLIENT_SUBSCRIBED, { viewName: this.viewName });
           },
           onDisconnect: (ctx) => {
-            this.log.info('GraphQL WebSocket client disconnected');
+            this.log.debug('GraphQL WebSocket client disconnected');
             this.eventBus.publish(EVENTS.CLIENT_UNSUBSCRIBED, { viewName: this.viewName });
           },
         },
@@ -183,7 +206,16 @@ export class GraphQLServer {
       resolve: (payload: any) => payload[this.viewName],
     };
 
+    // Create query resolver for current snapshot
+    const queryResolvers: Record<string, any> = {};
+    const queryFieldName = this.mapFieldToView(this.viewName);
+    queryResolvers[queryFieldName] = (parent: any, args: any, context: any) => {
+      const { viewCache } = context;
+      return viewCache.getSnapshot();
+    };
+
     const resolvers = {
+      Query: queryResolvers,
       Subscription: subscriptionResolvers,
     };
 
@@ -194,6 +226,16 @@ export class GraphQLServer {
       ...executableSchema,
       _subscriptionType: executableSchema.getSubscriptionType(),
     };
+
+    // Manual resolver attachment for queries
+    if (executableSchema.getQueryType()) {
+      const queryFields = executableSchema.getQueryType()!.getFields();
+      for (const [fieldName, field] of Object.entries(queryFields)) {
+        if (resolvers.Query[fieldName]) {
+          (field as any).resolve = resolvers.Query[fieldName];
+        }
+      }
+    }
 
     // Manual resolver attachment for subscriptions
     if (executableSchema.getSubscriptionType()) {
