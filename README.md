@@ -90,4 +90,4 @@ GRAPHQL_UI=true npm run dev
 
 Then visit `http://localhost:${GRAPHQL_PORT}/graphql` (default: http://localhost:4000/graphql) to test queries and subscriptions interactively.
 
-Alternatively, use `curl` for queries or `wscat` for subscriptions via command line.
+Alternatively, use `curl` for queries or `npx` for subscriptions via command line.
