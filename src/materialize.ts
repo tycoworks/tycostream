@@ -164,14 +164,14 @@ export class MaterializeStreamer {
       throw new Error('Schema fields not provided to MaterializeStreamer');
     }
 
-    // Use SDL schema to determine column order
-    // Columns come in the order they're defined in the SDL schema
-    this.columnNames = this.schemaFields.map(field => field.name);
+    // COPY (SUBSCRIBE...) output format is: [mz_timestamp, diff, ...view_columns...]
+    // So we need to put metadata columns first, then SDL schema fields
+    this.columnNames = ['mz_timestamp', 'diff'];
+    
+    // Add SDL schema fields (in order they're defined)
+    this.columnNames.push(...this.schemaFields.map(field => field.name));
 
-    // Add Materialize metadata columns that SUBSCRIBE adds
-    this.columnNames.push('diff', 'mz_timestamp');
-
-    this.log.debug('Set up column structure from SDL schema', { 
+    this.log.debug('Set up column structure for COPY SUBSCRIBE output', { 
       viewName: this.viewName,
       columnCount: this.columnNames.length,
       columns: this.columnNames
@@ -210,7 +210,7 @@ export class MaterializeStreamer {
         }
       }
 
-      this.log.debug('View validation successful', { viewName: this.viewName });
+      this.log.info('View validation successful', { viewName: this.viewName });
     } catch (error) {
       this.log.error('View validation failed', { viewName: this.viewName }, error as Error);
       throw error;
@@ -257,12 +257,23 @@ export class MaterializeStreamer {
       
       // Materialize SUBSCRIBE format: includes 'diff' column (1 = insert/update, -1 = delete)
       // and 'mz_timestamp' column (excluded from cached data)
-      const diff = row.diff;
-      if (typeof diff !== 'number') {
+      // COPY output comes as strings, so parse the diff value
+      const diffRaw = row.diff;
+      if (diffRaw === undefined || diffRaw === null) {
         this.log.warn('Received invalid data from Materialize view', { 
           viewName: this.viewName, 
           rowKeys: Object.keys(row),
           issue: 'Missing diff column - check view compatibility'
+        });
+        return;
+      }
+      
+      const diff = parseInt(diffRaw.toString(), 10);
+      if (isNaN(diff)) {
+        this.log.warn('Received invalid diff value from Materialize view', { 
+          viewName: this.viewName, 
+          diffValue: diffRaw,
+          issue: 'Invalid diff column value'
         });
         return;
       }
@@ -277,10 +288,10 @@ export class MaterializeStreamer {
         diff,
       };
 
-      this.log.debug('Processing stream event', {
+      this.log.debug('Stream processing', {
         viewName: this.viewName,
         diff,
-        rowKeys: Object.keys(rowData)
+        cacheSize: this.viewCache.size()
       });
 
       // Update view cache with the stream event

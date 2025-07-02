@@ -80,6 +80,24 @@ npm run test -- --watch  # watch mode during dev
 * Structured error logging with context (view name, error type, debug info)
 * Async error handlers coordinate shutdown between MaterializeStreamer and GraphQLServer
 
+### 5.2 Logging Strategy
+* **ERROR**: System failures, connection loss, startup failures requiring immediate attention
+* **WARN**: Invalid data received, recoverable issues, configuration problems
+* **INFO**: Business events (startup/shutdown, GraphQL operations, connection state changes)
+* **DEBUG**: Internal mechanics (stream parsing, cache updates, pub/sub events)
+
+#### What We Log:
+* **System Lifecycle**: startup, shutdown, component initialization
+* **Database Operations**: connection state, query execution, streaming status
+* **GraphQL Operations**: HTTP requests, query parsing, subscription management
+* **Data Flow**: stream events (sampled to reduce noise), cache updates, pub/sub events
+* **Error Conditions**: failures with full context for debugging
+
+#### Debug vs Production:
+* DEBUG level logs stream processing details
+* INFO level captures key business events visible in production
+* Component-based logging with structured JSON for observability tools
+
 ### 5.2 Schema Path Resolution
 * Path resolution logic implemented in `findConfigRoot()` function
 * Config directory detection using `process.cwd()` and `existsSync()` checks
