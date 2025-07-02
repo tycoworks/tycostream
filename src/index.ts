@@ -33,7 +33,7 @@ async function main(): Promise<void> {
 
     // Phase 3: Connect to Materialize
     log.info('Connecting to Materialize');
-    const streamer = new MaterializeStreamer(dbConfig, schema.viewName, schema.primaryKeyField);
+    const streamer = new MaterializeStreamer(dbConfig, schema.viewName, schema.primaryKeyField, pubsub, undefined, schema.fields);
     await streamer.connect();
     log.info('Connected to Materialize');
 

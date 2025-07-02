@@ -1,6 +1,6 @@
 import { Client } from 'pg';
-import QueryStream from 'pg-query-stream';
-import type { DatabaseConfig, StreamEvent } from '../shared/types.js';
+import { from as copyFrom, to as copyTo } from 'pg-copy-streams';
+import type { DatabaseConfig, StreamEvent, SchemaField } from '../shared/types.js';
 import { logger } from '../shared/logger.js';
 import { ViewCache } from '../shared/viewCache.js';
 import { pubsub, type PubSub } from './pubsub.js';
@@ -20,7 +20,8 @@ export class MaterializeStreamer {
     private viewName: string,
     primaryKeyField: string,
     private eventBus: PubSub = pubsub,
-    viewCache?: ViewCache
+    viewCache?: ViewCache,
+    private schemaFields?: SchemaField[]
   ) {
     this.viewCache = viewCache || new ViewCache(primaryKeyField, viewName);
   }
@@ -90,27 +91,44 @@ export class MaterializeStreamer {
       // First, validate that the view exists
       await this.validateView();
 
-      // Start the SUBSCRIBE query with proper streaming
-      const subscribeQuery = `SUBSCRIBE (SELECT * FROM ${this.viewName}) WITH (SNAPSHOT)`;
-      this.log.debug('Executing SUBSCRIBE query', { query: subscribeQuery });
+      // Get column structure for COPY output parsing from SDL schema
+      this.setupColumnStructure();
 
-      // Use pg's streaming interface for long-running queries
-      const query = new QueryStream(subscribeQuery);
-      const stream = this.client.query(query);
-      
-      // Handle streaming rows as they arrive
-      stream.on('data', (row: any) => {
-        this.handleStreamRow(row);
-      });
+      // Start streaming subscription with initial snapshot using COPY
+      const subscribeQuery = `COPY (SUBSCRIBE TO ${this.viewName} WITH (SNAPSHOT)) TO STDOUT`;
+      this.log.debug('Executing streaming SUBSCRIBE query', { query: subscribeQuery });
 
-      stream.on('error', async (error: Error) => {
-        this.log.error('View streaming error', { viewName: this.viewName }, error);
-        await this.handleStreamError(error);
+      // Use pg-copy-streams for proper COPY streaming (like the Rust implementation)
+      const copyToStream = copyTo(subscribeQuery);
+      const stream = this.client.query(copyToStream);
+
+      // Handle stream data line by line
+      stream.on('data', (chunk: Buffer) => {
+        try {
+          const lines = chunk.toString('utf8').split('\n');
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine) {
+              this.log.debug('Raw COPY data received', { 
+                viewName: this.viewName, 
+                line: trimmedLine
+              });
+              this.handleCopyLine(trimmedLine);
+            }
+          }
+        } catch (error) {
+          this.log.error('Error processing COPY data', { viewName: this.viewName }, error as Error);
+        }
       });
 
       stream.on('end', () => {
-        this.log.warn('View stream ended unexpectedly', { viewName: this.viewName });
+        this.log.warn('COPY stream ended', { viewName: this.viewName });
         this.isStreaming = false;
+      });
+
+      stream.on('error', async (error: Error) => {
+        this.log.error('COPY stream error', { viewName: this.viewName }, error);
+        await this.handleStreamError(error);
       });
 
       this.isStreaming = true;
@@ -141,26 +159,54 @@ export class MaterializeStreamer {
     }
   }
 
+  private setupColumnStructure(): void {
+    if (!this.schemaFields) {
+      throw new Error('Schema fields not provided to MaterializeStreamer');
+    }
+
+    // Use SDL schema to determine column order
+    // Columns come in the order they're defined in the SDL schema
+    this.columnNames = this.schemaFields.map(field => field.name);
+
+    // Add Materialize metadata columns that SUBSCRIBE adds
+    this.columnNames.push('diff', 'mz_timestamp');
+
+    this.log.debug('Set up column structure from SDL schema', { 
+      viewName: this.viewName,
+      columnCount: this.columnNames.length,
+      columns: this.columnNames
+    });
+  }
+
   private async validateView(): Promise<void> {
     if (!this.client) {
       throw new Error('No database connection');
     }
 
     try {
-      const result = await this.client.query(
+      // Check tables first
+      const tableResult = await this.client.query(
         'SELECT schemaname, tablename FROM pg_tables WHERE tablename = $1',
         [this.viewName]
       );
 
-      if (result.rows.length === 0) {
-        // Also check views
+      if (tableResult.rows.length === 0) {
+        // Check regular views
         const viewResult = await this.client.query(
           'SELECT schemaname, viewname FROM pg_views WHERE viewname = $1',
           [this.viewName]
         );
 
         if (viewResult.rows.length === 0) {
-          throw new Error(`View or table '${this.viewName}' does not exist`);
+          // Check Materialize materialized views
+          const mvResult = await this.client.query(
+            'SELECT name FROM mz_materialized_views WHERE name = $1',
+            [this.viewName]
+          );
+
+          if (mvResult.rows.length === 0) {
+            throw new Error(`View or table '${this.viewName}' does not exist`);
+          }
         }
       }
 
@@ -168,6 +214,40 @@ export class MaterializeStreamer {
     } catch (error) {
       this.log.error('View validation failed', { viewName: this.viewName }, error as Error);
       throw error;
+    }
+  }
+
+  private handleCopyLine(line: string): void {
+    try {
+      // Parse tab-separated COPY output
+      const fields = line.split('\t');
+      
+      // Map fields to column names using dynamically retrieved structure
+      const row: Record<string, any> = {};
+      
+      fields.forEach((field, index) => {
+        if (index < this.columnNames.length) {
+          const columnName = this.columnNames[index];
+          if (columnName) {
+            row[columnName] = field === '\\N' ? null : field;
+          }
+        }
+      });
+
+      this.log.debug('Parsed COPY line into row', { 
+        viewName: this.viewName,
+        rowKeys: Object.keys(row),
+        expectedColumns: this.columnNames.length,
+        actualFields: fields.length
+      });
+
+      this.handleStreamRow(row);
+    } catch (error) {
+      this.log.error('Error parsing COPY line', { 
+        viewName: this.viewName,
+        line: line,
+        columnNames: this.columnNames
+      }, error as Error);
     }
   }
 
@@ -289,6 +369,7 @@ export class MaterializeStreamer {
   }
 
   private isShuttingDown = false;
+  private columnNames: string[] = [];
 
   get connected(): boolean {
     return this.isConnected;

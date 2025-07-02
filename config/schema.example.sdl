@@ -8,6 +8,11 @@ type live_pnl {
   theoretical_pnl: Float!
 }
 
+type Query {
+  # Current snapshot of live_pnl data
+  live_pnl: [live_pnl!]!
+}
+
 type Subscription {
   live_pnl: live_pnl!
 }

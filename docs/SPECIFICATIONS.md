@@ -43,9 +43,14 @@ type live_pnl {
   theoretical_pnl: Float!
 }
 
+type Query {
+  # Current snapshot of live_pnl data
+  live_pnl: [live_pnl!]!
+}
+
 type Subscription {
   # You control the GraphQL API naming
-  livePnl: live_pnl!  # camelCase subscription field
+  live_pnl: live_pnl!
 }
 ```
 
@@ -54,11 +59,12 @@ type Subscription {
 
 #### 2.1.1 Schema Requirements  
 * Schema files must be valid GraphQL SDL format
-* Must contain exactly one data type definition (excluding `type Subscription`)
+* Must contain exactly one data type definition (excluding `type Query` and `type Subscription`)
 * Multiple data types will be supported in future versions - system fails fast if more than one is found
 * Exactly one field of type `ID!` must be present to serve as the primary key
 * Primary key field name can be anything (e.g., `instrument_id: ID!`)
-* Must include a `type Subscription` that references the data type
+* Must include a `type Query` that provides current snapshot access
+* Must include a `type Subscription` that references the data type for real-time updates
 
 #### 2.2 Start
 * The backend subscribes to the specified Materialize view

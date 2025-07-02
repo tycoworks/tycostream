@@ -68,8 +68,10 @@ npm run test -- --watch  # watch mode during dev
 ## 5. Technical Implementation Details
 ### 5.1 Materialize Streaming Protocol
 * Implementation details for the Backend Service described in [ARCHITECTURE.md](ARCHITECTURE.md#backend-service)
-* Uses Postgres wire protocol with `SUBSCRIBE` queries via `pg-query-stream`
+* Uses Postgres wire protocol with `COPY (SUBSCRIBE TO view WITH (SNAPSHOT)) TO STDOUT` via `pg-copy-streams`
 * Stream format: `{ row: Record<string, any>, diff: number }`
+* Tab-separated COPY output parsing with proper null handling (`\N`)
+* Column structure determined from SDL schema field definitions (no database introspection required)
 * Metadata column handling (`mz_timestamp`, `diff`) and view validation
 
 ### 5.1.1 Error Handling Implementation
@@ -102,7 +104,7 @@ npm run test -- --watch  # watch mode during dev
 ### 5.5 Schema Validation Implementation
 * Regex-based parsing to detect ID! field in SDL schema files
 * File system validation for schema file existence
-* Validates exactly one data type definition (excluding `type Subscription`)
+* Validates exactly one data type definition (excluding `type Query` and `type Subscription`)
 * Fails fast with helpful error if multiple data types found
 * Multiple data types will be supported in future versions
 * GraphQL format validation using string parsing

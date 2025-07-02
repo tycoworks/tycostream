@@ -16,13 +16,14 @@ const mockClientInstance = {
   on: vi.fn(),
 };
 
-// Mock pg and pg-query-stream modules
+// Mock pg and pg-copy-streams modules
 vi.mock('pg', () => ({
   Client: vi.fn().mockImplementation(() => mockClientInstance),
 }));
 
-vi.mock('pg-query-stream', () => ({
-  default: vi.fn(),
+vi.mock('pg-copy-streams', () => ({
+  from: vi.fn(),
+  to: vi.fn(),
 }));
 
 describe('Integration Tests', () => {

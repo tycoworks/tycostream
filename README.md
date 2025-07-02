@@ -76,6 +76,9 @@ const LIVE_PNL_SUBSCRIPTION = gql`
 const { data } = useSubscription(LIVE_PNL_SUBSCRIPTION);
 ```
 
+### Schema Requirements:
+Your `config/schema.sdl` file must include both a `type Query` (for snapshot access) and `type Subscription` (for real-time updates), plus exactly one data type definition.
+
 ### Configure via `.env` or environment variables:
 
 ```

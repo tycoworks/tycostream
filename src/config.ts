@@ -1,6 +1,10 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { config } from 'dotenv';
 import type { DatabaseConfig, LoadedSchema, SchemaField } from '../shared/types.js';
+
+// Load .env file from project root
+config();
 
 export class ConfigError extends Error {
   constructor(message: string, public readonly field?: string) {
@@ -107,9 +111,11 @@ export function loadSchema(): LoadedSchema {
 }
 
 function extractViewName(typeDefs: string): string {
-  // Find all type definitions and filter out Subscription types
+  // Find all type definitions and filter out Query and Subscription types
   const allTypeMatches = typeDefs.match(/type\s+(\w+)\s*\{[^}]+\}/g) || [];
-  const dataTypeMatches = allTypeMatches.filter(match => !match.includes('type Subscription'));
+  const dataTypeMatches = allTypeMatches.filter(match => 
+    !match.includes('type Subscription') && !match.includes('type Query')
+  );
   
   if (dataTypeMatches.length === 0) {
     throw new ConfigError('Invalid schema: no data type definition found', 'SCHEMA_FORMAT');
@@ -127,9 +133,11 @@ function extractViewName(typeDefs: string): string {
 function parseSchemaFields(typeDefs: string): SchemaField[] {
   const fields: SchemaField[] = [];
   
-  // Check for multiple type definitions - we only support one data type (excluding Subscription)
+  // Check for multiple type definitions - we only support one data type (excluding Query and Subscription)
   const allTypeMatches = typeDefs.match(/type\s+\w+\s*\{[^}]+\}/g) || [];
-  const dataTypeMatches = allTypeMatches.filter(match => !match.includes('type Subscription'));
+  const dataTypeMatches = allTypeMatches.filter(match => 
+    !match.includes('type Subscription') && !match.includes('type Query')
+  );
   
   if (dataTypeMatches.length === 0) {
     throw new ConfigError('Invalid schema: no data type definition found', 'SCHEMA_FORMAT');
