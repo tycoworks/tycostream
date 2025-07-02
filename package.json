@@ -26,7 +26,6 @@
     "graphql-yoga": "^5.0.0",
     "pg": "^8.11.3",
     "pg-copy-streams": "^7.0.0",
-    "pg-query-stream": "^4.5.4",
     "ws": "^8.14.2"
   },
   "devDependencies": {

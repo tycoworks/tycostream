@@ -9,7 +9,7 @@ import { pubsub } from './pubsub.js';
 async function main(): Promise<void> {
   const log = logger.child({ component: 'main' });
   
-  try {
+   try {
     log.info('tycostream starting');
 
     // Phase 1: Load and validate configuration

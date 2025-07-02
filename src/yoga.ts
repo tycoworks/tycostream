@@ -52,6 +52,7 @@ export class GraphQLServer {
           viewCache: this.viewCache,
           primaryKeyField: this.schema!.primaryKeyField,
         }),
+        maskedErrors: false,
         plugins: [
           {
             onRequest: ({ request, url }) => {
@@ -62,15 +63,19 @@ export class GraphQLServer {
               });
             },
             onParse: ({ params }: any) => {
-              const query = params.query;
-              const queryText = typeof query === 'string' 
-                ? query.replace(/\s+/g, ' ').trim().substring(0, 150) + (query.length > 150 ? '...' : '')
-                : `${typeof query} query`;
+              const query = String(params?.source || '');
+              const queryText = query.replace(/\s+/g, ' ').trim();
+              
+              // Extract operation type (query, mutation, subscription)
+              const operationMatch = queryText.match(/^(query|mutation|subscription)\s/i);
+              const operationType = operationMatch ? operationMatch[1]?.toLowerCase() : 
+                                  queryText.startsWith('{') ? 'query' : 'unknown';
                 
+              const hasVariables = params?.variables ? Object.keys(params.variables).length > 0 : false;
               this.log.info('GraphQL Operation', {
-                operationName: params.operationName || 'unnamed',
-                operation: queryText.split(' ')[0] || 'unknown', // query, mutation, subscription
-                hasVariables: !!params.variables && Object.keys(params.variables).length > 0
+                operationName: params?.operationName || 'unnamed',
+                operation: operationType,
+                hasVariables
               });
             },
             onResultProcess: ({ result, request }: any) => {
@@ -112,6 +117,12 @@ export class GraphQLServer {
           onDisconnect: (ctx) => {
             this.log.debug('GraphQL WebSocket client disconnected');
             this.eventBus.publish(EVENTS.CLIENT_UNSUBSCRIBED, { viewName: this.viewName });
+          },
+          onError: (ctx, message, errors) => {
+            this.log.debug('GraphQL WebSocket error', { 
+              message: message?.payload,
+              errorCount: errors.length 
+            });
           },
         },
         this.wsServer

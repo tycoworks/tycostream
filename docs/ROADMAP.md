@@ -84,6 +84,7 @@
 * Support for Live Query over SSE
 * Support for RisingWave as an alternative backend
 * Support for multi-source configuration (e.g. Materialize and RisingWave in one deployment)
+* Binary protocol support for Materialize streaming (requires better metadata about schema types)
 * Hasura-compatible introspection and schema generation
 * Comprehensive integration test suite using Materialize emulator with real streaming scenarios
 

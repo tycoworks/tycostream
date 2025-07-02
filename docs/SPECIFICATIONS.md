@@ -69,6 +69,11 @@ type Subscription {
 * Must include a `type Query` that provides current snapshot access
 * Must include a `type Subscription` that references the data type for real-time updates
 
+#### 2.1.2 Schema Compatibility Requirements
+* SDL schema field types must be compatible with the corresponding Materialize view column types
+* Field names and order in SDL must match the Materialize view structure exactly
+* Schema mismatches will be handled and reported at runtime
+
 #### 2.2 Start
 * The backend subscribes to the specified Materialize view
 * The GraphQL server loads the schema and exposes a WebSocket endpoint

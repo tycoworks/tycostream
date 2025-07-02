@@ -33,6 +33,7 @@ describe('loadDatabaseConfig', () => {
   });
 
   it('should throw ConfigError for missing SOURCE_HOST', () => {
+    delete process.env.SOURCE_HOST; // Explicitly remove SOURCE_HOST
     process.env.SOURCE_PORT = '6875';
     process.env.SOURCE_USER = 'materialize';
     process.env.SOURCE_PASSWORD = 'password';
