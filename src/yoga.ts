@@ -43,9 +43,9 @@ export class GraphQLServer {
       
       const yoga = createYoga({
         schema,
-        graphiql: {
+        graphiql: process.env.GRAPHQL_UI === 'true' ? {
           subscriptionsProtocol: 'WS',
-        },
+        } : false,
         context: () => ({
           pubsub: this.eventBus,
           viewName: this.viewName,

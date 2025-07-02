@@ -44,9 +44,10 @@ async function main(): Promise<void> {
 
     // Phase 5: Start GraphQL server
     log.info('Starting GraphQL server');
-    const graphqlServer = new GraphQLServer(schema, schema.viewName, streamer.cache, 4000);
+    const port = parseInt(process.env.GRAPHQL_PORT || '4000', 10);
+    const graphqlServer = new GraphQLServer(schema, schema.viewName, streamer.cache, port);
     await graphqlServer.start();
-    log.info('GraphQL server started');
+    log.info('GraphQL server started', { port });
 
     // Phase 6: Wire up graceful shutdown coordination
     streamer.setGraphQLServer(graphqlServer);
@@ -63,8 +64,8 @@ async function main(): Promise<void> {
     });
 
     log.info('tycostream is ready', {
-      graphqlEndpoint: 'http://localhost:4000/graphql',
-      subscriptionsEndpoint: 'ws://localhost:4000/graphql',
+      graphqlEndpoint: `http://localhost:${port}/graphql`,
+      subscriptionsEndpoint: `ws://localhost:${port}/graphql`,
       viewName: schema.viewName
     });
 

@@ -30,7 +30,15 @@ Outline how code should be organized:
 
 ---
 
-## 4. Test-Driven Development
+## 4. Encapsulation Guidelines
+- **Hide implementation details**: User-facing APIs (environment variables, configuration) should not expose underlying technology choices
+- **Generic naming**: Use `GRAPHQL_UI` instead of `ENABLE_GRAPHIQL`, `GRAPHQL_PORT` instead of `NODE_PORT`
+- **Technology-agnostic interfaces**: Users should not need to know we use GraphQL Yoga, Node.js, or specific npm packages
+- **Internal documentation exception**: Implementation files may reference specific technologies for developer guidance
+
+---
+
+## 5. Test-Driven Development
 - Every function must be **unit tested** — no untested logic.
 - Every component must have **contract-level integration tests**.
 - Prefer:
@@ -65,8 +73,8 @@ npm run test -- --watch  # watch mode during dev
 
 ---
 
-## 5. Technical Implementation Details
-### 5.1 Materialize Streaming Protocol
+## 6. Technical Implementation Details
+### 6.1 Materialize Streaming Protocol
 * Implementation details for the Backend Service described in [ARCHITECTURE.md](ARCHITECTURE.md#backend-service)
 * Uses Postgres wire protocol with `COPY (SUBSCRIBE TO view WITH (SNAPSHOT)) TO STDOUT` via `pg-copy-streams`
 * Stream format: `{ row: Record<string, any>, diff: number }`
@@ -74,13 +82,13 @@ npm run test -- --watch  # watch mode during dev
 * Column structure determined from SDL schema field definitions (no database introspection required)
 * Metadata column handling (`mz_timestamp`, `diff`) and view validation
 
-### 5.1.1 Error Handling Implementation
+### 6.1.1 Error Handling Implementation
 * Technical implementation uses `process.exit(1)` for immediate termination
 * Graceful shutdown sequence implemented: close GraphQL subscriptions, then close database connection
 * Structured error logging with context (view name, error type, debug info)
 * Async error handlers coordinate shutdown between MaterializeStreamer and GraphQLServer
 
-### 5.2 Logging Strategy
+### 6.2 Logging Strategy
 * **ERROR**: System failures, connection loss, startup failures requiring immediate attention
 * **WARN**: Invalid data received, recoverable issues, configuration problems
 * **INFO**: Business events (startup/shutdown, GraphQL operations, connection state changes)
@@ -98,28 +106,29 @@ npm run test -- --watch  # watch mode during dev
 * INFO level captures key business events visible in production
 * Component-based logging with structured JSON for observability tools
 
-### 5.2 Schema Path Resolution
+### 6.2 Schema Path Resolution
 * Path resolution logic implemented in `findConfigRoot()` function
 * Config directory detection using `process.cwd()` and `existsSync()` checks
 
-### 5.2.1 View Name Resolution
+### 6.2.1 View Name Resolution
 * Implementation uses `extractViewName()` function with regex parsing
 * Regex pattern `/type\s+(\w+)\s*\{/` extracts type names from SDL
 * Filters out `type Subscription` definitions to find data types only
 
-### 5.3 GraphQL Server Configuration
+### 6.3 GraphQL Server Configuration
 * Implementation details for the GraphQL API Server described in [ARCHITECTURE.md](ARCHITECTURE.md#graphql-api-server-graphql-yoga)
 * GraphQL Yoga server implementation with `createYoga()` and WebSocket configuration
 * Async generator-based subscription resolvers using `buildSchema()` from GraphQL
 * WebSocket server implementation using `WebSocketServer` from `ws` package
+* Optional GraphQL UI controlled by `GRAPHQL_UI` environment variable (disabled by default)
 
-### 5.4 View Cache Implementation
+### 6.4 View Cache Implementation
 * Implementation details for the View Cache component described in [ARCHITECTURE.md](ARCHITECTURE.md#view-cache)
 * ViewCache preserves insertion order using JavaScript Map data structure
 * Row operations: insert (append), update (replace in-place), delete (remove)
 * In-memory HashMap keyed by primary key field extracted from schema
 
-### 5.5 Schema Validation Implementation
+### 6.5 Schema Validation Implementation
 * Regex-based parsing to detect ID! field in SDL schema files
 * File system validation for schema file existence
 * Validates exactly one data type definition (excluding `type Query` and `type Subscription`)
@@ -131,7 +140,7 @@ npm run test -- --watch  # watch mode during dev
 
 ---
 
-## 6. Event Structure and Internal APIs
+## 7. Event Structure and Internal APIs
 ### Stream Event Format
 ```typescript
 interface StreamEvent {
@@ -169,7 +178,7 @@ interface PubSub {
 
 ---
 
-## 7. Logging & Observability
+## 8. Logging & Observability
 ### Structured Logging Implementation
 - Component-specific child loggers (e.g., 'materialize', 'viewCache', 'pubsub')
 - Structured log format with consistent field naming
@@ -199,7 +208,7 @@ interface PubSub {
 
 ---
 
-## 8. Performance
+## 9. Performance
 > This system should be efficient — but not at the cost of maintainability (yet).
 > 
 - In 1.x, **favor clarity over micro-optimization**.

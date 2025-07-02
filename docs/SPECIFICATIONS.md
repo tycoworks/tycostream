@@ -27,6 +27,9 @@ SOURCE_PORT=6875
 SOURCE_USER=materialize
 SOURCE_PASSWORD=materialize
 SOURCE_DB=materialize
+
+GRAPHQL_PORT=4000
+GRAPHQL_UI=true
 ```
 
 ##### Example SDL Schema (schema.sdl)
@@ -70,7 +73,7 @@ type Subscription {
 * The backend subscribes to the specified Materialize view
 * The GraphQL server loads the schema and exposes a WebSocket endpoint
 * GraphQL endpoint available at `/graphql` with WebSocket support
-* GraphiQL development interface provided for testing subscriptions
+* Optional GraphQL UI available for development testing when `GRAPHQL_UI=true`
 * Each schema field maps to a view name (1:1) 
 * Subscribed clients receive an initial snapshot followed by live updates
 
