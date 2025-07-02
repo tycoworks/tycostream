@@ -238,7 +238,11 @@ export class MaterializeStreamer {
         viewName: this.viewName,
         rowKeys: Object.keys(row),
         expectedColumns: this.columnNames.length,
-        actualFields: fields.length
+        actualFields: fields.length,
+        sampleData: {
+          raw: fields.slice(0, 3).join('\t'),
+          parsed: Object.fromEntries(Object.entries(row).slice(0, 5))
+        }
       });
 
       this.handleStreamRow(row);

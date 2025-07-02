@@ -72,6 +72,15 @@ export class GraphQLServer {
                 operation: queryText.split(' ')[0] || 'unknown', // query, mutation, subscription
                 hasVariables: !!params.variables && Object.keys(params.variables).length > 0
               });
+            },
+            onResultProcess: ({ result, request }: any) => {
+              if (result.data) {
+                this.log.debug('GraphQL Result', {
+                  operationType: request.operationName || 'unnamed',
+                  dataKeys: Object.keys(result.data),
+                  resultSample: JSON.stringify(result.data).substring(0, 200) + '...'
+                });
+              }
             }
           }
         ],
@@ -109,12 +118,9 @@ export class GraphQLServer {
       );
 
       await new Promise<void>((resolve, reject) => {
-        this.server!.listen(this.port, (err?: Error) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
+        this.server!.on('error', reject);
+        this.server!.listen(this.port, () => {
+          resolve();
         });
       });
 
@@ -162,11 +168,24 @@ export class GraphQLServer {
     subscriptionResolvers[subscriptionFieldName] = {
       subscribe: async function* (parent: any, args: any, context: any) {
         const { viewCache, viewName } = context;
+        const log = logger.child({ component: 'subscription' });
         
         // Send initial snapshot first
         const snapshot = viewCache.getSnapshot();
+        log.debug('Subscription initial snapshot', {
+          viewName,
+          snapshotSize: snapshot.length,
+          sampleRow: snapshot[0] ? JSON.stringify(snapshot[0]).substring(0, 100) : 'none'
+        });
+        
         for (const row of snapshot) {
-          yield { [viewName]: row };
+          const payload = { [viewName]: row };
+          log.debug('Subscription yielding snapshot event', {
+            viewName,
+            rowSample: JSON.stringify(row).substring(0, 100),
+            symbol: row.symbol
+          });
+          yield payload;
         }
 
         // Create event queue for live updates
