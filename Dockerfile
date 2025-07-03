@@ -4,16 +4,21 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci --only=production
+
+# Install all dependencies for build
+RUN npm ci
 
 # Copy source code
 COPY src/ ./src/
 COPY shared/ ./shared/
 COPY config/ ./config/
-COPY tsconfig.json vitest.config.ts ./
+COPY tsconfig.json ./
 
 # Build the application
 RUN npm run build
+
+# Remove dev dependencies for production
+RUN npm ci --only=production && npm cache clean --force
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs
