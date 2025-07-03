@@ -12,6 +12,8 @@ export class MaterializeStreamer {
   private log = logger.child({ component: 'materialize' });
   private isConnected = false;
   private isStreaming = false;
+  private isShuttingDown = false;
+  private copyStream: any = null;
   private viewCache: ViewCache;
   private graphqlServer: GraphQLServer | null = null;
 
@@ -100,10 +102,10 @@ export class MaterializeStreamer {
 
       // Use pg-copy-streams for proper COPY streaming (like the Rust implementation)
       const copyToStream = copyTo(subscribeQuery);
-      const stream = this.client.query(copyToStream);
+      this.copyStream = this.client.query(copyToStream);
 
       // Handle stream data line by line
-      stream.on('data', (chunk: Buffer) => {
+      this.copyStream.on('data', (chunk: Buffer) => {
         try {
           const lines = chunk.toString('utf8').split('\n');
           for (const line of lines) {
@@ -121,14 +123,17 @@ export class MaterializeStreamer {
         }
       });
 
-      stream.on('end', () => {
+      this.copyStream.on('end', () => {
         this.log.warn('COPY stream ended', { viewName: this.viewName });
         this.isStreaming = false;
       });
 
-      stream.on('error', async (error: Error) => {
-        this.log.error('COPY stream error', { viewName: this.viewName }, error);
-        await this.handleStreamError(error);
+      this.copyStream.on('error', async (error: Error) => {
+        if (!this.isShuttingDown) {
+          this.log.error('COPY stream error', { viewName: this.viewName }, error);
+          await this.handleStreamError(error);
+        }
+        // During shutdown, stream errors are expected and ignored
       });
 
       this.isStreaming = true;
@@ -356,6 +361,7 @@ export class MaterializeStreamer {
   }
 
   private async gracefulShutdown(): Promise<void> {
+    this.isShuttingDown = true;
     this.log.info('Beginning graceful shutdown');
     
     if (this.graphqlServer) {
@@ -365,6 +371,18 @@ export class MaterializeStreamer {
         this.log.info('GraphQL server shut down gracefully');
       } catch (error) {
         this.log.error('Failed to shutdown GraphQL server gracefully', {}, error as Error);
+      }
+    }
+    
+    // Properly close the COPY stream before closing the connection
+    if (this.copyStream) {
+      try {
+        this.log.debug('Closing COPY stream');
+        this.copyStream.destroy();
+        this.copyStream = null;
+        this.isStreaming = false;
+      } catch (error) {
+        this.log.debug('Error closing COPY stream (may already be closed)', {}, error as Error);
       }
     }
     
@@ -379,7 +397,6 @@ export class MaterializeStreamer {
     }
   }
 
-  private isShuttingDown = false;
   private columnNames: string[] = [];
 
   get connected(): boolean {
