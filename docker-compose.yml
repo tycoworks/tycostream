@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  tycostream:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      - SOURCE_HOST=${SOURCE_HOST}
+      - SOURCE_PORT=${SOURCE_PORT:-6875}
+      - SOURCE_USER=${SOURCE_USER}
+      - SOURCE_PASSWORD=${SOURCE_PASSWORD}
+      - SOURCE_DB=${SOURCE_DB}
+      - VIEW_NAME=${VIEW_NAME}
+    volumes:
+      - ./schema:/app/schema:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/graphql"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

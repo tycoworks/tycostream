@@ -5,12 +5,20 @@
 # Node / Encore / TypeScript
 node_modules/
 dist/
+*.d.ts
+*.js
+*.js.map
+!backend/src/*.js
+!*.config.js
 .env
-.env.*
+.env.local
+.env.*.local
+
+# User configuration files
+config/schema.sdl
 
 # Logs
 *.log
 
 # Docker
 *.local
-CLAUDE.md

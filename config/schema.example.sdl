@@ -1,0 +1,18 @@
+type live_pnl {
+  instrument_id: ID!
+  symbol: String!
+  net_position: Float!
+  latest_price: Float!
+  market_value: Float!
+  avg_cost_basis: Float!
+  theoretical_pnl: Float!
+}
+
+type Query {
+  # Current snapshot of live_pnl data
+  live_pnl: [live_pnl!]!
+}
+
+type Subscription {
+  live_pnl: live_pnl!
+}

@@ -1,0 +1,43 @@
+{
+  "name": "tycostream-core",
+  "version": "0.1.0",
+  "description": "Real-time GraphQL API for Materialize streaming views",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/src/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "graphql",
+    "materialize",
+    "streaming",
+    "real-time"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.0.1",
+    "graphql": "^16.8.1",
+    "graphql-ws": "^5.14.2",
+    "graphql-yoga": "^5.0.0",
+    "pg": "^8.11.3",
+    "pg-copy-streams": "^7.0.0",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "@types/pg": "^8.10.7",
+    "@types/pg-copy-streams": "^1.2.5",
+    "@types/ws": "^8.5.8",
+    "tsx": "^3.14.0",
+    "typescript": "^5.2.2",
+    "vitest": "^0.34.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
