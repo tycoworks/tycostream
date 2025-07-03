@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   const log = logger.child({ component: 'main' });
   
    try {
-    log.info('tycostream starting');
+    log.info('Starting tycostream');
 
     // Phase 1: Load and validate configuration
     log.info('Loading configuration');
