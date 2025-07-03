@@ -1,13 +1,13 @@
 # Milestone 1 — GraphQL Streaming API (MVP)
 
 ## Milestone 1.1 — Minimal Streaming
-**Goal:** Stream a single view via Apollo GraphQL client with minimal config.
+**Goal:** Stream a single view to one GraphQL client with minimal config.
 
 **Experience:**
 
 * Set environment variables: Materialize config + single view name
 * Start tycostream: docker-compose up
-* Stream real-time updates over GraphQL WebSockets
+* Connect single client to stream real-time updates over GraphQL WebSockets
 
 **Key Features:**
 
@@ -19,13 +19,14 @@
 ---
 
 ## Milestone 1.2 — Filtering + Nested Queries
-**Goal:** Request filtered subsets of live data and query nested structures.
+**Goal:** Multiple clients can request filtered subsets of live data and query nested structures concurrently.
 
 **Experience:**
 
 * Set environment variables as before
 * Start tycostream: docker-compose up
-* Use Apollo Client to request filtered data (e.g. where user\_id = 123)
+* Connect multiple clients simultaneously
+* Each client can request filtered data (e.g. where user\_id = 123)
 * Query nested data representing relationships (e.g. trades -> instrument)
 
 **New Features:**
@@ -33,11 +34,12 @@
 * GraphQL filter syntax + server-side filtering
 * Nested queries based on relational structures
 * Filtering by user/session/context
+* Concurrent client support: Multiple clients can connect and subscribe simultaneously without data corruption or race conditions
 
 ---
 
 ## Milestone 1.3 — Multi-View + Manual Schema
-**Goal:** Subscribe to multiple views via Apollo GraphQL client using manually defined schemas.
+**Goal:** Subscribe to multiple views using manually defined schemas.
 
 **Experience:**
 
