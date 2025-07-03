@@ -5,14 +5,8 @@ services:
     build: .
     ports:
       - "4000:4000"
-    environment:
-      - SOURCE_HOST=${SOURCE_HOST}
-      - SOURCE_PORT=${SOURCE_PORT:-6875}
-      - SOURCE_USER=${SOURCE_USER}
-      - SOURCE_PASSWORD=${SOURCE_PASSWORD}
-      - SOURCE_DB=${SOURCE_DB}
-      - GRAPHQL_PORT=${GRAPHQL_PORT:-4000}
-      - GRAPHQL_UI=${GRAPHQL_UI:-true}
+    env_file:
+      - .env
     volumes:
       - ./config:/app/config:ro
     restart: unless-stopped

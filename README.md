@@ -78,6 +78,11 @@ cp config/schema.example.sdl config/schema.sdl
 docker-compose up
 ```
 
+**Docker networking:** If Materialize runs on your host machine, update `.env`:
+```
+SOURCE_HOST=host.docker.internal
+```
+
 ---
 
 ## Testing
