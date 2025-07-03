@@ -73,11 +73,11 @@ export class GraphQLServer {
                                   queryText.startsWith('{') ? 'query' : 'unknown';
                 
               const hasVariables = params?.variables ? Object.keys(params.variables).length > 0 : false;
-              this.log.info('GraphQL Operation', {
-                operationName: params?.operationName || 'unnamed',
-                operation: operationType,
+              this.log.info({
+                operationName: params?.operationName,
+                operationType: operationType,
                 hasVariables
-              });
+              }, 'GraphQL Operation');
             },
             onResultProcess: ({ result, request }: any) => {
               if (result.data) {
@@ -187,6 +187,13 @@ export class GraphQLServer {
       subscribe: async function* (parent: any, args: any, context: any) {
         const { viewCache, viewName } = context;
         const log = logger.child({ component: 'subscription' });
+        
+        log.info({
+          operationName: undefined,
+          operationType: 'subscription',
+          hasVariables: false,
+          viewName
+        }, 'GraphQL Operation');
         
         // Send initial snapshot first
         const snapshot = viewCache.getSnapshot();
