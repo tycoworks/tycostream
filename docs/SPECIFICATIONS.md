@@ -20,6 +20,7 @@ The process must fail fast on startup if any critical requirement is missing or 
 * Users must copy `./config/schema.example.sdl` to `./config/schema.sdl` and customize it
 * Schema path resolution works in both Docker and local development environments
 * If the schema file is missing or malformed, the single service must fail fast at startup and exit with an appropriate error
+* Log verbosity controlled via `LOG_LEVEL` environment variable (values: `debug`, `info`, `warn`, `error`)
 
 ```env
 SOURCE_HOST=your-mz-host
@@ -30,6 +31,8 @@ SOURCE_DB=materialize
 
 GRAPHQL_PORT=4000
 GRAPHQL_UI=true
+
+LOG_LEVEL=info
 ```
 
 ##### Example SDL Schema (schema.sdl)

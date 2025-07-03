@@ -38,7 +38,27 @@ Outline how code should be organized:
 
 ---
 
-## 5. Test-Driven Development
+## 5. Dependency Management and Reuse Principle
+
+**CRITICAL: Prefer well-established libraries over custom implementations**
+
+- **Never reinvent the wheel**: If a mature, well-maintained library exists for a common task, use it
+- **Examples of what NOT to implement ourselves**:
+  - Logging (use Pino, Winston, etc.)
+  - HTTP servers (use Express, Fastify, etc.) 
+  - Database clients (use official clients)
+  - Date/time manipulation (use date-fns, dayjs)
+  - Validation (use Zod, Joi, etc.)
+- **When custom implementation is acceptable**:
+  - Core business logic specific to our domain
+  - Simple utilities where a library would be overkill
+  - Performance-critical paths where libraries add unnecessary overhead
+- **Research first**: Before writing any utility function, search npm for existing solutions
+- **Document decisions**: If choosing custom implementation, document why in code comments
+
+---
+
+## 6. Test-Driven Development
 - Every function must be **unit tested** — no untested logic.
 - Every component must have **contract-level integration tests**.
 - Prefer:
@@ -180,6 +200,7 @@ interface PubSub {
 
 ## 8. Logging & Observability
 ### Structured Logging Implementation
+- **Library**: Pino - high-performance JSON logger with structured logging capabilities
 - Component-specific child loggers (e.g., 'materialize', 'viewCache', 'pubsub')
 - Structured log format with consistent field naming
 - Log levels: `info` for major operations, `debug` for verbose data, `warn`/`error` for failures
