@@ -63,19 +63,17 @@ export class GraphQLServer {
                 userAgent: request.headers.get('user-agent')?.substring(0, 50) || 'unknown'
               });
             },
-            onParse: ({ params }: any) => {
-              const query = String(params?.source || '');
-              const queryText = query.replace(/\s+/g, ' ').trim();
+            onExecute: ({ args }: any) => {
+              const operationName = args.operationName || 'Anonymous';
+              const operation = args.document.definitions.find((def: any) => 
+                def.kind === 'OperationDefinition'
+              );
+              const operationType = operation?.operation || 'unknown';
+              const hasVariables = Object.keys(args.variableValues || {}).length > 0;
               
-              // Extract operation type (query, mutation, subscription)
-              const operationMatch = queryText.match(/^(query|mutation|subscription)\s/i);
-              const operationType = operationMatch ? operationMatch[1]?.toLowerCase() : 
-                                  queryText.startsWith('{') ? 'query' : 'unknown';
-                
-              const hasVariables = params?.variables ? Object.keys(params.variables).length > 0 : false;
               this.log.info({
-                operationName: params?.operationName,
-                operationType: operationType,
+                operationName,
+                operationType,
                 hasVariables
               }, 'GraphQL Operation');
             },
@@ -114,6 +112,17 @@ export class GraphQLServer {
               connectionParams: ctx.connectionParams 
             });
             this.eventBus.publish(EVENTS.CLIENT_SUBSCRIBED, { viewName: this.viewName });
+          },
+          onSubscribe: (ctx, msg) => {
+            const operationName = msg.payload.operationName || 'Anonymous';
+            const hasVariables = Object.keys(msg.payload.variables || {}).length > 0;
+            
+            this.log.info({
+              operationName,
+              operationType: 'subscription',
+              hasVariables,
+              viewName: this.viewName
+            }, 'GraphQL Operation');
           },
           onDisconnect: (ctx) => {
             this.log.debug('GraphQL WebSocket client disconnected');
@@ -187,13 +196,6 @@ export class GraphQLServer {
       subscribe: async function* (parent: any, args: any, context: any) {
         const { viewCache, viewName } = context;
         const log = logger.child({ component: 'subscription' });
-        
-        log.info({
-          operationName: undefined,
-          operationType: 'subscription',
-          hasVariables: false,
-          viewName
-        }, 'GraphQL Operation');
         
         // Send initial snapshot first
         const snapshot = viewCache.getSnapshot();
