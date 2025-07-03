@@ -11,9 +11,10 @@ services:
       - SOURCE_USER=${SOURCE_USER}
       - SOURCE_PASSWORD=${SOURCE_PASSWORD}
       - SOURCE_DB=${SOURCE_DB}
-      - VIEW_NAME=${VIEW_NAME}
+      - GRAPHQL_PORT=${GRAPHQL_PORT:-4000}
+      - GRAPHQL_UI=${GRAPHQL_UI:-true}
     volumes:
-      - ./schema:/app/schema:ro
+      - ./config:/app/config:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/graphql"]

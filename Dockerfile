@@ -9,7 +9,7 @@ RUN npm ci --only=production
 # Copy source code
 COPY src/ ./src/
 COPY shared/ ./shared/
-COPY schema/ ./schema/
+COPY config/ ./config/
 COPY tsconfig.json vitest.config.ts ./
 
 # Build the application
