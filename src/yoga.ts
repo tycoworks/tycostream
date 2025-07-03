@@ -129,7 +129,13 @@ export class GraphQLServer {
       );
 
       await new Promise<void>((resolve, reject) => {
-        this.server!.on('error', reject);
+        this.server!.on('error', (err: any) => {
+          if (err.code === 'EADDRINUSE') {
+            reject(new Error(`Port ${this.port} is already in use. Please ensure no other process is using this port or change GRAPHQL_PORT in your .env file.`));
+          } else {
+            reject(err);
+          }
+        });
         this.server!.listen(this.port, () => {
           resolve();
         });

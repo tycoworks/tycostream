@@ -8,7 +8,7 @@ Enable a developer to stream real-time updates from a single Materialize view us
 ### 2. Requirements
 * Apollo Client should be able to subscribe to a GraphQL field (e.g. `live_pnl`) and receive live updates into a frontend grid or table.
 
-The process must fail fast on startup if any critical requirement is missing or invalid — such as malformed schema files, misconfigured environment variables, or unreachable database hosts. This ensures predictable behavior and consistent state before serving subscriptions.
+The process must fail fast on startup if any critical requirement is missing or invalid — such as malformed schema files, misconfigured environment variables, ports already in use, or unreachable database hosts. This ensures predictable behavior and consistent state before serving subscriptions.
 
 #### 2.0.1 Error Handling and Recovery
 * System exits immediately on any runtime errors that prevent streaming service
