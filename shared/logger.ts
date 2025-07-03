@@ -1,8 +1,9 @@
 import pino from 'pino';
+import { getLogLevel } from '../src/config.js';
 
 // Configure Pino with environment-based log level
 const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
+  level: getLogLevel(),
   formatters: {
     level: (label) => {
       return { level: label };

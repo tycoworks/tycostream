@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { config } from 'dotenv';
@@ -5,6 +6,71 @@ import type { DatabaseConfig, LoadedSchema, SchemaField } from '../shared/types.
 
 // Load .env file from project root
 config();
+
+// Define environment schema with validation
+const envSchema = z.object({
+  // Database config
+  SOURCE_HOST: z.string().min(1, 'SOURCE_HOST is required'),
+  SOURCE_PORT: z.string()
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1).max(65535)),
+  SOURCE_USER: z.string().min(1, 'SOURCE_USER is required'),
+  SOURCE_PASSWORD: z.string().min(1, 'SOURCE_PASSWORD is required'),
+  SOURCE_DB: z.string().min(1, 'SOURCE_DB is required'),
+  
+  // GraphQL config
+  GRAPHQL_PORT: z.string()
+    .optional()
+    .default('4000')
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1).max(65535)),
+  GRAPHQL_UI: z.enum(['true', 'false'])
+    .optional()
+    .default('false')
+    .transform(val => val === 'true'),
+  
+  // Logging
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error'])
+    .optional()
+    .default('info')
+});
+
+// Infer the type from schema
+type EnvConfig = z.infer<typeof envSchema>;
+
+// Parse all env vars once (cache for performance, but allow reset for tests)
+let parsedEnv: EnvConfig | null = null;
+
+function getEnvConfig(): EnvConfig {
+  // In test environment, don't cache to allow env var changes
+  const shouldCache = process.env.NODE_ENV !== 'test';
+  
+  if (!parsedEnv || !shouldCache) {
+    try {
+      const parsed = envSchema.parse(process.env);
+      if (shouldCache) {
+        parsedEnv = parsed;
+      }
+      return parsed;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        // Format Zod errors into helpful messages
+        const issues = error.issues.map(issue => {
+          const path = issue.path.join('.');
+          const example = getExampleValue(path);
+          return `${path}: ${issue.message}. Example: ${path}=${example}`;
+        }).join('\n');
+        
+        throw new ConfigError(
+          `Configuration validation failed:\n${issues}`,
+          error.issues[0]?.path.join('.')
+        );
+      }
+      throw error;
+    }
+  }
+  return parsedEnv;
+}
 
 export class ConfigError extends Error {
   constructor(message: string, public readonly field?: string) {
@@ -14,42 +80,27 @@ export class ConfigError extends Error {
 }
 
 export function loadDatabaseConfig(): DatabaseConfig {
-  const requiredEnvVars = {
-    SOURCE_HOST: process.env.SOURCE_HOST,
-    SOURCE_PORT: process.env.SOURCE_PORT,
-    SOURCE_USER: process.env.SOURCE_USER,
-    SOURCE_PASSWORD: process.env.SOURCE_PASSWORD,
-    SOURCE_DB: process.env.SOURCE_DB,
-  };
-
-  for (const [key, value] of Object.entries(requiredEnvVars)) {
-    if (!value || value.trim() === '') {
-      throw new ConfigError(
-        `Missing required environment variable: ${key}. ` +
-        `Please set ${key} in your environment or .env file. ` +
-        `Example: ${key}=${getExampleValue(key)}`,
-        key
-      );
-    }
-  }
-
-  const port = parseInt(requiredEnvVars.SOURCE_PORT!, 10);
-  if (isNaN(port) || port <= 0 || port > 65535) {
-    throw new ConfigError(
-      `SOURCE_PORT must be a valid port number (1-65535). ` +
-      `Received: "${requiredEnvVars.SOURCE_PORT}". ` +
-      `Example: SOURCE_PORT=6875`,
-      'SOURCE_PORT'
-    );
-  }
-
+  const env = getEnvConfig();
+  
   return {
-    host: requiredEnvVars.SOURCE_HOST!,
-    port,
-    user: requiredEnvVars.SOURCE_USER!,
-    password: requiredEnvVars.SOURCE_PASSWORD!,
-    database: requiredEnvVars.SOURCE_DB!,
+    host: env.SOURCE_HOST,
+    port: env.SOURCE_PORT,
+    user: env.SOURCE_USER,
+    password: env.SOURCE_PASSWORD,
+    database: env.SOURCE_DB,
   };
+}
+
+export function getGraphQLPort(): number {
+  return getEnvConfig().GRAPHQL_PORT;
+}
+
+export function isGraphQLUIEnabled(): boolean {
+  return getEnvConfig().GRAPHQL_UI;
+}
+
+export function getLogLevel(): string {
+  return getEnvConfig().LOG_LEVEL;
 }
 
 function findConfigRoot(): string {
@@ -213,6 +264,9 @@ function getExampleValue(envVar: string): string {
     SOURCE_USER: 'materialize',
     SOURCE_PASSWORD: 'materialize',
     SOURCE_DB: 'materialize',
+    GRAPHQL_PORT: '4000',
+    GRAPHQL_UI: 'true',
+    LOG_LEVEL: 'info',
   };
   return examples[envVar] || 'your-value-here';
 }

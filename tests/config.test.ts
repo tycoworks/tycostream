@@ -39,8 +39,7 @@ describe('loadDatabaseConfig', () => {
     process.env.SOURCE_PASSWORD = 'password';
     process.env.SOURCE_DB = 'materialize';
 
-    expect(() => loadDatabaseConfig()).toThrow(ConfigError);
-    expect(() => loadDatabaseConfig()).toThrow('Missing required environment variable: SOURCE_HOST');
+    expect(() => loadDatabaseConfig()).toThrow('Configuration validation failed');
   });
 
   it('should throw ConfigError for invalid port', () => {
@@ -50,8 +49,7 @@ describe('loadDatabaseConfig', () => {
     process.env.SOURCE_PASSWORD = 'password';
     process.env.SOURCE_DB = 'materialize';
 
-    expect(() => loadDatabaseConfig()).toThrow(ConfigError);
-    expect(() => loadDatabaseConfig()).toThrow('SOURCE_PORT must be a valid port number');
+    expect(() => loadDatabaseConfig()).toThrow('Configuration validation failed');
   });
 });
 

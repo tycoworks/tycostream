@@ -1,4 +1,4 @@
-import { loadDatabaseConfig, loadSchema, ConfigError } from './config.js';
+import { loadDatabaseConfig, loadSchema, ConfigError, getGraphQLPort } from './config.js';
 import { MaterializeStreamer } from './materialize.js';
 import { GraphQLServer } from './yoga.js';
 import { logger } from '../shared/logger.js';
@@ -44,7 +44,7 @@ async function main(): Promise<void> {
 
     // Phase 5: Start GraphQL server
     log.info('Starting GraphQL server');
-    const port = parseInt(process.env.GRAPHQL_PORT || '4000', 10);
+    const port = getGraphQLPort();
     const graphqlServer = new GraphQLServer(schema, schema.viewName, streamer.cache, port);
     await graphqlServer.start();
     log.info('GraphQL server started', { port });

@@ -1,4 +1,5 @@
 import { createYoga } from 'graphql-yoga';
+import { isGraphQLUIEnabled } from './config.js';
 import { createServer } from 'http';
 import { useServer } from 'graphql-ws/lib/use/ws';
 import { WebSocketServer } from 'ws';
@@ -43,7 +44,7 @@ export class GraphQLServer {
       
       const yoga = createYoga({
         schema,
-        graphiql: process.env.GRAPHQL_UI === 'true' ? {
+        graphiql: isGraphQLUIEnabled() ? {
           subscriptionsProtocol: 'WS',
         } : false,
         context: () => ({

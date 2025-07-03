@@ -27,7 +27,8 @@
     "pg": "^8.11.3",
     "pg-copy-streams": "^7.0.0",
     "pino": "^9.7.0",
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "zod": "^3.25.71"
   },
   "devDependencies": {
     "@types/node": "^20.8.0",

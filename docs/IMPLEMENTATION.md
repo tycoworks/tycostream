@@ -126,29 +126,37 @@ npm run test -- --watch  # watch mode during dev
 * INFO level captures key business events visible in production
 * Component-based logging with structured JSON for observability tools
 
-### 6.2 Schema Path Resolution
+### 6.3 Configuration Validation
+* **Library**: Zod - TypeScript-first schema validation library for robust environment variable validation
+* Environment schema defined with type transforms (string → number for ports)
+* Built-in validation rules (port ranges, required fields, enum values for log levels)
+* Better error messages with examples and actionable guidance
+* Test-friendly caching (disabled in test environment for dynamic validation)
+* Helper functions: `getGraphQLPort()`, `isGraphQLUIEnabled()`, `getLogLevel()` centralize env var access
+
+### 6.4 Schema Path Resolution
 * Path resolution logic implemented in `findConfigRoot()` function
 * Config directory detection using `process.cwd()` and `existsSync()` checks
 
-### 6.2.1 View Name Resolution
+### 6.4.1 View Name Resolution
 * Implementation uses `extractViewName()` function with regex parsing
 * Regex pattern `/type\s+(\w+)\s*\{/` extracts type names from SDL
 * Filters out `type Subscription` definitions to find data types only
 
-### 6.3 GraphQL Server Configuration
+### 6.5 GraphQL Server Configuration
 * Implementation details for the GraphQL API Server described in [ARCHITECTURE.md](ARCHITECTURE.md#graphql-api-server-graphql-yoga)
 * GraphQL Yoga server implementation with `createYoga()` and WebSocket configuration
 * Async generator-based subscription resolvers using `buildSchema()` from GraphQL
 * WebSocket server implementation using `WebSocketServer` from `ws` package
 * Optional GraphQL UI controlled by `GRAPHQL_UI` environment variable (disabled by default)
 
-### 6.4 View Cache Implementation
+### 6.6 View Cache Implementation
 * Implementation details for the View Cache component described in [ARCHITECTURE.md](ARCHITECTURE.md#view-cache)
 * ViewCache preserves insertion order using JavaScript Map data structure
 * Row operations: insert (append), update (replace in-place), delete (remove)
 * In-memory HashMap keyed by primary key field extracted from schema
 
-### 6.5 Schema Validation Implementation
+### 6.7 Schema Validation Implementation
 * Regex-based parsing to detect ID! field in SDL schema files
 * File system validation for schema file existence
 * Validates exactly one data type definition (excluding `type Query` and `type Subscription`)
