@@ -59,6 +59,29 @@ Outline how code should be organized:
 
 ---
 
+## 5.1. Code Duplication and Constants Management
+
+**CRITICAL: Eliminate code duplication and magic numbers**
+
+- **No duplicate code fragments**: Never copy-paste code blocks or repeat similar logic across files
+- **No magic numbers**: All numeric values must be named constants with clear documentation
+- **No hardcoded strings**: Repeated string literals must be extracted to constants
+- **Component-local constants**: Keep configuration values close to where they're used
+- **Examples of component-local constants**:
+  - Connection timeouts in database modules
+  - Limits and thresholds in cache modules
+  - Default values in server configuration
+  - Component-specific timing values
+- **Constants best practices**:
+  - Use `const` assertions for immutable configuration: `as const`
+  - Document why values are chosen: "10ms provides responsive UI without excessive CPU usage"
+  - Keep constants private unless they need to be exported for testing
+  - Avoid global constants files that create artificial coupling
+- **Refactoring approach**: When you notice similar code in 2+ places, immediately extract to a shared utility
+- **Shared utilities acceptable**: Helper functions, test utilities, and cross-cutting concerns can be centralized
+
+---
+
 ## 6. Test-Driven Development
 - Every function must be **unit tested** — no untested logic.
 - Every component must have **contract-level integration tests**.

@@ -1,9 +1,12 @@
 import { EventEmitter } from 'events';
 import { logger, truncateForLog } from './logger.js';
+
+// Component-specific configuration
+const MAX_LISTENERS = 1000; // Maximum event listeners to prevent memory leaks
 import type { StreamEvent, RowUpdateEvent, CacheSubscriber, DiffType } from './types.js';
 
 export class ViewCache extends EventEmitter {
-  private static readonly MAX_LISTENERS = 1000;
+  private static readonly MAX_LISTENERS = MAX_LISTENERS;
   private cache = new Map<any, Record<string, any>>();
   private log = logger.child({ component: 'viewCache' });
 
@@ -130,7 +133,7 @@ export class ViewCache extends EventEmitter {
     });
     
     // Immediately emit current state as insert events
-    // Use setTimeout to ensure subscription is fully set up
+    // Use setTimeout(0) to defer to next event loop tick, ensuring subscription is fully set up
     setTimeout(() => {
       this.log.debug('Emitting current state to new subscriber', {
         viewName: this.viewName,

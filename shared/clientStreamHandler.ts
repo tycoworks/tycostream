@@ -1,4 +1,5 @@
 import { logger, truncateForLog } from './logger.js';
+import { nanoid } from 'nanoid';
 import type { ViewCache } from './viewCache.js';
 import type { RowUpdateEvent, CacheSubscriber } from './types.js';
 import PQueue from 'p-queue';
@@ -12,6 +13,8 @@ export class ClientStreamHandler implements CacheSubscriber {
   private isActive = true;
   private updateQueue: PQueue;
   private pendingUpdates: RowUpdateEvent[] = [];
+  private eventSignal: (() => void) | null = null;
+  private eventPromise: Promise<void> | null = null;
   private unsubscribeFromCache?: () => void;
   private clientId: string;
 
@@ -20,7 +23,7 @@ export class ClientStreamHandler implements CacheSubscriber {
     private cache: ViewCache,
     clientId?: string
   ) {
-    this.clientId = clientId || `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    this.clientId = clientId || `client-${nanoid(10)}`;
     this.log = this.log.child({ clientId: this.clientId, viewName });
     
     // Use p-queue for proper async queue management with ordering guarantees
@@ -55,11 +58,11 @@ export class ClientStreamHandler implements CacheSubscriber {
       
       this.log.debug('Subscribed to cache, processing event queue');
 
-      // Process all events using p-queue for proper async handling
+      // Process all events in a purely event-driven manner
       while (this.isActive) {
-        // Wait for events to arrive (current state + live updates)
-        while (this.pendingUpdates.length === 0 && this.isActive) {
-          await new Promise(resolve => setTimeout(resolve, 10)); 
+        // Wait for events to arrive using promise-based signaling
+        if (this.pendingUpdates.length === 0) {
+          await this.waitForNextEvent();
         }
 
         // Process all pending events in order
@@ -100,6 +103,27 @@ export class ClientStreamHandler implements CacheSubscriber {
     });
 
     this.pendingUpdates.push(event);
+    
+    // Signal that new events are available
+    if (this.eventSignal) {
+      const signal = this.eventSignal;
+      this.eventSignal = null;
+      this.eventPromise = null;
+      signal();
+    }
+  }
+
+  /**
+   * Wait for the next event using promise-based signaling
+   */
+  private async waitForNextEvent(): Promise<void> {
+    if (!this.isActive) return;
+    
+    this.eventPromise = new Promise<void>(resolve => {
+      this.eventSignal = resolve;
+    });
+    
+    await this.eventPromise;
   }
 
   /**

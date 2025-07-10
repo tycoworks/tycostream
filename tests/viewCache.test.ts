@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ViewCache } from '../shared/viewCache.js';
 import type { StreamEvent, RowUpdateEvent, CacheSubscriber } from '../shared/types.js';
+import { createTestCache, TestData, TEST_DELAYS, createMockSubscriber } from './test-utils.js';
 
 describe('ViewCache', () => {
   let cache: ViewCache;
-  const primaryKeyField = 'id';
-  const viewName = 'test_view';
 
   beforeEach(() => {
-    cache = new ViewCache(primaryKeyField, viewName);
+    cache = createTestCache();
   });
 
   it('should initialize empty cache', () => {
@@ -17,16 +16,16 @@ describe('ViewCache', () => {
   });
 
   it('should handle insert events (diff = 1)', () => {
-    const insertEvent: StreamEvent = {
-      row: { id: '123', name: 'test', value: 42.5 },
-      diff: 1,
-    };
+    const insertEvent: StreamEvent = TestData.streamEvent(
+      TestData.basicRow('123', 'test', 42.5)
+    );
 
     cache.applyStreamEvent(insertEvent);
 
     expect(cache.size()).toBe(1);
-    expect(cache.getRow('123')).toEqual({ id: '123', name: 'test', value: 42.5 });
-    expect(cache.getAllRows()).toEqual([{ id: '123', name: 'test', value: 42.5 }]);
+    const expectedRow = TestData.basicRow('123', 'test', 42.5);
+    expect(cache.getRow('123')).toEqual(expectedRow);
+    expect(cache.getAllRows()).toEqual([expectedRow]);
   });
 
   it('should handle update events (diff = 1)', () => {
@@ -254,7 +253,7 @@ describe('ViewCache', () => {
       const unsubscribe = cache.subscribe(mockSubscriber);
 
       // Wait for current state to be emitted
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await TEST_DELAYS.SHORT();
 
       // Should have received current state as insert events
       expect(receivedEvents).toHaveLength(2);

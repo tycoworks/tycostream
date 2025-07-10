@@ -1,6 +1,9 @@
 import pino from 'pino';
 import { getLogLevel } from '../src/config.js';
 
+// Component-specific configuration
+const LOG_TRUNCATE_LENGTH = 200; // Balance between readability and completeness
+
 // Configure Pino with environment-based log level
 const logger = pino({
   level: getLogLevel(),
@@ -27,7 +30,7 @@ const logger = pino({
  * @param maxLength - Maximum length before truncation (default: 200)
  * @returns Truncated JSON string
  */
-export function truncateForLog(obj: any, maxLength: number = 200): string {
+export function truncateForLog(obj: any, maxLength: number = LOG_TRUNCATE_LENGTH): string {
   const jsonString = JSON.stringify(obj);
   return jsonString.length > maxLength 
     ? jsonString.substring(0, maxLength) + '...'

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
 import { ViewCache } from '../shared/viewCache.js';
 import type { StreamEvent } from '../shared/types.js';
+import { TEST_DELAYS } from './test-utils.js';
 
 describe('ClientStreamHandler', () => {
   let cache: ViewCache;
@@ -19,7 +20,7 @@ describe('ClientStreamHandler', () => {
   });
 
   it('should create handler with generated client ID', () => {
-    expect(handler.id).toMatch(/^client-\d+-[a-z0-9]+$/);
+    expect(handler.id).toMatch(/^client-[A-Za-z0-9_-]{10}$/);
     expect(handler.active).toBe(true);
   });
 
@@ -180,7 +181,7 @@ describe('ClientStreamHandler', () => {
     });
 
     // Give it a moment to potentially process (it shouldn't)
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await TEST_DELAYS.MEDIUM();
     
     // Handler should still be inactive
     expect(handler.active).toBe(false);

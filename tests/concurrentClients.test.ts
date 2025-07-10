@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ViewCache } from '../shared/viewCache.js';
 import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
 import type { StreamEvent } from '../shared/types.js';
+import { TEST_DELAYS } from './test-utils.js';
 
 describe('Concurrent Client Support', () => {
   let cache: ViewCache;
@@ -229,7 +230,7 @@ describe('Concurrent Client Support', () => {
       }, 50);
 
       // Wait a bit for some live updates
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await TEST_DELAYS.LONG();
 
       // Now connect a new client mid-stream
       const midStreamClient = new ClientStreamHandler(viewName, cache, 'mid-stream-client');
@@ -334,7 +335,7 @@ describe('Concurrent Client Support', () => {
       }
 
       // Wait a bit for subscriptions to be established
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await TEST_DELAYS.SHORT();
 
       // Should have some subscribers
       expect(cache.listenerCount('update')).toBeGreaterThan(0);
@@ -343,7 +344,7 @@ describe('Concurrent Client Support', () => {
       clients.forEach(client => client.close());
 
       // All should be unsubscribed
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await TEST_DELAYS.SHORT();
       expect(cache.listenerCount('update')).toBe(0);
     });
   });

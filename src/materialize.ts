@@ -2,6 +2,10 @@ import { Client } from 'pg';
 import { from as copyFrom, to as copyTo } from 'pg-copy-streams';
 import type { DatabaseConfig, StreamEvent, SchemaField } from '../shared/types.js';
 import { logger, truncateForLog } from '../shared/logger.js';
+
+// Component-specific database configuration
+const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
+const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
 import { ViewCache } from '../shared/viewCache.js';
 import { pubsub, type PubSub } from './pubsub.js';
 import { EVENTS } from '../shared/events.js';
@@ -48,10 +52,10 @@ export class MaterializeStreamer {
         user: this.config.user,
         password: this.config.password,
         // Connection timeout and keep-alive settings
-        connectionTimeoutMillis: 10000,
+        connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
         query_timeout: 0, // No timeout for streaming queries
         keepAlive: true,
-        keepAliveInitialDelayMillis: 10000,
+        keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
       });
 
       this.client.on('error', async (error) => {

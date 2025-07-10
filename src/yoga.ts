@@ -11,6 +11,9 @@ import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
 import { pubsub, type PubSub } from './pubsub.js';
 import { EVENTS } from '../shared/events.js';
 
+// Component-specific configuration
+const DEFAULT_GRAPHQL_PORT = 4000;
+
 export class GraphQLServer {
   private log = logger.child({ component: 'graphql' });
   private server: ReturnType<typeof createServer> | null = null;
@@ -21,7 +24,7 @@ export class GraphQLServer {
     private loadedSchema: LoadedSchema,
     private viewName: string,
     private viewCache: ViewCache,
-    private port: number = 4000,
+    private port: number = DEFAULT_GRAPHQL_PORT,
     private eventBus: PubSub = pubsub
   ) {
     this.schema = loadedSchema;
