@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { MaterializeStreamer } from '../src/materialize.js';
+import { ViewCache } from '../shared/viewCache.js';
 import { GraphQLServer } from '../src/yoga.js';
 import { pubsub } from '../src/pubsub.js';
 import { EVENTS } from '../shared/events.js';
@@ -63,14 +64,16 @@ type Subscription {
     viewName: 'LivePNL'
   };
 
-  it('should integrate MaterializeStreamer with ViewCache', async () => {
-    const streamer = new MaterializeStreamer(testConfig, testSchema.viewName, testSchema.primaryKeyField);
+  it('should integrate components together', async () => {
+    // Create components following new architecture
+    const cache = new ViewCache(testSchema.primaryKeyField, testSchema.viewName);
+    const streamer = new MaterializeStreamer(testConfig, testSchema.fields, cache);
     
-    // Mock successful connection
+    // Test connection
     await streamer.connect();
     expect(vi.mocked(Client)).toHaveBeenCalled();
 
-    // Simulate stream events
+    // Simulate stream events directly on cache (since we're testing integration)
     const testEvents: StreamEvent[] = [
       {
         row: { instrument_id: '1', symbol: 'AAPL', net_position: 100 },
@@ -84,12 +87,12 @@ type Subscription {
 
     // Apply events to cache
     testEvents.forEach(event => {
-      streamer.cache.applyStreamEvent(event);
+      cache.applyStreamEvent(event);
     });
 
     // Verify cache state
-    expect(streamer.cache.size()).toBe(2);
-    expect(streamer.cache.getRow('1')).toEqual({ 
+    expect(cache.size()).toBe(2);
+    expect(cache.getRow('1')).toEqual({ 
       instrument_id: '1', 
       symbol: 'AAPL', 
       net_position: 100 
@@ -135,14 +138,24 @@ type Subscription {
     expect(events).toEqual(['schema', 'connected', 'update']);
   });
 
-  it('should handle error scenarios gracefully', async () => {
-    const streamer = new MaterializeStreamer(testConfig, testSchema.viewName, testSchema.primaryKeyField);
+  it('should handle connection error scenarios gracefully', async () => {
+    const cache = new ViewCache(testSchema.primaryKeyField, testSchema.viewName);
+    const streamer = new MaterializeStreamer(testConfig, testSchema.fields, cache);
     
     // Mock connection failure
     mockClientInstance.connect.mockReset();
     mockClientInstance.connect.mockRejectedValueOnce(new Error('Connection failed'));
 
     await expect(streamer.connect()).rejects.toThrow('Database connection failed');
-    expect(streamer.connected).toBe(false);
+  });
+
+  it('should test MaterializeStreamer construction', () => {
+    // Test that MaterializeStreamer can be constructed with proper schema fields
+    // The internal parser and connection logic will be tested through integration
+    const cache = new ViewCache(testSchema.primaryKeyField, testSchema.viewName);
+    
+    expect(() => {
+      new MaterializeStreamer(testConfig, testSchema.fields, cache);
+    }).not.toThrow();
   });
 });

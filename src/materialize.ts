@@ -1,418 +1,249 @@
 import { Client } from 'pg';
-import { from as copyFrom, to as copyTo } from 'pg-copy-streams';
-import type { DatabaseConfig, StreamEvent, SchemaField } from '../shared/types.js';
-import { logger, truncateForLog } from '../shared/logger.js';
+import { to as copyTo } from 'pg-copy-streams';
+import type { StreamEvent, SchemaField, DatabaseConfig } from '../shared/types.js';
+import { logger } from '../shared/logger.js';
+import { ViewCache } from '../shared/viewCache.js';
 
 // Component-specific database configuration
 const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
 const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
-import { ViewCache } from '../shared/viewCache.js';
-import { pubsub, type PubSub } from './pubsub.js';
-import { EVENTS } from '../shared/events.js';
-import type { GraphQLServer } from './yoga.js';
 
-export class MaterializeStreamer {
-  private client: Client | null = null;
-  private log = logger.child({ component: 'materialize' });
-  private isConnected = false;
-  private isStreaming = false;
-  private isShuttingDown = false;
-  private copyStream: any = null;
-  private viewCache: ViewCache;
-  private graphqlServer: GraphQLServer | null = null;
+/**
+ * Pure database connection management
+ * Internal utility for streaming database adapters
+ */
+class DatabaseConnection {
+  private log = logger.child({ component: 'database' });
 
-  constructor(
-    private config: DatabaseConfig,
-    private viewName: string,
-    primaryKeyField: string,
-    private eventBus: PubSub = pubsub,
-    viewCache?: ViewCache,
-    private schemaFields?: SchemaField[]
-  ) {
-    this.viewCache = viewCache || new ViewCache(primaryKeyField, viewName);
-  }
+  /**
+   * Connect to streaming database
+   */
+  async connect(config: DatabaseConfig): Promise<Client> {
+    this.log.info('Connecting to streaming database', { 
+      host: config.host, 
+      port: config.port,
+      database: config.database,
+      user: config.user
+    });
 
-  setGraphQLServer(server: GraphQLServer): void {
-    this.graphqlServer = server;
-  }
+    const client = new Client({
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      user: config.user,
+      password: config.password,
+      // Connection timeout and keep-alive settings
+      connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
+      query_timeout: 0, // No timeout for streaming queries
+      keepAlive: true,
+      keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
+    });
 
-  async connect(): Promise<void> {
     try {
-      this.log.info('Connecting to Materialize', { 
-        host: this.config.host, 
-        port: this.config.port,
-        database: this.config.database,
-        user: this.config.user
-      });
-
-      this.client = new Client({
-        host: this.config.host,
-        port: this.config.port,
-        database: this.config.database,
-        user: this.config.user,
-        password: this.config.password,
-        // Connection timeout and keep-alive settings
-        connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
-        query_timeout: 0, // No timeout for streaming queries
-        keepAlive: true,
-        keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
-      });
-
-      this.client.on('error', async (error) => {
-        this.log.error('Database connection error', {}, error);
-        await this.handleConnectionError(error);
-      });
-
-      this.client.on('end', () => {
-        this.log.warn('Database connection closed');
-        this.isConnected = false;
-        this.eventBus.publish(EVENTS.STREAM_DISCONNECTED, { viewName: this.viewName });
-      });
-
-      await this.client.connect();
-      this.isConnected = true;
-
-      this.log.info('Connected to Materialize');
-      this.eventBus.publish(EVENTS.STREAM_CONNECTED, { viewName: this.viewName });
-
+      await client.connect();
+      this.log.info('Connected to streaming database');
+      return client;
     } catch (error) {
-      this.log.error('Failed to connect to Materialize', {}, error as Error);
+      this.log.error('Failed to connect to streaming database', {}, error as Error);
       throw new Error(`Database connection failed: ${(error as Error).message}`);
     }
   }
 
-  async startStreaming(): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Must connect to database before starting stream');
-    }
-
-    if (this.isStreaming) {
-      this.log.warn('Stream already active', { viewName: this.viewName });
-      return;
-    }
-
+  /**
+   * Disconnect from database
+   */
+  async disconnect(client: Client): Promise<void> {
+    this.log.info('Disconnecting from streaming database');
+    
     try {
-      this.log.info('Starting stream subscription', { viewName: this.viewName });
-      
-      // First, validate that the view exists
-      await this.validateView();
-
-      // Get column structure for COPY output parsing from SDL schema
-      this.setupColumnStructure();
-
-      // Start streaming subscription with initial snapshot using COPY
-      const subscribeQuery = `COPY (SUBSCRIBE TO ${this.viewName} WITH (SNAPSHOT)) TO STDOUT`;
-      this.log.debug('Executing streaming SUBSCRIBE query', { query: subscribeQuery });
-
-      // Use pg-copy-streams for proper COPY streaming (like the Rust implementation)
-      const copyToStream = copyTo(subscribeQuery);
-      this.copyStream = this.client.query(copyToStream);
-
-      // Handle stream data line by line
-      this.copyStream.on('data', (chunk: Buffer) => {
-        try {
-          const lines = chunk.toString('utf8').split('\n');
-          for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (trimmedLine) {
-              this.log.debug('Raw COPY data received', { 
-                viewName: this.viewName, 
-                line: trimmedLine
-              });
-              this.handleCopyLine(trimmedLine);
-            }
-          }
-        } catch (error) {
-          this.log.error('Error processing COPY data', { viewName: this.viewName }, error as Error);
-        }
-      });
-
-      this.copyStream.on('end', () => {
-        this.log.warn('COPY stream ended', { viewName: this.viewName });
-        this.isStreaming = false;
-      });
-
-      this.copyStream.on('error', async (error: Error) => {
-        if (!this.isShuttingDown) {
-          this.log.error('COPY stream error', { viewName: this.viewName }, error);
-          await this.handleStreamError(error);
-        }
-        // During shutdown, stream errors are expected and ignored
-      });
-
-      this.isStreaming = true;
-      this.log.info('Stream subscription started', { viewName: this.viewName });
-
+      await client.end();
+      this.log.info('Disconnected from streaming database');
     } catch (error) {
-      this.log.error('Failed to start streaming', { viewName: this.viewName }, error as Error);
-      throw new Error(`Stream initialization failed: ${(error as Error).message}`);
+      this.log.error('Error during disconnect', {}, error as Error);
+      throw error;
     }
   }
+}
 
-  async disconnect(): Promise<void> {
-    this.log.info('Disconnecting from Materialize');
-    
-    this.isShuttingDown = true;
-    this.isStreaming = false;
-    
-    if (this.client) {
-      try {
-        await this.client.end();
-        this.log.info('Disconnected from Materialize');
-      } catch (error) {
-        this.log.error('Error during disconnect', {}, error as Error);
-      } finally {
-        this.client = null;
-        this.isConnected = false;
-      }
-    }
-  }
+/**
+ * Materialize COPY stream processor
+ * Handles buffer chunking, line parsing, and cache updates
+ */
+class CopyStreamProcessor {
+  private log = logger.child({ component: 'parser' });
+  private columnNames: string[];
 
-  private setupColumnStructure(): void {
-    if (!this.schemaFields) {
-      throw new Error('Schema fields not provided to MaterializeStreamer');
-    }
-
+  constructor(
+    schemaFields: SchemaField[],
+    private cache: ViewCache
+  ) {
     // COPY (SUBSCRIBE...) output format is: [mz_timestamp, diff, ...view_columns...]
-    // So we need to put metadata columns first, then SDL schema fields
-    this.columnNames = ['mz_timestamp', 'diff'];
-    
-    // Add SDL schema fields (in order they're defined)
-    this.columnNames.push(...this.schemaFields.map(field => field.name));
+    this.columnNames = ['mz_timestamp', 'diff', ...schemaFields.map(field => field.name)];
 
-    this.log.debug('Set up column structure for COPY SUBSCRIBE output', { 
-      viewName: this.viewName,
+    this.log.debug('COPY processor initialized', { 
       columnCount: this.columnNames.length,
       columns: this.columnNames
     });
   }
 
-  private async validateView(): Promise<void> {
+  /**
+   * Process a chunk of COPY stream data
+   */
+  processChunk(chunk: Buffer): void {
+    try {
+      const lines = chunk.toString('utf8').split('\n');
+      for (const line of lines) {
+        const event = this.parseRow(line);
+        if (event) {
+          this.cache.applyStreamEvent(event);
+        }
+      }
+    } catch (error) {
+      this.log.error('Error processing COPY chunk', {}, error as Error);
+    }
+  }
+
+  /**
+   * Parse a single line of COPY output into a StreamEvent
+   */
+  private parseRow(line: string): StreamEvent | null {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+
+    const fields = trimmed.split('\t');
+    if (fields.length < 2) return null;
+
+    // Parse diff (second field)
+    const diffField = fields[1];
+    if (!diffField) return null;
+    const diff = parseInt(diffField, 10);
+    if (isNaN(diff)) return null;
+
+    // Map remaining fields to row data (skip mz_timestamp and diff)
+    const row: Record<string, any> = {};
+    for (let i = 2; i < fields.length && i < this.columnNames.length; i++) {
+      const columnName = this.columnNames[i];
+      const field = fields[i];
+      if (columnName && field !== undefined) {
+        row[columnName] = field === '\\N' ? null : field;
+      }
+    }
+
+    return { row, diff };
+  }
+}
+
+/**
+ * Materialize streaming database adapter
+ * Handles connection management and Materialize-specific streaming protocol
+ */
+export class MaterializeStreamer {
+  private log = logger.child({ component: 'materialize' });
+  private isStreaming = false;
+  private copyStream: any = null;
+  private processor: CopyStreamProcessor;
+  private dbConnection = new DatabaseConnection();
+  private client: Client | null = null;
+
+  constructor(
+    private config: DatabaseConfig,
+    schemaFields: SchemaField[],
+    cache: ViewCache
+  ) {
+    this.processor = new CopyStreamProcessor(schemaFields, cache);
+  }
+
+  /**
+   * Connect to Materialize database
+   */
+  async connect(): Promise<void> {
+    this.client = await this.dbConnection.connect(this.config);
+  }
+
+  /**
+   * Disconnect from Materialize database
+   */
+  async disconnect(): Promise<void> {
+    if (this.client) {
+      await this.dbConnection.disconnect(this.client);
+      this.client = null;
+    }
+  }
+
+  /**
+   * Start streaming from a Materialize view
+   */
+  async startStreaming(viewName: string): Promise<void> {
     if (!this.client) {
-      throw new Error('No database connection');
+      throw new Error('Must connect to database before starting stream');
+    }
+
+    if (this.isStreaming) {
+      this.log.warn('Stream already active', { viewName });
+      return;
     }
 
     try {
-      // Check tables first
-      const tableResult = await this.client.query(
-        'SELECT schemaname, tablename FROM pg_tables WHERE tablename = $1',
-        [this.viewName]
-      );
+      this.log.info('Starting stream subscription', { viewName });
 
-      if (tableResult.rows.length === 0) {
-        // Check regular views
-        const viewResult = await this.client.query(
-          'SELECT schemaname, viewname FROM pg_views WHERE viewname = $1',
-          [this.viewName]
-        );
+      // Start streaming subscription with initial snapshot using COPY
+      const subscribeQuery = `COPY (SUBSCRIBE TO ${viewName} WITH (SNAPSHOT)) TO STDOUT`;
+      this.log.debug('Executing streaming SUBSCRIBE query', { query: subscribeQuery });
 
-        if (viewResult.rows.length === 0) {
-          // Check Materialize materialized views
-          const mvResult = await this.client.query(
-            'SELECT name FROM mz_materialized_views WHERE name = $1',
-            [this.viewName]
-          );
+      // Use pg-copy-streams for proper COPY streaming
+      const copyToStream = copyTo(subscribeQuery);
+      this.copyStream = this.client.query(copyToStream);
 
-          if (mvResult.rows.length === 0) {
-            throw new Error(`View or table '${this.viewName}' does not exist`);
-          }
-        }
-      }
+      // Handle stream data chunks
+      this.copyStream.on('data', (chunk: Buffer) => {
+        this.processor.processChunk(chunk);
+      });
 
-      this.log.info('View validation successful', { viewName: this.viewName });
+      this.copyStream.on('end', () => {
+        this.log.warn('COPY stream ended', { viewName });
+        this.isStreaming = false;
+      });
+
+      this.copyStream.on('error', (error: Error) => {
+        this.log.error('COPY stream error', { viewName }, error);
+        this.isStreaming = false;
+        throw error;
+      });
+
+      this.isStreaming = true;
+      this.log.info('Stream subscription started', { viewName });
+
     } catch (error) {
-      this.log.error('View validation failed', { viewName: this.viewName }, error as Error);
-      throw error;
+      this.log.error('Failed to start streaming', { viewName }, error as Error);
+      throw new Error(`Stream initialization failed: ${(error as Error).message}`);
     }
   }
 
-  private handleCopyLine(line: string): void {
-    try {
-      // Parse tab-separated COPY output
-      const fields = line.split('\t');
-      
-      // Map fields to column names using dynamically retrieved structure
-      const row: Record<string, any> = {};
-      
-      fields.forEach((field, index) => {
-        if (index < this.columnNames.length) {
-          const columnName = this.columnNames[index];
-          if (columnName) {
-            row[columnName] = field === '\\N' ? null : field;
-          }
-        }
-      });
-
-      const rowSample = truncateForLog(row);
-      this.log.debug(`Parsed COPY line into row: ${rowSample}`, { 
-        viewName: this.viewName,
-        rowKeys: Object.keys(row),
-        expectedColumns: this.columnNames.length,
-        actualFields: fields.length
-      });
-
-      this.handleStreamRow(row);
-    } catch (error) {
-      this.log.error('Error parsing COPY line', { 
-        viewName: this.viewName,
-        line: line,
-        columnNames: this.columnNames
-      }, error as Error);
-    }
-  }
-
-  private handleStreamRow(row: any): void {
-    try {
-      this.eventBus.publish(EVENTS.STREAM_UPDATE_RECEIVED, { viewName: this.viewName, row });
-      
-      // Materialize SUBSCRIBE format: includes 'diff' column (1 = insert/update, -1 = delete)
-      // and 'mz_timestamp' column (excluded from cached data)
-      // COPY output comes as strings, so parse the diff value
-      const diffRaw = row.diff;
-      if (diffRaw === undefined || diffRaw === null) {
-        this.log.warn('Received invalid data from Materialize view', { 
-          viewName: this.viewName, 
-          rowKeys: Object.keys(row),
-          issue: 'Missing diff column - check view compatibility'
-        });
-        return;
-      }
-      
-      const diff = parseInt(diffRaw.toString(), 10);
-      if (isNaN(diff)) {
-        this.log.warn('Received invalid diff value from Materialize view', { 
-          viewName: this.viewName, 
-          diffValue: diffRaw,
-          issue: 'Invalid diff column value'
-        });
-        return;
-      }
-
-      // Extract actual row data (exclude Materialize metadata columns)
-      const rowData = { ...row };
-      delete rowData.diff;
-      delete rowData.mz_timestamp;
-
-      const streamEvent: StreamEvent = {
-        row: rowData,
-        diff,
-      };
-
-      this.log.debug('Stream processing', {
-        viewName: this.viewName,
-        diff,
-        cacheSize: this.viewCache.size()
-      });
-
-      // Update view cache with the stream event
-      this.viewCache.applyStreamEvent(streamEvent);
-
-      // Publish to subscribers
-      this.eventBus.publishStreamEvent(this.viewName, streamEvent);
-      this.eventBus.publish(EVENTS.STREAM_UPDATE_PARSED, { 
-        viewName: this.viewName, 
-        diff,
-        rowKeys: Object.keys(rowData),
-        cacheSize: this.viewCache.size()
-      });
-
-    } catch (error) {
-      this.log.error('Failed to process data from Materialize view', { 
-        viewName: this.viewName,
-        row: JSON.stringify(row)
-      }, error as Error);
-    }
-  }
-
-  private async handleConnectionError(error: Error): Promise<void> {
-    this.log.error('Database connection lost, tycostream will exit', { 
-      viewName: this.viewName,
-      host: this.config.host,
-      port: this.config.port
-    }, error);
-    
-    this.isConnected = false;
-    this.isStreaming = false;
-    
-    this.eventBus.publish(EVENTS.STREAM_ERROR, { 
-      viewName: this.viewName, 
-      error: error.message,
-      errorType: 'connection'
-    });
-
-    // Graceful shutdown before exit
-    await this.gracefulShutdown();
-    this.log.error('Database connection failed - restart tycostream and check Materialize server status');
-    process.exit(1);
-  }
-
-  private async handleStreamError(error: Error): Promise<void> {
-    this.log.error('View streaming failed, tycostream will exit', { 
-      viewName: this.viewName 
-    }, error);
+  /**
+   * Stop streaming
+   */
+  async stopStreaming(): Promise<void> {
+    this.log.info('Stopping stream');
     
     this.isStreaming = false;
     
-    this.eventBus.publish(EVENTS.STREAM_ERROR, { 
-      viewName: this.viewName, 
-      error: error.message,
-      errorType: 'stream'
-    });
-
-    // Graceful shutdown before exit
-    await this.gracefulShutdown();
-    this.log.error('View streaming failed - restart tycostream and verify view exists in Materialize');
-    process.exit(1);
-  }
-
-  private async gracefulShutdown(): Promise<void> {
-    this.isShuttingDown = true;
-    this.log.info('Beginning graceful shutdown');
-    
-    if (this.graphqlServer) {
-      try {
-        this.log.info('Closing GraphQL subscriptions');
-        await this.graphqlServer.stop();
-        this.log.info('GraphQL server shut down gracefully');
-      } catch (error) {
-        this.log.error('Failed to shutdown GraphQL server gracefully', {}, error as Error);
-      }
-    }
-    
-    // Properly close the COPY stream before closing the connection
     if (this.copyStream) {
       try {
         this.log.debug('Closing COPY stream');
         this.copyStream.destroy();
         this.copyStream = null;
-        this.isStreaming = false;
       } catch (error) {
         this.log.debug('Error closing COPY stream (may already be closed)', {}, error as Error);
       }
     }
     
-    if (this.client) {
-      try {
-        this.log.info('Closing Materialize connection');
-        await this.client.end();
-        this.log.info('Materialize connection closed');
-      } catch (error) {
-        this.log.error('Failed to close Materialize connection gracefully', {}, error as Error);
-      }
-    }
+    this.log.info('Stream stopped');
   }
 
-  private columnNames: string[] = [];
-
-  get connected(): boolean {
-    return this.isConnected;
-  }
-
+  /**
+   * Get streaming status
+   */
   get streaming(): boolean {
     return this.isStreaming;
-  }
-
-  get cache(): ViewCache {
-    return this.viewCache;
   }
 }

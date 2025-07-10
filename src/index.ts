@@ -1,6 +1,7 @@
 import { loadDatabaseConfig, loadSchema, ConfigError, getGraphQLPort } from './config.js';
 import { MaterializeStreamer } from './materialize.js';
 import { GraphQLServer } from './yoga.js';
+import { ViewCache } from '../shared/viewCache.js';
 import { logger } from '../shared/logger.js';
 import { shutdownManager } from '../shared/shutdown.js';
 import { EVENTS } from '../shared/events.js';
@@ -31,31 +32,38 @@ async function main(): Promise<void> {
     });
     pubsub.publish(EVENTS.SCHEMA_LOADED, { viewName: schema.viewName, schema });
 
-    // Phase 3: Connect to Materialize
+    // Phase 3: Create streaming components
+    log.info('Initializing streaming components');
+    const cache = new ViewCache(schema.primaryKeyField, schema.viewName);
+    const streamer = new MaterializeStreamer(dbConfig, schema.fields, cache);
+    log.info('Components initialized');
+
+    // Phase 4: Connect to Materialize
     log.info('Connecting to Materialize');
-    const streamer = new MaterializeStreamer(dbConfig, schema.viewName, schema.primaryKeyField, pubsub, undefined, schema.fields);
     await streamer.connect();
     log.info('Connected to Materialize');
 
-    // Phase 4: Start streaming from view
+    // Phase 5: Start streaming from view
     log.info('Starting view subscription', { viewName: schema.viewName });
-    await streamer.startStreaming();
+    await streamer.startStreaming(schema.viewName);
     log.info('View subscription started');
 
-    // Phase 5: Start GraphQL server
+    // Phase 6: Start GraphQL server
     log.info('Starting GraphQL server');
     const port = getGraphQLPort();
-    const graphqlServer = new GraphQLServer(schema, schema.viewName, streamer.cache, port);
+    const graphqlServer = new GraphQLServer(schema, schema.viewName, cache, port);
     await graphqlServer.start();
     log.info('GraphQL server started', { port });
-
-    // Phase 6: Wire up graceful shutdown coordination
-    streamer.setGraphQLServer(graphqlServer);
 
     // Register shutdown handlers
     shutdownManager.addHandler(async () => {
       log.info('Shutting down GraphQL server');
       await graphqlServer.stop();
+    });
+
+    shutdownManager.addHandler(async () => {
+      log.info('Stopping stream');
+      await streamer.stopStreaming();
     });
 
     shutdownManager.addHandler(async () => {
