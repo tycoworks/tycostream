@@ -1,4 +1,4 @@
-import { logger } from './logger.js';
+import { logger, truncateForLog } from './logger.js';
 import type { ViewCache } from './viewCache.js';
 import type { RowUpdateEvent, CacheSubscriber } from './types.js';
 import PQueue from 'p-queue';
@@ -76,6 +76,8 @@ export class ClientStreamHandler implements CacheSubscriber {
           // TODO: In 1.2, we'll need to handle deletes and filtering
           if (update.type === 'insert' || update.type === 'update') {
             const payload = { [this.viewName]: update.row };
+            const payloadSample = truncateForLog(payload);
+            this.log.debug(`Yielding data to client: ${payloadSample}`);
             yield payload;
           }
         }

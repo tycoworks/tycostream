@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { from as copyFrom, to as copyTo } from 'pg-copy-streams';
 import type { DatabaseConfig, StreamEvent, SchemaField } from '../shared/types.js';
-import { logger } from '../shared/logger.js';
+import { logger, truncateForLog } from '../shared/logger.js';
 import { ViewCache } from '../shared/viewCache.js';
 import { pubsub, type PubSub } from './pubsub.js';
 import { EVENTS } from '../shared/events.js';
@@ -239,7 +239,8 @@ export class MaterializeStreamer {
         }
       });
 
-      this.log.debug('Parsed COPY line into row', { 
+      const rowSample = truncateForLog(row);
+      this.log.debug(`Parsed COPY line into row: ${rowSample}`, { 
         viewName: this.viewName,
         rowKeys: Object.keys(row),
         expectedColumns: this.columnNames.length,

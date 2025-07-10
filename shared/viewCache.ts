@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { logger } from './logger.js';
+import { logger, truncateForLog } from './logger.js';
 import type { StreamEvent, RowUpdateEvent, CacheSubscriber, DiffType } from './types.js';
 
 export class ViewCache extends EventEmitter {
@@ -43,7 +43,8 @@ export class ViewCache extends EventEmitter {
         previousRow: isUpdate ? previousRow : undefined
       };
       
-      this.log.debug(`Cache updated: ${operationType}`, {
+      const rowData = truncateForLog(event.row);
+      this.log.debug(`Cache updated: ${operationType} - ${rowData}`, {
         viewName: this.viewName,
         primaryKey,
         cacheSize: this.cache.size
@@ -58,7 +59,8 @@ export class ViewCache extends EventEmitter {
         previousRow
       };
       
-      this.log.debug('Cache updated: delete', {
+      const deletedRow = truncateForLog(event.row);
+      this.log.debug(`Cache updated: delete - ${deletedRow}`, {
         viewName: this.viewName,
         primaryKey,
         cacheSize: this.cache.size
@@ -135,12 +137,18 @@ export class ViewCache extends EventEmitter {
         stateSize: this.cache.size
       });
       
+      let emittedCount = 0;
       for (const [primaryKey, row] of this.cache) {
         const currentStateEvent: RowUpdateEvent = {
           type: 'insert',
           row: { ...row },
           previousRow: undefined
         };
+        this.log.debug('Emitting cached row to subscriber', {
+          primaryKey,
+          emittedCount: ++emittedCount,
+          totalRows: this.cache.size
+        });
         subscriber.onUpdate(currentStateEvent);
       }
     }, 0);

@@ -21,4 +21,17 @@ const logger = pino({
   }
 });
 
+/**
+ * Truncate object for logging to avoid massive log entries
+ * @param obj - Object to serialize and truncate
+ * @param maxLength - Maximum length before truncation (default: 200)
+ * @returns Truncated JSON string
+ */
+export function truncateForLog(obj: any, maxLength: number = 200): string {
+  const jsonString = JSON.stringify(obj);
+  return jsonString.length > maxLength 
+    ? jsonString.substring(0, maxLength) + '...'
+    : jsonString;
+}
+
 export { logger };
