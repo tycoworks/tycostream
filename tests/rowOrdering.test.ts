@@ -26,7 +26,7 @@ describe('Row Insertion Order Preservation', () => {
     events.forEach(event => cache.applyStreamEvent(event));
 
     // Get snapshot - should be in insertion order (3, 1, 2)
-    const snapshot = cache.getSnapshot();
+    const snapshot = cache.getAllRows();
     
     expect(snapshot).toHaveLength(3);
     expect(snapshot[0]).toEqual({ id: '3', name: 'Third' });
@@ -52,7 +52,7 @@ describe('Row Insertion Order Preservation', () => {
       diff: 1,
     });
 
-    const snapshot = cache.getSnapshot();
+    const snapshot = cache.getAllRows();
     
     expect(snapshot).toHaveLength(3);
     expect(snapshot[0]).toEqual({ id: '1', name: 'First', value: 10 });
@@ -78,7 +78,7 @@ describe('Row Insertion Order Preservation', () => {
       diff: -1,
     });
 
-    const snapshot = cache.getSnapshot();
+    const snapshot = cache.getAllRows();
     
     expect(snapshot).toHaveLength(2);
     expect(snapshot[0]).toEqual({ id: '1', name: 'First' });
@@ -102,7 +102,7 @@ describe('Row Insertion Order Preservation', () => {
       diff: 1,
     });
 
-    const snapshot = cache.getSnapshot();
+    const snapshot = cache.getAllRows();
     
     expect(snapshot).toHaveLength(3);
     expect(snapshot[0]).toEqual({ id: '1', name: 'First' });
@@ -125,7 +125,7 @@ describe('Row Insertion Order Preservation', () => {
 
     events.forEach(event => cache.applyStreamEvent(event));
 
-    const snapshot = cache.getSnapshot();
+    const snapshot = cache.getAllRows();
     
     expect(snapshot).toHaveLength(3);
     expect(snapshot[0]).toEqual({ id: '2', name: 'Updated Second' }); // Was position 2, now position 1 after deletion

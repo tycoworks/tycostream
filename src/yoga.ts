@@ -7,6 +7,7 @@ import { buildSchema } from 'graphql';
 import type { LoadedSchema, StreamEvent } from '../shared/types.js';
 import { logger } from '../shared/logger.js';
 import { ViewCache } from '../shared/viewCache.js';
+import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
 import { pubsub, type PubSub } from './pubsub.js';
 import { EVENTS } from '../shared/events.js';
 
@@ -190,63 +191,33 @@ export class GraphQLServer {
     const subscriptionResolvers: Record<string, any> = {};
     
     // Create subscription resolver for the view
-    // Per ARCHITECTURE.md:82 - field names map to view names by convention
+    // Field names map to view names by convention
     const subscriptionFieldName = this.mapFieldToView(this.viewName);
     subscriptionResolvers[subscriptionFieldName] = {
       subscribe: async function* (parent: any, args: any, context: any) {
         const { viewCache, viewName } = context;
         const log = logger.child({ component: 'subscription' });
         
-        // Send initial snapshot first
-        const snapshot = viewCache.getSnapshot();
-        log.debug('Subscription initial snapshot', {
-          viewName,
-          snapshotSize: snapshot.length,
-          sampleRow: snapshot[0] ? JSON.stringify(snapshot[0]).substring(0, 100) : 'none'
-        });
+        log.debug('Creating new client stream handler', { viewName });
         
-        for (const row of snapshot) {
-          const payload = { [viewName]: row };
-          log.debug('Subscription yielding snapshot event', {
-            viewName,
-            rowSample: JSON.stringify(row).substring(0, 100),
-            symbol: row.symbol
-          });
-          yield payload;
-        }
-
-        // Create event queue for live updates
-        const eventQueue: StreamEvent[] = [];
-        let isActive = true;
+        // Create a new ClientStreamHandler for this subscription
+        const streamHandler = new ClientStreamHandler(viewName, viewCache);
         
-        // Single subscription that queues events
-        const unsubscribe = pubsub.subscribeToStream(viewName, (streamEvent: StreamEvent) => {
-          if (isActive) {
-            eventQueue.push(streamEvent);
-          }
-        });
-
         try {
-          // Process queued events as they arrive
-          while (isActive) {
-            // Wait for events to arrive
-            while (eventQueue.length === 0 && isActive) {
-              await new Promise(resolve => setTimeout(resolve, 10)); // Small delay to prevent busy waiting
-            }
-            
-            // Process all queued events
-            while (eventQueue.length > 0 && isActive) {
-              const streamEvent = eventQueue.shift()!;
-              
-              if (streamEvent.diff === 1) {
-                yield { [viewName]: streamEvent.row };
-              }
-              // Skip deletes for now
-            }
+          // Delegate to the ClientStreamHandler
+          const iterator = streamHandler.createAsyncIterator();
+          let result = await iterator.next();
+          
+          while (!result.done) {
+            yield result.value;
+            result = await iterator.next();
           }
         } finally {
-          isActive = false;
-          unsubscribe();
+          log.debug('Subscription ended, cleaning up stream handler', { 
+            viewName, 
+            handlerId: streamHandler.id 
+          });
+          streamHandler.close();
         }
       },
       resolve: (payload: any) => payload[this.viewName],
@@ -257,7 +228,7 @@ export class GraphQLServer {
     const queryFieldName = this.mapFieldToView(this.viewName);
     queryResolvers[queryFieldName] = (parent: any, args: any, context: any) => {
       const { viewCache } = context;
-      return viewCache.getSnapshot();
+      return viewCache.getAllRows();
     };
 
     const resolvers = {

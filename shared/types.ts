@@ -34,3 +34,15 @@ export interface LogContext {
   clientId?: string;
   [key: string]: any;
 }
+
+export type DiffType = 'insert' | 'update' | 'delete';
+
+export interface RowUpdateEvent {
+  type: DiffType;
+  row: Record<string, any>;
+  previousRow?: Record<string, any>;
+}
+
+export interface CacheSubscriber {
+  onUpdate(event: RowUpdateEvent): void;
+}

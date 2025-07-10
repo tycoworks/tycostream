@@ -36,8 +36,9 @@ This document outlines the system architecture for tycostream: a real-time Graph
 ### Client Stream Handler
 
 * Created for each GraphQL client subscription
-* Registers with the Central View Cache to receive updates
-* Delivers current view state followed by live updates to its client
+* Subscribes to Central View Cache using single event stream
+* Receives current view state as individual events, then live updates
+* Uses p-queue library for robust async queue management
 * Manages lifecycle from connection to disconnection
 * Provides isolation between different client streams
 
@@ -61,9 +62,9 @@ This document outlines the system architecture for tycostream: a real-time Graph
    - Update is immediately applied to Central View Cache (non-blocking)
    - Cache notifies all registered Client Stream Handlers
 6. **Client Connection**: GraphQL server receives subscription request via WebSocket
-7. **Subscription Setup**: New Client Stream Handler is created and registered with cache
-8. **Initial Delivery**: Client receives all current rows from cache
-9. **Continuous Updates**: Client receives updates as they flow through the system
+7. **Subscription Setup**: New Client Stream Handler subscribes to cache
+8. **Unified Stream**: Client receives current state as individual events, then live updates
+9. **Consistent Ordering**: All events maintain strict Materialize stream ordering
 
 ---
 

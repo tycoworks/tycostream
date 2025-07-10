@@ -49,6 +49,7 @@ Outline how code should be organized:
   - Database clients (use official clients)
   - Date/time manipulation (use date-fns, dayjs)
   - Validation (use Zod, Joi, etc.)
+  - Async queues (use p-queue, async, etc.)
 - **When custom implementation is acceptable**:
   - Core business logic specific to our domain
   - Simple utilities where a library would be overkill
@@ -165,11 +166,18 @@ npm run test -- --watch  # watch mode during dev
 * Subscriber management with callback registration pattern
 * Emits typed events: `RowUpdateEvent` with diff type and row data
 
-### 6.6.1 Concurrency Handling
-* **Non-blocking updates**: Materialize updates are never blocked by client read operations
-* **Read-copy approach**: Clients iterate over a point-in-time copy of the cache state
-* **Update queue**: Pending updates accumulate in a queue if clients are mid-iteration
-* **Atomic operations**: All cache mutations use atomic operations to prevent race conditions
+### 6.6.1 Single-Subscribe Architecture
+* **Unified event stream**: Current state + live updates flow through single subscription path
+* **Consistent delivery**: New subscribers immediately receive current state as individual events
+* **Event ordering**: All events (current state + live updates) maintain strict Materialize ordering
+* **Simplified concurrency**: Single event queue per client provides clean event processing
+
+### 6.6.2 Client Stream Handler Implementation
+* Each GraphQL subscription creates an isolated Client Stream Handler
+* Uses p-queue library for robust async task management
+* Current state delivered as individual 'insert' events on subscription
+* Live updates continue seamlessly through same event stream
+* Proper cleanup on client disconnect prevents memory leaks
 
 ### 6.7 Schema Validation Implementation
 * Regex-based parsing to detect ID! field in SDL schema files
