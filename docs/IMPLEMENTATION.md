@@ -82,6 +82,13 @@ Outline how code should be organized:
 - **Dependency injection**: Constructor injection for testability
 - **Event-driven testing**: Verify pub/sub interactions and event sequences
 
+### Critical Test Scenarios
+- **Order preservation**: Updates delivered in Materialize stream order
+- **Early client connection**: Client connects before any data arrives from Materialize
+- **Mid-stream client connection**: Client connects while data is actively streaming
+- **Concurrent client isolation**: Multiple clients receive independent streams
+- **Update queuing**: Updates queue properly when client is receiving initial state
+
 ### Run tests locally:
 
 ```bash
@@ -150,11 +157,19 @@ npm run test -- --watch  # watch mode during dev
 * WebSocket server implementation using `WebSocketServer` from `ws` package
 * Optional GraphQL UI controlled by `GRAPHQL_UI` environment variable (disabled by default)
 
-### 6.6 View Cache Implementation
-* Implementation details for the View Cache component described in [ARCHITECTURE.md](ARCHITECTURE.md#view-cache)
-* ViewCache preserves insertion order using JavaScript Map data structure
-* Row operations: insert (append), update (replace in-place), delete (remove)
-* In-memory HashMap keyed by primary key field extracted from schema
+### 6.6 Central View Cache Implementation
+* Implementation details for the Central View Cache component described in [ARCHITECTURE.md](ARCHITECTURE.md#central-view-cache)
+* Lock-free in-memory Map keyed by primary key field (ID!) from schema
+* Supports concurrent read access from multiple Client Stream Handlers
+* Row operations: insert (new row), update (replace existing), delete (remove row)
+* Subscriber management with callback registration pattern
+* Emits typed events: `RowUpdateEvent` with diff type and row data
+
+### 6.6.1 Concurrency Handling
+* **Non-blocking updates**: Materialize updates are never blocked by client read operations
+* **Read-copy approach**: Clients iterate over a point-in-time copy of the cache state
+* **Update queue**: Pending updates accumulate in a queue if clients are mid-iteration
+* **Atomic operations**: All cache mutations use atomic operations to prevent race conditions
 
 ### 6.7 Schema Validation Implementation
 * Regex-based parsing to detect ID! field in SDL schema files

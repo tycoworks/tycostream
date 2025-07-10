@@ -32,9 +32,8 @@
 **New Features:**
 
 * GraphQL filter syntax + server-side filtering
-* Nested queries based on relational structures
+* Nested queries based on relational structures  
 * Filtering by user/session/context
-* Concurrent client support: Multiple clients can connect and subscribe simultaneously without data corruption or race conditions
 
 ---
 
@@ -44,6 +43,7 @@
 **Experience:**
 
 * Define GraphQL schema using SDL to map to multiple Materialize views
+* Pagination(?)
 * Start tycostream with updated config pointing to new views and schema files
 * Use Apollo Client to subscribe to any view defined in the schema
 * Iterate on your schema independently of the Materialize SQL shape
@@ -79,6 +79,10 @@
 * High-availability support for real-time transport (WebSockets or SSE) using Redis or NATS
 * Reconnect handling for dropped client WebSocket connections
 * Fan-out support for multi-client subscriptions per view
+* Update coalescing for high-frequency data:
+  - Client-configurable coalescing (opt-in)
+  - Combine multiple updates for same entity within time window
+  - Reduce network overhead for market data scenarios
 * Backpressure and cache management:
   - Cache size limits and LRU eviction
   - Memory pressure monitoring

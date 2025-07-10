@@ -50,7 +50,7 @@ type live_pnl {
 }
 
 type Query {
-  # Current snapshot of live_pnl data
+  # Current state of live_pnl data
   live_pnl: [live_pnl!]!
 }
 
@@ -69,7 +69,7 @@ type Subscription {
 * Multiple data types will be supported in future versions - system fails fast if more than one is found
 * Exactly one field of type `ID!` must be present to serve as the primary key
 * Primary key field name can be anything (e.g., `instrument_id: ID!`)
-* Must include a `type Query` that provides current snapshot access
+* Must include a `type Query` (required by GraphQL specification, can be minimal)
 * Must include a `type Subscription` that references the data type for real-time updates
 
 #### 2.1.2 Schema Compatibility Requirements
@@ -83,12 +83,12 @@ type Subscription {
 * GraphQL endpoint available at `/graphql` with WebSocket support
 * Optional GraphQL UI available for development testing when `GRAPHQL_UI=true`
 * Each schema field maps to a view name (1:1) 
-* Subscribed clients receive an initial snapshot followed by live updates
+* Subscribed clients receive the current view state followed by live updates
 
-#### 2.2.1 Initial Snapshot Delivery
+#### 2.2.1 Initial State Delivery
 * When a client subscribes, the server immediately sends ALL current rows
 * No pagination or batching - complete dataset is delivered at once
-* After snapshot delivery, live updates begin flowing
+* After current state delivery, live updates begin flowing
 
 #### 2.2.2 Row Ordering Preservation
 * Rows are delivered to clients in the same order they arrive from Materialize
@@ -104,9 +104,17 @@ type Subscription {
 * No fallback to HTTP (WebSocket-only for now).
 * Static schema — no dynamic SDL loading or view-to-schema inference.
 * Only one view supported in 1.1.
+* Multiple concurrent clients can subscribe independently.
+* Each client receives their own isolated event stream.
+* Client disconnections do not affect other active subscriptions.
+* Clients can connect before any data arrives from Materialize (updates stream as they come).
+* New clients never receive stale updates - only current state followed by live updates.
 
 ### 3. Acceptance Criteria
 * A user can `docker-compose up` the system with just the `.env` file.
 * Subscribing to the configured view field in the schema returns live updates via GraphQL subscription.
+* Multiple clients can connect simultaneously and receive independent update streams.
+* Each new client receives the full current state before live updates begin.
+* Client disconnections are handled gracefully without affecting other clients.
 * No uncaught errors in stream handling, and system logs connection/subscription lifecycle events.
 
