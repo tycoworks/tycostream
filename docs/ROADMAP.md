@@ -18,8 +18,8 @@
 
 ---
 
-## Milestone 1.2 — Filtering + Nested Queries
-**Goal:** Multiple clients can request filtered subsets of live data and query nested structures concurrently.
+## Milestone 1.2 — Filtering + YAML config
+**Goal:** Multiple clients can request filtered subsets of live data.
 
 **Experience:**
 
@@ -31,20 +31,17 @@
 
 **New Features:**
 
-* GraphQL filter syntax + server-side filtering
-* Nested queries based on relational structures  
-* Filtering by user/session/context
-* Generate SDL schema from YAML config
+* Generate GraphQL schema from YAML config
+* Hasura-style filters
 
 ---
 
-## Milestone 1.3 — Multi-View + Manual Schema
-**Goal:** Subscribe to multiple views using manually defined schemas.
+## Milestone 1.3 — Multi-View + Nested Queries
+**Goal:** Subscribe to multiple views with nested structures.
 
 **Experience:**
 
 * Define GraphQL schema to map to multiple Materialize views
-* Pagination(?)
 * Start tycostream with updated config pointing to new views and schema files
 * Use Apollo Client to subscribe to any view defined in the schema
 * Iterate on your schema independently of the Materialize SQL shape
@@ -52,7 +49,7 @@
 **New Features:**
 
 * Support for multiple views
-* Pagination
+* Nested queries based on relational structures
 
 ---
 
@@ -79,6 +76,7 @@
 * High-availability support for real-time transport (WebSockets or SSE) using Redis or NATS
 * Reconnect handling for dropped client WebSocket connections
 * Fan-out support for multi-client subscriptions per view
+* Pagination
 * Update coalescing for high-frequency data:
   - Client-configurable coalescing (opt-in)
   - Combine multiple updates for same entity within time window
@@ -90,7 +88,6 @@
 * Support for Live Query over SSE
 * Support for RisingWave as an alternative backend
 * Support for multi-source configuration (e.g. Materialize and RisingWave in one deployment)
-* Binary protocol support for Materialize streaming (requires better metadata about schema types)
 * Hasura-compatible introspection and schema generation
 * Comprehensive integration test suite using Materialize emulator with real streaming scenarios
 

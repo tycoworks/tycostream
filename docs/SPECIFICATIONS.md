@@ -90,9 +90,10 @@ views:
 
 #### 2.2.3 Schema Generation
 * GraphQL schema is dynamically generated from YAML configuration at startup
-* Generated schema includes a type, query field, and subscription field using the view name
+* Generated schema includes a type, query field, and subscription field using the YAML key as GraphQL type name
 * Field names and types are mapped directly from the `columns` section
 * The `view` field maps to the actual Materialize view name for database queries
+* This separation allows GraphQL type names to differ from database view names
 
 #### 2.3 Expected Behavior
 * No fallback to HTTP (WebSocket-only for now).
@@ -111,4 +112,3 @@ views:
 * Each new client receives the full current state before live updates begin.
 * Client disconnections are handled gracefully without affecting other clients.
 * No uncaught errors in stream handling, and system logs connection/subscription lifecycle events.
-

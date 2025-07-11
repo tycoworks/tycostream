@@ -22,7 +22,8 @@ export interface LoadedSchema {
   typeDefs: string;
   fields: SchemaField[];
   primaryKeyField: string;
-  viewName: string;
+  viewName: string; // GraphQL type name
+  databaseViewName: string; // Database view name
 }
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -45,4 +46,13 @@ export interface RowUpdateEvent {
 
 export interface CacheSubscriber {
   onUpdate(event: RowUpdateEvent): void;
+}
+
+export interface YamlViewConfig {
+  view: string;
+  columns: Record<string, string>;
+}
+
+export interface YamlSchemaConfig {
+  views: Record<string, YamlViewConfig>;
 }

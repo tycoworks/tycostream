@@ -36,37 +36,43 @@ describe('Integration Tests', () => {
     database: 'materialize',
   };
 
-  // Use a shared schema for integration tests that don't need to test schema loading
+  // Use a hardcoded test schema (matches production YAML structure)
   const testSchema: LoadedSchema = {
-    typeDefs: `type LivePNL {
+    typeDefs: `type live_pnl {
   instrument_id: ID!
-  symbol: String!
-  net_position: Float!
-  latest_price: Float!
-  market_value: Float!
-  avg_cost_basis: Float!
-  theoretical_pnl: Float!
+  symbol: String
+  net_position: Int
+  latest_price: Float
+  market_value: Float
+  avg_cost_basis: Float
+  theoretical_pnl: Float
+}
+
+type Query {
+  # Current snapshot of live_pnl data
+  live_pnl: [live_pnl!]!
 }
 
 type Subscription {
-  live_pnl: LivePNL!
+  live_pnl: live_pnl!
 }`,
     fields: [
       { name: 'instrument_id', type: 'ID', nullable: false, isPrimaryKey: true },
-      { name: 'symbol', type: 'String', nullable: false, isPrimaryKey: false },
-      { name: 'net_position', type: 'Float', nullable: false, isPrimaryKey: false },
-      { name: 'latest_price', type: 'Float', nullable: false, isPrimaryKey: false },
-      { name: 'market_value', type: 'Float', nullable: false, isPrimaryKey: false },
-      { name: 'avg_cost_basis', type: 'Float', nullable: false, isPrimaryKey: false },
-      { name: 'theoretical_pnl', type: 'Float', nullable: false, isPrimaryKey: false },
+      { name: 'symbol', type: 'String', nullable: true, isPrimaryKey: false },
+      { name: 'net_position', type: 'Int', nullable: true, isPrimaryKey: false },
+      { name: 'latest_price', type: 'Float', nullable: true, isPrimaryKey: false },
+      { name: 'market_value', type: 'Float', nullable: true, isPrimaryKey: false },
+      { name: 'avg_cost_basis', type: 'Float', nullable: true, isPrimaryKey: false },
+      { name: 'theoretical_pnl', type: 'Float', nullable: true, isPrimaryKey: false },
     ],
     primaryKeyField: 'instrument_id',
-    viewName: 'LivePNL'
+    viewName: 'live_pnl',
+    databaseViewName: 'live_pnl'
   };
 
   it('should integrate components together', async () => {
     // Create components following new architecture
-    const cache = new ViewCache(testSchema.primaryKeyField, testSchema.viewName);
+    const cache = new ViewCache(testSchema.primaryKeyField, testSchema.databaseViewName);
     const streamer = new MaterializeStreamer(testConfig, testSchema.fields, cache);
     
     // Test connection

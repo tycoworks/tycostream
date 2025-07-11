@@ -65,22 +65,19 @@ describe('loadSchema', () => {
   });
 
   it('should load valid schema file', () => {
-    const schemaContent = `
-type TestType {
-  id: ID!
-  name: String!
-  value: Float!
-}
-
-type Subscription {
-  test_view: TestType!
-}
+    const schemaContent = `views:
+  TestType:
+    view: test_view
+    columns:
+      id: ID!
+      name: String!
+      value: Float!
 `;
 
     // Create schema file in test directory structure
     const testConfigDir = join(testSchemaDir, 'config');
     mkdirSync(testConfigDir, { recursive: true });
-    writeFileSync(join(testConfigDir, 'schema.sdl'), schemaContent);
+    writeFileSync(join(testConfigDir, 'schema.yaml'), schemaContent);
 
     // Temporarily override process.cwd() for this test
     const originalCwd = process.cwd;
@@ -90,6 +87,8 @@ type Subscription {
       const schema = loadSchema();
       
       expect(schema.typeDefs).toContain('type TestType');
+      expect(schema.typeDefs).toContain('type Query');
+      expect(schema.typeDefs).toContain('type Subscription');
       expect(schema.primaryKeyField).toBe('id');
       expect(schema.viewName).toBe('TestType');
       expect(schema.fields).toHaveLength(3);
@@ -110,22 +109,19 @@ type Subscription {
     expect(() => loadSchema()).toThrow('Schema file not found');
   });
 
-  it('should throw ConfigError for schema without ID field', () => {
-    const invalidSchema = `
-type TestType {
-  name: String!
-  value: Float!
-}
-
-type Subscription {
-  test_view: TestType!
-}
+  it('should throw ConfigError for schema without non-nullable field', () => {
+    const invalidSchema = `views:
+  TestType:
+    view: test_view
+    columns:
+      name: String
+      value: Float
 `;
 
     // Create schema file in test directory structure
     const testConfigDir = join(testSchemaDir, 'config');
     mkdirSync(testConfigDir, { recursive: true });
-    writeFileSync(join(testConfigDir, 'schema.sdl'), invalidSchema);
+    writeFileSync(join(testConfigDir, 'schema.yaml'), invalidSchema);
 
     // Temporarily override process.cwd() for this test
     const originalCwd = process.cwd;
@@ -133,34 +129,31 @@ type Subscription {
 
     try {
       expect(() => loadSchema()).toThrow(ConfigError);
-      expect(() => loadSchema()).toThrow('Schema must contain exactly one field of type ID!');
+      expect(() => loadSchema()).toThrow('Schema must contain at least one non-nullable field');
     } finally {
       // Restore original cwd
       process.cwd = originalCwd;
     }
   });
 
-  it('should throw ConfigError for schema with multiple data types', () => {
-    const multiTypeSchema = `
-type TestType1 {
-  id: ID!
-  name: String!
-}
-
-type TestType2 {
-  id: ID!
-  value: Float!
-}
-
-type Subscription {
-  test_view: TestType1!
-}
+  it('should throw ConfigError for schema with multiple views', () => {
+    const multiViewSchema = `views:
+  TestType1:
+    view: test_view1
+    columns:
+      id: ID!
+      name: String!
+  TestType2:
+    view: test_view2
+    columns:
+      id: ID!
+      value: Float!
 `;
 
     // Create schema file in test directory structure
     const testConfigDir = join(testSchemaDir, 'config');
     mkdirSync(testConfigDir, { recursive: true });
-    writeFileSync(join(testConfigDir, 'schema.sdl'), multiTypeSchema);
+    writeFileSync(join(testConfigDir, 'schema.yaml'), multiViewSchema);
 
     // Temporarily override process.cwd() for this test
     const originalCwd = process.cwd;
@@ -168,9 +161,50 @@ type Subscription {
 
     try {
       expect(() => loadSchema()).toThrow(ConfigError);
-      expect(() => loadSchema()).toThrow('Schema must contain exactly one data type definition (found 2)');
+      expect(() => loadSchema()).toThrow('Only one view definition is supported in the current version');
     } finally {
       // Restore original cwd
+      process.cwd = originalCwd;
+    }
+  });
+
+  it('should throw ConfigError for invalid YAML syntax', () => {
+    const invalidYaml = `views:
+  TestType:
+    view: test_view
+    columns:
+      id: ID!
+      name: String!
+    - invalid yaml syntax`;
+
+    const testConfigDir = join(testSchemaDir, 'config');
+    mkdirSync(testConfigDir, { recursive: true });
+    writeFileSync(join(testConfigDir, 'schema.yaml'), invalidYaml);
+
+    const originalCwd = process.cwd;
+    process.cwd = () => testSchemaDir;
+
+    try {
+      expect(() => loadSchema()).toThrow(ConfigError);
+    } finally {
+      process.cwd = originalCwd;
+    }
+  });
+
+  it('should throw ConfigError for empty YAML file', () => {
+    const emptyYaml = '';
+
+    const testConfigDir = join(testSchemaDir, 'config');
+    mkdirSync(testConfigDir, { recursive: true });
+    writeFileSync(join(testConfigDir, 'schema.yaml'), emptyYaml);
+
+    const originalCwd = process.cwd;
+    process.cwd = () => testSchemaDir;
+
+    try {
+      expect(() => loadSchema()).toThrow(ConfigError);
+      expect(() => loadSchema()).toThrow('Invalid YAML schema format');
+    } finally {
       process.cwd = originalCwd;
     }
   });

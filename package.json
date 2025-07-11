@@ -24,6 +24,7 @@
     "graphql": "^16.8.1",
     "graphql-ws": "^5.14.2",
     "graphql-yoga": "^5.0.0",
+    "js-yaml": "^4.1.0",
     "nanoid": "^5.1.5",
     "p-queue": "^8.1.0",
     "pg": "^8.11.3",
@@ -33,6 +34,7 @@
     "zod": "^3.25.71"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.8.0",
     "@types/pg": "^8.10.7",
     "@types/pg-copy-streams": "^1.2.5",

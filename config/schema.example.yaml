@@ -1,0 +1,11 @@
+views:
+  live_pnl:
+    view: live_pnl
+    columns:
+      instrument_id: ID!
+      symbol: String
+      net_position: Int
+      latest_price: Float
+      market_value: Float
+      avg_cost_basis: Float
+      theoretical_pnl: Float

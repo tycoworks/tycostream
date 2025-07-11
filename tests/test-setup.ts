@@ -1,10 +1,10 @@
-// Global test setup to prevent schema.sdl files from being created in real config directory
+// Global test setup to prevent schema files from being created in real config directory
 import { rmSync } from 'fs';
 import { join } from 'path';
 
-// Clean up any schema.sdl files that might have been created in the real config directory
+// Clean up any schema files that might have been created in the real config directory
 const realConfigDir = join(process.cwd(), 'config');
-const realSchemaPath = join(realConfigDir, 'schema.sdl');
+const realSchemaPath = join(realConfigDir, 'schema.yaml');
 
 // Add cleanup after each test
 afterEach(() => {

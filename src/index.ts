@@ -34,7 +34,7 @@ async function main(): Promise<void> {
 
     // Phase 3: Create streaming components
     log.info('Initializing streaming components');
-    const cache = new ViewCache(schema.primaryKeyField, schema.viewName);
+    const cache = new ViewCache(schema.primaryKeyField, schema.databaseViewName);
     const streamer = new MaterializeStreamer(dbConfig, schema.fields, cache);
     log.info('Components initialized');
 
@@ -44,8 +44,8 @@ async function main(): Promise<void> {
     log.info('Connected to Materialize');
 
     // Phase 5: Start streaming from view
-    log.info('Starting view subscription', { viewName: schema.viewName });
-    await streamer.startStreaming(schema.viewName);
+    log.info('Starting view subscription', { databaseViewName: schema.databaseViewName });
+    await streamer.startStreaming(schema.databaseViewName);
     log.info('View subscription started');
 
     // Phase 6: Start GraphQL server
@@ -74,15 +74,22 @@ async function main(): Promise<void> {
     log.info('tycostream is ready', {
       graphqlEndpoint: `http://localhost:${port}/graphql`,
       subscriptionsEndpoint: `ws://localhost:${port}/graphql`,
-      viewName: schema.viewName
+      graphqlTypeName: schema.viewName,
+      databaseViewName: schema.databaseViewName
     });
 
   } catch (error) {
     if (error instanceof ConfigError) {
-      log.error('Configuration error, exiting', { field: error.field }, error);
+      log.error(`Configuration error: ${error.message}`, { 
+        field: error.field,
+        errorType: 'ConfigError' 
+      });
       process.exit(1);
     } else {
-      log.error('Startup failed, exiting', {}, error as Error);
+      log.error(`Startup failed: ${(error as Error).message}`, { 
+        errorType: (error as Error).name,
+        stack: (error as Error).stack
+      });
       process.exit(1);
     }
   }
