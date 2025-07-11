@@ -34,6 +34,7 @@
 * GraphQL filter syntax + server-side filtering
 * Nested queries based on relational structures  
 * Filtering by user/session/context
+* Generate SDL schema from YAML config
 
 ---
 
@@ -42,7 +43,7 @@
 
 **Experience:**
 
-* Define GraphQL schema using SDL to map to multiple Materialize views
+* Define GraphQL schema to map to multiple Materialize views
 * Pagination(?)
 * Start tycostream with updated config pointing to new views and schema files
 * Use Apollo Client to subscribe to any view defined in the schema
@@ -51,8 +52,7 @@
 **New Features:**
 
 * Support for multiple views
-* Define GraphQL schema using SDL (Schema Definition Language)
-* Configure schema structure and access rules in a version-controlled file (e.g. metadata.yaml)
+* Pagination
 
 ---
 

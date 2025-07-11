@@ -66,11 +66,11 @@ GRAPHQL_UI=true
 ### 3. Configure your schema:
 
 ```bash
-cp config/schema.example.sdl config/schema.sdl
-# Edit config/schema.sdl type name and fields to match your Materialize view
+cp config/schema.example.yaml config/schema.yaml
+# Edit config/schema.yaml view name and fields to match your Materialize view
 ```
 
-**Schema Requirements:** Your `config/schema.sdl` file must include both a `type Query` (for snapshot access) and `type Subscription` (for real-time updates), plus exactly one data type definition.
+**Schema Requirements:** Your `config/schema.yaml` file must contain exactly one view definition.
 
 ### 4. Start the server:
 

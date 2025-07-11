@@ -10,7 +10,7 @@ This document outlines the system architecture for tycostream: a real-time Graph
 * Stream updates from Materialize views to GraphQL clients over WebSocket
 * Support multiple concurrent client subscriptions with isolation
 * Deliver current view state followed by incremental updates
-* Manually defined schema using SDL files
+* Manually defined schema using YAML configuration files
 * Minimal configuration surface for users
 * Clean, extensible architecture that supports future enhancements
 
@@ -45,7 +45,7 @@ This document outlines the system architecture for tycostream: a real-time Graph
 ### GraphQL API Server
 
 * Serves a WebSocket endpoint for GraphQL subscriptions using GraphQL Yoga
-* Loads a statically defined GraphQL schema file from configuration
+* Dynamically generates GraphQL schema from YAML configuration
 * Creates a new Client Stream Handler for each client subscription
 * Uses async iterators to stream data to clients
 
@@ -53,7 +53,7 @@ This document outlines the system architecture for tycostream: a real-time Graph
 
 ## Data Flow
 
-1. **Startup**: Backend validates configuration and loads GraphQL schema
+1. **Startup**: Backend validates configuration and loads GraphQL schema from YAML
 2. **Connection**: Backend connects to Materialize using Postgres wire protocol
 3. **Streaming**: Issues `SUBSCRIBE` query against configured view
 4. **Cache Initialization**: Initial rows populate the Central View Cache with current state

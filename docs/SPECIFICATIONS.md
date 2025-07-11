@@ -8,7 +8,7 @@ Enable a developer to stream real-time updates from a single Materialize view us
 ### 2. Requirements
 * Apollo Client should be able to subscribe to a GraphQL field (e.g. `live_pnl`) and receive live updates into a frontend grid or table.
 
-The process must fail fast on startup if any critical requirement is missing or invalid — such as malformed schema files, misconfigured environment variables, ports already in use, or unreachable database hosts. This ensures predictable behavior and consistent state before serving subscriptions.
+The process must fail fast on startup if any critical requirement is missing or invalid — such as malformed YAML schema files, misconfigured environment variables, ports already in use, or unreachable database hosts. This ensures predictable behavior and consistent state before serving subscriptions.
 
 #### 2.0.1 Error Handling and Recovery
 * System exits immediately on any runtime errors that prevent streaming service
@@ -16,14 +16,14 @@ The process must fail fast on startup if any critical requirement is missing or 
 * Automatic reconnection and resilience features planned for Milestone 2
 
 #### 2.1 Configure
-* The system expects a schema file at `./config/schema.sdl`
-* Users must copy `./config/schema.example.sdl` to `./config/schema.sdl` and customize it
+* The system expects a schema file at `./config/schema.yaml`
+* Users must copy `./config/schema.example.yaml` to `./config/schema.yaml` and customize it
 * Schema path resolution works in both Docker and local development environments
 * If the schema file is missing or malformed, the single service must fail fast at startup and exit with an appropriate error
 * Log verbosity controlled via `LOG_LEVEL` environment variable (values: `debug`, `info`, `warn`, `error`)
 
 ```env
-SOURCE_HOST=your-mz-host
+SOURCE_HOST=localhost
 SOURCE_PORT=6875
 SOURCE_USER=materialize
 SOURCE_PASSWORD=materialize
@@ -35,46 +35,39 @@ GRAPHQL_UI=true
 LOG_LEVEL=info
 ```
 
-##### Example SDL Schema (schema.sdl)
+##### Example YAML Schema (schema.yaml)
 
-```graphql
-# Type name matches your Materialize view name exactly
-type live_pnl {
-  instrument_id: ID!
-  symbol: String!
-  net_position: Float!
-  latest_price: Float!
-  market_value: Float!
-  avg_cost_basis: Float!
-  theoretical_pnl: Float!
-}
-
-type Query {
-  # Current state of live_pnl data
-  live_pnl: [live_pnl!]!
-}
-
-type Subscription {
-  # You control the GraphQL API naming
-  live_pnl: live_pnl!
-}
+```yaml
+views:
+  live_pnl:
+    view: live_pnl
+    columns:
+      instrument_id: ID!
+      symbol: String
+      net_position: Float
+      latest_price: Float
+      market_value: Float
+      avg_cost_basis: Float
+      theoretical_pnl: Float
 ```
 
-* Copy `schema.example.sdl` to `schema.sdl` and customize for your view  
+* Copy `schema.example.yaml` to `schema.yaml` and customize for your view  
 * No query parameters or filtering logic are supported in 1.1.
 
 #### 2.1.1 Schema Requirements  
-* Schema files must be valid GraphQL SDL format
-* Must contain exactly one data type definition (excluding `type Query` and `type Subscription`)
-* Multiple data types will be supported in future versions - system fails fast if more than one is found
-* Exactly one field of type `ID!` must be present to serve as the primary key
-* Primary key field name can be anything (e.g., `instrument_id: ID!`)
-* Must include a `type Query` (required by GraphQL specification, can be minimal)
-* Must include a `type Subscription` that references the data type for real-time updates
+* Schema files must be valid YAML format
+* Must contain exactly one view definition per schema file
+* Multiple views will be supported in future versions - system fails fast if more than one is found
+* First field with `!` suffix (non-nullable) serves as the primary key
+* GraphQL schema is automatically generated from the view definition, including:
+  - Type definition using the view name (e.g., `live_pnl`)
+  - Query field for current state (e.g., `live_pnl: [live_pnl!]!`)
+  - Subscription field for real-time updates (e.g., `live_pnl: live_pnl!`)
+  - All field names and types from the `columns` section
 
 #### 2.1.2 Schema Compatibility Requirements
-* SDL schema field types must be compatible with the corresponding Materialize view column types
-* Field names and order in SDL must match the Materialize view structure exactly
+* YAML schema field types must be compatible with the corresponding Materialize view column types
+* Field names and order in YAML must match the Materialize view structure exactly
 * Schema mismatches will be handled and reported at runtime
 
 #### 2.2 Start
@@ -95,14 +88,15 @@ type Subscription {
 * No sorting or reordering is performed by tycostream
 * Updates preserve the original stream order for consistency
 
-#### 2.2.3 Schema Configuration
-* Type name in SDL schema must match your Materialize view name exactly
-* View name is automatically extracted from the first data type in the SDL schema
-* Subscription field names can be customized independently for GraphQL API design
+#### 2.2.3 Schema Generation
+* GraphQL schema is dynamically generated from YAML configuration at startup
+* Generated schema includes a type, query field, and subscription field using the view name
+* Field names and types are mapped directly from the `columns` section
+* The `view` field maps to the actual Materialize view name for database queries
 
 #### 2.3 Expected Behavior
 * No fallback to HTTP (WebSocket-only for now).
-* Static schema — no dynamic SDL loading or view-to-schema inference.
+* Static schema — no dynamic YAML loading or view-to-schema inference.
 * Only one view supported in 1.1.
 * Multiple concurrent clients can subscribe independently.
 * Each client receives their own isolated event stream.

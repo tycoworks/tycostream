@@ -16,7 +16,7 @@ Key points:
 Outline how code should be organized:
 
 - `/src/` – Node.js + TypeScript service that handles both streaming and GraphQL delivery logic
-- `/config/` – SDL schemas and metadata config
+- `/config/` – YAML schemas and metadata config
 - `/shared/` – event definitions, config, logging, types
 - `/tests/` – isolated unit tests per module, integration tests
 
@@ -50,6 +50,7 @@ Outline how code should be organized:
   - Date/time manipulation (use date-fns, dayjs)
   - Validation (use Zod, Joi, etc.)
   - Async queues (use p-queue, async, etc.)
+  - YAML parsing (use js-yaml, yaml, etc.)
 - **When custom implementation is acceptable**:
   - Core business logic specific to our domain
   - Simple utilities where a library would be overkill
@@ -130,7 +131,7 @@ npm run test -- --watch  # watch mode during dev
 * Uses Postgres wire protocol with `COPY (SUBSCRIBE TO view WITH (SNAPSHOT)) TO STDOUT` via `pg-copy-streams`
 * Stream format: `{ row: Record<string, any>, diff: number }`
 * Tab-separated COPY output parsing with proper null handling (`\N`)
-* Column structure determined from SDL schema field definitions (no database introspection required)
+* Column structure determined from YAML schema field definitions (no database introspection required)
 * Metadata column handling (`mz_timestamp`, `diff`) and view validation
 
 ### 6.1.1 Error Handling Implementation
@@ -170,9 +171,9 @@ npm run test -- --watch  # watch mode during dev
 * Config directory detection using `process.cwd()` and `existsSync()` checks
 
 ### 6.4.1 View Name Resolution
-* Implementation uses `extractViewName()` function with regex parsing
-* Regex pattern `/type\s+(\w+)\s*\{/` extracts type names from SDL
-* Filters out `type Subscription` definitions to find data types only
+* YAML schema parsing extracts view definitions from configuration structure
+* Single view validation ensures exactly one view definition per schema file
+* View name and database view mapping extracted from YAML structure
 
 ### 6.5 GraphQL Server Configuration
 * Implementation details for the GraphQL API Server described in [ARCHITECTURE.md](ARCHITECTURE.md#graphql-api-server-graphql-yoga)
@@ -201,16 +202,6 @@ npm run test -- --watch  # watch mode during dev
 * Current state delivered as individual 'insert' events on subscription
 * Live updates continue seamlessly through same event stream
 * Proper cleanup on client disconnect prevents memory leaks
-
-### 6.7 Schema Validation Implementation
-* Regex-based parsing to detect ID! field in SDL schema files
-* File system validation for schema file existence
-* Validates exactly one data type definition (excluding `type Query` and `type Subscription`)
-* Fails fast with helpful error if multiple data types found
-* Multiple data types will be supported in future versions
-* GraphQL format validation using string parsing
-* Detailed error messaging with examples for common mistakes
-* Primary key field extraction and caching for view operations
 
 ---
 
