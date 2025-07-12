@@ -1,103 +1,115 @@
-# Milestone 1 — GraphQL Streaming API (MVP)
+## **Milestone 1 — Stream Real-Time Data via GraphQL with Minimal Setup**
 
-## Milestone 1.1 — Minimal Streaming
-**Goal:** Stream a single view to one GraphQL client with minimal config.
+> Developers can stream updates from streaming SQL views into GraphQL clients using a simple YAML schema and local setup.
+> 
 
-**Experience:**
+### ⚙️ Core Streaming Infrastructure
 
-* Set environment variables: Materialize config + single view name
-* Start tycostream: docker-compose up
-* Connect single client to stream real-time updates over GraphQL WebSockets
+- Single-process implementation: GraphQL + stream ingestion in one backend
+- Snapshot + incremental live updates via Materialize `SUBSCRIBE`
+- WebSocket-based GraphQL Subscriptions endpoint
+- Compatible with Apollo Client and other standard GraphQL clients
 
-**Key Features:**
+### 📝 Schema & Configuration
 
-* Single-process implementation: both GraphQL and streaming logic run in one backend service.
-* Initial snapshot + live updates from one view
-* WebSocket / GraphQL endpoint
-* Simple config
+- Simple YAML config defining views and schema
+- GraphQL schema auto-generated from YAML
+- Hasura-style filters (e.g., `where user_id = 123`)
+- Nested queries based on relational joins
+- Multiple views per project
+- Multiple concurrent clients supported
 
----
+### 🚀 Dev Experience
 
-## Milestone 1.2 — Filtering + YAML config
-**Goal:** Multiple clients can request filtered subsets of live data.
-
-**Experience:**
-
-* Set environment variables as before
-* Start tycostream: docker-compose up
-* Connect multiple clients simultaneously
-* Each client can request filtered data (e.g. where user\_id = 123)
-* Query nested data representing relationships (e.g. trades -> instrument)
-
-**New Features:**
-
-* Generate GraphQL schema from YAML config
-* Hasura-style filters
+- Spin up with `docker-compose up`
+- Subscribe to any configured view in seconds
 
 ---
 
-## Milestone 1.3 — Multi-View + Nested Queries
-**Goal:** Subscribe to multiple views with nested structures.
+## **Milestone 2 — Deploy tycostream Securely in Production**
 
-**Experience:**
+> Teams can run tycostream in production with authentication, access control, observability, and fault tolerance.
+> 
 
-* Define GraphQL schema to map to multiple Materialize views
-* Start tycostream with updated config pointing to new views and schema files
-* Use Apollo Client to subscribe to any view defined in the schema
-* Iterate on your schema independently of the Materialize SQL shape
+### 🔐 Access & Security
 
-**New Features:**
+- JWT-based authentication
+- Role-based access control (RBAC) for GraphQL operations
+- Row-level entitlements for secure data access per user
 
-* Support for multiple views
-* Nested queries based on relational structures
+### 🩺 Observability
 
----
+- Prometheus metrics
+- Health check endpoints
+- Structured logs for query and stream activity
 
-# Milestone 2 — Production-Ready
-**Goal:** Deploy tycostream securely with observability, role-based access, and fault tolerance.
+### 🔄 Materialize Resilience
 
-**New Features:**
+- Automatic reconnect with exponential backoff
+- Circuit breaker for failed subscriptions
+- Stream health monitoring and self-healing
+- Runtime view existence validation
 
-* JWT-based authentication
-* Role-based access control (RBAC) — control operations available to user roles
-* Row-level entitlements — control which data rows users can access
-* Observability: Prometheus metrics, structured logs, health checks
-* Robust Materialize Connection Handling:
-  - Automatic reconnection with exponential backoff
-  - Circuit breaker patterns for failed connections
-  - Stream health monitoring and validation
-  - Production error recovery procedures
-  - Runtime view existence validation
-* Resilient GraphQL Server Operations:
-  - Graceful error recovery for server failures
-  - Client connection management and cleanup
-  - WebSocket connection resilience
-* Separation of Materialize and GraphQL services for independent scaling and deployment.
-* High-availability support for real-time transport (WebSockets or SSE) using Redis or NATS
-* Reconnect handling for dropped client WebSocket connections
-* Fan-out support for multi-client subscriptions per view
-* Pagination
-* Update coalescing for high-frequency data:
-  - Client-configurable coalescing (opt-in)
-  - Combine multiple updates for same entity within time window
-  - Reduce network overhead for market data scenarios
-* Backpressure and cache management:
-  - Cache size limits and LRU eviction
-  - Memory pressure monitoring
-  - Graceful degradation during outages
-* Support for Live Query over SSE
-* Support for RisingWave as an alternative backend
-* Support for multi-source configuration (e.g. Materialize and RisingWave in one deployment)
-* Hasura-compatible introspection and schema generation
-* Comprehensive integration test suite using Materialize emulator with real streaming scenarios
+### 🧠 Server Resilience
+
+- Graceful error handling for GraphQL server failures
+- WebSocket reconnection support
+- Stale client cleanup and connection lifecycle management
+
+### 🧪 Test Infrastructure
+
+- Integration test suite using Materialize emulator with real streaming data
 
 ---
 
-# Milestone 3 — Hosted
-**Goal:** Integrate and use tycostream as a service, and integrate with downstream GraphQL platforms.
+## **Milestone 3 — Scale to High-Throughput Workloads and Multi-Client Fanout**
 
-**New Features:**
+> Teams can confidently stream high-frequency data to many clients while monitoring performance, avoiding overload, and tuning system behavior.
+> 
 
-* Optional hosted/managed version with SLAs
-* Admin UI for schema and metadata management
-* Fully managed deployment with token-based access
+### 📈 Scalability
+
+- Redis or NATS-based pub/sub layer for fan-out
+- Multiplexed subscriptions across clients to avoid duplicate stream loads
+- Pagination support for large result sets
+- Decoupling of GraphQL and Materialize processes for horizontal scaling
+- Performance instrumentation for stream latency and throughput
+
+### 🧹 Backpressure & Caching
+
+- Cache size limits with LRU eviction
+- Memory pressure monitoring
+- Graceful degradation during overload or outages
+
+### ⏱ Update Coalescing
+
+- Combine multiple updates per entity within a configurable time window
+- Client-configurable coalescing strategy to reduce network overhead
+
+### 🧪 Performance Testing
+
+- Load testing for high-frequency updates and concurrent connections
+- Benchmarks for subscription startup latency and memory usage
+
+---
+
+## **Milestone 4 — Use tycostream as a Managed Streaming GraphQL Platform**
+
+> Teams can use tycostream as a hosted service with token-based access, admin tooling, and integrations with downstream GraphQL ecosystems.
+> 
+
+### ☁️ Hosted Platform
+
+- Fully managed, SLA-backed tycostream service
+- Token-based access authentication
+- Admin UI for view config and schema management
+
+### 🔌 Ecosystem Integration
+
+- Support for Live Queries over SSE
+- Hasura-compatible schema introspection and metadata format
+
+### 🔄 Multi-Source Support
+
+- Native RisingWave backend support
+- Multi-source deployment: Materialize + RisingWave in one config

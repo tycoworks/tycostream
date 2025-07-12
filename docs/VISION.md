@@ -12,6 +12,15 @@ Developers can instantly expose secure, scalable streaming APIs using only confi
 
 ---
 
+## Use Cases  
+- **Internal tools and dashboards** that need instant updates without polling  
+- **Trading and monitoring systems** where low-latency matters  
+- **AI agents** that act on live signals from SQL views  
+- **Data product APIs** for securely exposing real-time data to clients  
+- **Prototypes and internal apps** where speed > boilerplate  
+
+---
+
 ## Core Beliefs
 We believe an ecosystem will form around streaming databases, just like it did for Postgres:
 
