@@ -57,17 +57,14 @@ async function main(): Promise<void> {
 
     // Register shutdown handlers
     shutdownManager.addHandler(async () => {
-      log.info('Shutting down GraphQL server');
       await graphqlServer.stop();
     });
 
     shutdownManager.addHandler(async () => {
-      log.info('Stopping stream');
       await streamer.stopStreaming();
     });
 
     shutdownManager.addHandler(async () => {
-      log.info('Disconnecting from Materialize');
       await streamer.disconnect();
     });
 

@@ -23,23 +23,21 @@ export class ShutdownManager {
     }
 
     this.isShuttingDown = true;
-    this.log.info('Initiating graceful shutdown', { signal, handlersCount: this.handlers.length });
+    this.log.info('Shutting down tycostream');
 
     try {
       // Execute all shutdown handlers
       await Promise.all(
         this.handlers.map(async (handler, index) => {
           try {
-            this.log.debug('Executing shutdown handler', { handlerIndex: index });
             await handler();
-            this.log.debug('Shutdown handler completed', { handlerIndex: index });
           } catch (error) {
             this.log.error('Shutdown handler failed', { handlerIndex: index }, error as Error);
           }
         })
       );
 
-      this.log.info('Graceful shutdown completed');
+      this.log.info('Shutdown complete');
       process.exit(0);
     } catch (error) {
       this.log.error('Shutdown process failed', {}, error as Error);
@@ -52,7 +50,6 @@ export class ShutdownManager {
     
     for (const signal of signals) {
       process.on(signal, () => {
-        this.log.info('Received shutdown signal', { signal });
         void this.shutdown(signal);
       });
     }

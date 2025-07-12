@@ -53,11 +53,9 @@ class DatabaseConnection {
    * Disconnect from database
    */
   async disconnect(client: Client): Promise<void> {
-    this.log.info('Disconnecting from streaming database');
-    
     try {
       await client.end();
-      this.log.info('Disconnected from streaming database');
+      this.log.info('Database connection closed');
     } catch (error) {
       this.log.error('Error during disconnect', {}, error as Error);
       throw error;
@@ -144,6 +142,7 @@ export class MaterializeStreamer {
   private processor: CopyStreamProcessor;
   private dbConnection = new DatabaseConnection();
   private client: Client | null = null;
+  private isShuttingDown = false;
 
   constructor(
     private config: DatabaseConfig,
@@ -200,14 +199,20 @@ export class MaterializeStreamer {
       });
 
       this.copyStream.on('end', () => {
-        this.log.warn('COPY stream ended', { viewName });
+        // Only warn about unexpected stream end
+        if (!this.isShuttingDown) {
+          this.log.warn('COPY stream ended', { viewName });
+        }
         this.isStreaming = false;
       });
 
       this.copyStream.on('error', (error: Error) => {
-        this.log.error('COPY stream error', { viewName }, error);
+        // Don't log errors during intentional shutdown
+        if (!this.isShuttingDown) {
+          this.log.error('COPY stream error', { viewName }, error);
+          throw error;
+        }
         this.isStreaming = false;
-        throw error;
       });
 
       this.isStreaming = true;
@@ -223,9 +228,8 @@ export class MaterializeStreamer {
    * Stop streaming
    */
   async stopStreaming(): Promise<void> {
-    this.log.info('Stopping stream');
-    
     this.isStreaming = false;
+    this.isShuttingDown = true;
     
     if (this.copyStream) {
       try {

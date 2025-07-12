@@ -168,8 +168,6 @@ export class GraphQLServer {
   }
 
   async stop(): Promise<void> {
-    this.log.info('Stopping GraphQL server');
-    
     if (this.wsServer) {
       this.wsServer.close();
       this.wsServer = null;
