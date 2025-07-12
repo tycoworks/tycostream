@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ViewCache } from '../shared/viewCache.js';
 import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
-import type { StreamEvent } from '../shared/types.js';
+import type { StreamEvent } from '../shared/viewCache.js';
 import { TEST_DELAYS } from './test-utils.js';
 
 describe('Concurrent Client Support', () => {

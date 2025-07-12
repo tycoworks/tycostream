@@ -1,7 +1,6 @@
 import { logger, truncateForLog } from './logger.js';
 import { nanoid } from 'nanoid';
-import type { ViewCache } from './viewCache.js';
-import type { RowUpdateEvent, CacheSubscriber } from './types.js';
+import type { ViewCache, RowUpdateEvent, CacheSubscriber } from './viewCache.js';
 import PQueue from 'p-queue';
 
 /**

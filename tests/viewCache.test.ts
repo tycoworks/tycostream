@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ViewCache } from '../shared/viewCache.js';
-import type { StreamEvent, RowUpdateEvent, CacheSubscriber } from '../shared/types.js';
+import type { StreamEvent, RowUpdateEvent, CacheSubscriber } from '../shared/viewCache.js';
 import { createTestCache, TestData, TEST_DELAYS, createMockSubscriber } from './test-utils.js';
 
 describe('ViewCache', () => {

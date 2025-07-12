@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import type { StreamEvent } from '../shared/types.js';
+import type { StreamEvent } from '../shared/viewCache.js';
 import type { EventType } from '../shared/events.js';
 import { logger } from '../shared/logger.js';
 

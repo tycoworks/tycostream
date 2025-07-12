@@ -1,6 +1,8 @@
 import { Client } from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
-import type { StreamEvent, SchemaField, DatabaseConfig } from '../shared/types.js';
+import type { SchemaField } from '../shared/schema.js';
+import type { StreamEvent } from '../shared/viewCache.js';
+import type { DatabaseConfig } from './config.js';
 import { logger } from '../shared/logger.js';
 import { ViewCache } from '../shared/viewCache.js';
 

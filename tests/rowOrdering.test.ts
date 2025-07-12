@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ViewCache } from '../shared/viewCache.js';
-import type { StreamEvent } from '../shared/types.js';
+import type { StreamEvent } from '../shared/viewCache.js';
 
 describe('Row Insertion Order Preservation', () => {
   it('should preserve insertion order in snapshots', () => {

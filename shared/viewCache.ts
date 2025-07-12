@@ -3,7 +3,24 @@ import { logger, truncateForLog } from './logger.js';
 
 // Component-specific configuration
 const MAX_LISTENERS = 1000; // Maximum event listeners to prevent memory leaks
-import type { StreamEvent, RowUpdateEvent, CacheSubscriber, DiffType } from './types.js';
+
+// Streaming and cache event types
+export interface StreamEvent {
+  row: Record<string, any>;
+  diff: number;
+}
+
+export type DiffType = 'insert' | 'update' | 'delete';
+
+export interface RowUpdateEvent {
+  type: DiffType;
+  row: Record<string, any>;
+  previousRow?: Record<string, any>;
+}
+
+export interface CacheSubscriber {
+  onUpdate(event: RowUpdateEvent): void;
+}
 
 export class ViewCache extends EventEmitter {
   private static readonly MAX_LISTENERS = MAX_LISTENERS;

@@ -1,8 +1,34 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { load } from 'js-yaml';
-import type { YamlSchemaConfig, LoadedSchema, SchemaField } from './types.js';
 import { GraphQLBoolean, GraphQLFloat, GraphQLInt, GraphQLString, GraphQLID } from 'graphql';
+
+// Schema types
+export interface SchemaField {
+  name: string;
+  type: string;
+  nullable: boolean;
+  isPrimaryKey: boolean;
+}
+
+export interface LoadedSchema {
+  typeDefs: string;
+  fields: SchemaField[];
+  primaryKeyField: string;
+  viewName: string; // GraphQL type name
+  databaseViewName: string; // Database view name
+}
+
+// YAML schema configuration types
+export interface YamlViewConfig {
+  view: string;
+  primary_key: string;
+  columns: Record<string, string>;
+}
+
+export interface YamlSchemaConfig {
+  views: Record<string, YamlViewConfig>;
+}
 import pgTypes from 'pg-types';
 // @ts-ignore - no type definitions available for pg-type-names
 import pgTypeNamesModule from 'pg-type-names';

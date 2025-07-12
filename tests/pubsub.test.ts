@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PubSub } from '../src/pubsub.js';
 import { EVENTS } from '../shared/events.js';
-import type { StreamEvent } from '../shared/types.js';
+import type { StreamEvent } from '../shared/viewCache.js';
 
 describe('PubSub', () => {
   let pubsub: PubSub;

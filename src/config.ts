@@ -2,8 +2,17 @@ import { z } from 'zod';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { config } from 'dotenv';
-import type { DatabaseConfig, LoadedSchema } from '../shared/types.js';
-import { loadSchemaFromYaml } from '../shared/schema.js';
+import type { LogLevel } from '../shared/logger.js';
+import { loadSchemaFromYaml, type LoadedSchema } from '../shared/schema.js';
+
+// Database configuration
+export interface DatabaseConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+}
 
 // Load .env file from project root
 config();
@@ -100,7 +109,7 @@ export function isGraphQLUIEnabled(): boolean {
   return getEnvConfig().GRAPHQL_UI;
 }
 
-export function getLogLevel(): string {
+export function getLogLevel(): LogLevel {
   return getEnvConfig().LOG_LEVEL;
 }
 

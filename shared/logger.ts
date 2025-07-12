@@ -1,6 +1,17 @@
 import pino from 'pino';
 import { getLogLevel } from '../src/config.js';
 
+// Logging types
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+export interface LogContext {
+  component?: string;
+  operation?: string;
+  viewName?: string;
+  clientId?: string;
+  [key: string]: any;
+}
+
 // Component-specific configuration
 const LOG_TRUNCATE_LENGTH = 200; // Balance between readability and completeness
 
