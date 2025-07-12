@@ -41,14 +41,15 @@ LOG_LEVEL=info
 views:
   live_pnl:
     view: live_pnl
+    primary_key: instrument_id
     columns:
-      instrument_id: ID!
-      symbol: String
-      net_position: Float
-      latest_price: Float
-      market_value: Float
-      avg_cost_basis: Float
-      theoretical_pnl: Float
+      instrument_id: integer
+      symbol: text
+      net_position: bigint
+      latest_price: double precision
+      market_value: double precision
+      avg_cost_basis: numeric
+      theoretical_pnl: double precision
 ```
 
 * Copy `schema.example.yaml` to `schema.yaml` and customize for your view  
@@ -58,7 +59,7 @@ views:
 * Schema files must be valid YAML format
 * Must contain exactly one view definition per schema file
 * Multiple views will be supported in future versions - system fails fast if more than one is found
-* First field with `!` suffix (non-nullable) serves as the primary key
+* Primary key specified using `primary_key` attribute and must reference a column name
 * GraphQL schema is automatically generated from the view definition, including:
   - Type definition using the view name (e.g., `live_pnl`)
   - Query field for current state (e.g., `live_pnl: [live_pnl!]!`)
@@ -66,7 +67,7 @@ views:
   - All field names and types from the `columns` section
 
 #### 2.1.2 Schema Compatibility Requirements
-* YAML schema field types must be compatible with the corresponding Materialize view column types
+* YAML schema uses PostgreSQL wire protocol type names (e.g., `integer`, `text`, `double precision`) that must match the corresponding Materialize view column types
 * Field names and order in YAML must match the Materialize view structure exactly
 * Schema mismatches will be handled and reported at runtime
 

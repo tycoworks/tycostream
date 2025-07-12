@@ -1,11 +1,12 @@
 views:
   live_pnl:
     view: live_pnl
+    primary_key: instrument_id
     columns:
-      instrument_id: ID!
-      symbol: String
-      net_position: Int
-      latest_price: Float
-      market_value: Float
-      avg_cost_basis: Float
-      theoretical_pnl: Float
+      instrument_id: integer
+      symbol: text
+      net_position: bigint
+      latest_price: double precision
+      market_value: double precision
+      avg_cost_basis: numeric
+      theoretical_pnl: double precision

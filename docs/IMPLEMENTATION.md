@@ -172,6 +172,7 @@ npm run test -- --watch  # watch mode during dev
 
 ### 6.4.1 View Name Resolution
 * YAML schema parsing extracts view definitions from configuration structure
+* PostgreSQL type names automatically mapped to GraphQL types using `pg-types` and `pg-type-names` libraries
 * Single view validation ensures exactly one view definition per schema file
 * View name and database view mapping extracted from YAML structure
 
@@ -184,7 +185,7 @@ npm run test -- --watch  # watch mode during dev
 
 ### 6.6 Central View Cache Implementation
 * Implementation details for the Central View Cache component described in [ARCHITECTURE.md](ARCHITECTURE.md#central-view-cache)
-* Lock-free in-memory Map keyed by primary key field (ID!) from schema
+* Lock-free in-memory Map keyed by primary key field from schema
 * Supports concurrent read access from multiple Client Stream Handlers
 * Row operations: insert (new row), update (replace existing), delete (remove row)
 * Subscriber management with callback registration pattern

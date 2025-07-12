@@ -20,9 +20,10 @@ describe('YAML Schema Processing', () => {
     const yamlContent = `views:
   CustomTypeName:
     view: actual_database_view
+    primary_key: id
     columns:
-      id: ID!
-      name: String!`;
+      id: integer
+      name: text`;
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Load schema
@@ -50,9 +51,10 @@ describe('YAML Schema Processing', () => {
     const yamlContent = `views:
   live_pnl:
     view: live_pnl
+    primary_key: id
     columns:
-      id: ID!
-      value: Float`;
+      id: integer
+      value: double precision`;
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Load schema
@@ -73,9 +75,10 @@ describe('YAML Schema Processing', () => {
     const yamlContent = `views:
   MyGraphQLType:
     view: my_db_view
+    primary_key: id
     columns:
-      id: ID!
-      name: String`;
+      id: integer
+      name: text`;
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Load schema
@@ -92,5 +95,106 @@ describe('YAML Schema Processing', () => {
     // But should have correct database view name in schema object
     expect(schema.databaseViewName).toBe('my_db_view');
     expect(schema.viewName).toBe('MyGraphQLType');
+  });
+
+  it('should map PostgreSQL types to GraphQL types correctly', () => {
+    // Create temporary directory for test
+    const testDir = join(tmpdir(), 'tycostream-yaml-test-typemap-' + Date.now());
+    const configDir = join(testDir, 'config');
+    mkdirSync(configDir, { recursive: true });
+    
+    // Write test YAML file with various PostgreSQL types
+    const yamlContent = `views:
+  TypeMappingTest:
+    view: type_test_view
+    primary_key: id
+    columns:
+      id: integer
+      is_active: boolean
+      count: bigint
+      small_num: smallint
+      name: text
+      price: numeric
+      rate: real
+      precise_rate: double precision
+      user_id: uuid
+      created_at: timestamp without time zone
+      updated_at: timestamp with time zone
+      birth_date: date
+      start_time: time without time zone
+      metadata: json
+      settings: jsonb`;
+    writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
+
+    // Load schema
+    const schema = loadSchemaFromYaml(configDir);
+    
+    // Verify type mappings
+    const typeMap = new Map(schema.fields.map(f => [f.name, f.type]));
+    
+    expect(typeMap.get('id')).toBe('Int');
+    expect(typeMap.get('is_active')).toBe('Boolean');
+    expect(typeMap.get('count')).toBe('Float'); // bigint maps to Float
+    expect(typeMap.get('small_num')).toBe('Int');
+    expect(typeMap.get('name')).toBe('String');
+    expect(typeMap.get('price')).toBe('Float');
+    expect(typeMap.get('rate')).toBe('Float');
+    expect(typeMap.get('precise_rate')).toBe('Float');
+    expect(typeMap.get('user_id')).toBe('ID');
+    expect(typeMap.get('created_at')).toBe('String');
+    expect(typeMap.get('updated_at')).toBe('String');
+    expect(typeMap.get('birth_date')).toBe('String');
+    expect(typeMap.get('start_time')).toBe('String');
+    expect(typeMap.get('metadata')).toBe('String');
+    expect(typeMap.get('settings')).toBe('String');
+    
+    // Verify primary key
+    expect(schema.primaryKeyField).toBe('id');
+    const idField = schema.fields.find(f => f.name === 'id');
+    expect(idField?.isPrimaryKey).toBe(true);
+    expect(idField?.nullable).toBe(false);
+    
+    // Verify other fields are nullable
+    const nameField = schema.fields.find(f => f.name === 'name');
+    expect(nameField?.nullable).toBe(true);
+  });
+
+  it('should validate primary key is present', () => {
+    // Create temporary directory for test
+    const testDir = join(tmpdir(), 'tycostream-yaml-test-no-pk-' + Date.now());
+    const configDir = join(testDir, 'config');
+    mkdirSync(configDir, { recursive: true });
+    
+    // Write test YAML file without primary_key
+    const yamlContent = `views:
+  NoPrimaryKey:
+    view: no_pk_view
+    columns:
+      id: integer
+      name: text`;
+    writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
+
+    // Should throw error
+    expect(() => loadSchemaFromYaml(configDir)).toThrow('Schema must contain a primary_key attribute');
+  });
+
+  it('should validate primary key exists in columns', () => {
+    // Create temporary directory for test
+    const testDir = join(tmpdir(), 'tycostream-yaml-test-invalid-pk-' + Date.now());
+    const configDir = join(testDir, 'config');
+    mkdirSync(configDir, { recursive: true });
+    
+    // Write test YAML file with non-existent primary key
+    const yamlContent = `views:
+  InvalidPrimaryKey:
+    view: invalid_pk_view
+    primary_key: nonexistent_field
+    columns:
+      id: integer
+      name: text`;
+    writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
+
+    // Should throw error
+    expect(() => loadSchemaFromYaml(configDir)).toThrow("Primary key field 'nonexistent_field' not found in columns");
   });
 });

@@ -67,7 +67,7 @@ GRAPHQL_UI=true
 
 ```bash
 cp config/schema.example.yaml config/schema.yaml
-# Edit config/schema.yaml view name and fields to match your Materialize view
+# Edit config/schema.yaml view name, primary_key, and PostgreSQL column types to match your Materialize view (run SHOW COLUMNS in your database)
 ```
 
 **Schema Requirements:** Your `config/schema.yaml` file must contain exactly one view definition.

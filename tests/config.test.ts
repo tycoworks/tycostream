@@ -68,10 +68,11 @@ describe('loadSchema', () => {
     const schemaContent = `views:
   TestType:
     view: test_view
+    primary_key: id
     columns:
-      id: ID!
-      name: String!
-      value: Float!
+      id: integer
+      name: text
+      value: double precision
 `;
 
     // Create schema file in test directory structure
@@ -94,7 +95,7 @@ describe('loadSchema', () => {
       expect(schema.fields).toHaveLength(3);
       expect(schema.fields[0]).toEqual({
         name: 'id',
-        type: 'ID',
+        type: 'Int',
         nullable: false,
         isPrimaryKey: true,
       });
@@ -109,13 +110,13 @@ describe('loadSchema', () => {
     expect(() => loadSchema()).toThrow('Schema file not found');
   });
 
-  it('should throw ConfigError for schema without non-nullable field', () => {
+  it('should throw ConfigError for schema without primary key', () => {
     const invalidSchema = `views:
   TestType:
     view: test_view
     columns:
-      name: String
-      value: Float
+      name: text
+      value: double precision
 `;
 
     // Create schema file in test directory structure
@@ -129,7 +130,7 @@ describe('loadSchema', () => {
 
     try {
       expect(() => loadSchema()).toThrow(ConfigError);
-      expect(() => loadSchema()).toThrow('Schema must contain at least one non-nullable field');
+      expect(() => loadSchema()).toThrow('Schema must contain a primary_key attribute');
     } finally {
       // Restore original cwd
       process.cwd = originalCwd;
@@ -140,14 +141,16 @@ describe('loadSchema', () => {
     const multiViewSchema = `views:
   TestType1:
     view: test_view1
+    primary_key: id
     columns:
-      id: ID!
-      name: String!
+      id: integer
+      name: text
   TestType2:
     view: test_view2
+    primary_key: id
     columns:
-      id: ID!
-      value: Float!
+      id: integer
+      value: double precision
 `;
 
     // Create schema file in test directory structure
@@ -172,9 +175,10 @@ describe('loadSchema', () => {
     const invalidYaml = `views:
   TestType:
     view: test_view
+    primary_key: id
     columns:
-      id: ID!
-      name: String!
+      id: integer
+      name: text
     - invalid yaml syntax`;
 
     const testConfigDir = join(testSchemaDir, 'config');

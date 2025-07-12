@@ -2,6 +2,30 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { load } from 'js-yaml';
 import type { YamlSchemaConfig, LoadedSchema, SchemaField } from './types.js';
+import { GraphQLBoolean, GraphQLFloat, GraphQLInt, GraphQLString, GraphQLID } from 'graphql';
+import pgTypes from 'pg-types';
+// @ts-ignore - no type definitions available for pg-type-names
+import pgTypeNamesModule from 'pg-type-names';
+// Handle both ESM and CommonJS exports
+const pgTypeNames = (pgTypeNamesModule as any)?.default || pgTypeNamesModule;
+
+const TYPE_MAP = {
+  [pgTypes.builtins.BOOL]: GraphQLBoolean,
+  [pgTypes.builtins.INT8]: GraphQLFloat, // GraphQL Int is 32-bit, bigint needs Float
+  [pgTypes.builtins.INT2]: GraphQLInt,
+  [pgTypes.builtins.INT4]: GraphQLInt,
+  [pgTypes.builtins.TEXT]: GraphQLString,
+  [pgTypes.builtins.FLOAT4]: GraphQLFloat,
+  [pgTypes.builtins.FLOAT8]: GraphQLFloat,
+  [pgTypes.builtins.NUMERIC]: GraphQLFloat,
+  [pgTypes.builtins.UUID]: GraphQLID,
+  [pgTypes.builtins.TIMESTAMP]: GraphQLString,
+  [pgTypes.builtins.TIMESTAMPTZ]: GraphQLString,
+  [pgTypes.builtins.DATE]: GraphQLString,
+  [pgTypes.builtins.TIME]: GraphQLString,
+  [pgTypes.builtins.JSON]: GraphQLString,
+  [pgTypes.builtins.JSONB]: GraphQLString,
+} as const;
 
 /**
  * Load complete schema from YAML configuration
@@ -43,34 +67,50 @@ export function loadSchemaFromYaml(configDir: string): LoadedSchema {
   const [graphqlTypeName, viewConfig] = views[0]!;
   const databaseViewName = viewConfig.view;
   
-  // Extract fields and find primary key
-  const fields: SchemaField[] = [];
-  let primaryKeyField: string | null = null;
+  // Validate primary_key is present
+  if (!viewConfig.primary_key) {
+    throw new Error('Schema must contain a primary_key attribute');
+  }
   
-  for (const [fieldName, fieldType] of Object.entries(viewConfig.columns)) {
-    const nullable = !fieldType.endsWith('!');
-    const cleanType = fieldType.replace('!', '');
-    const isPrimaryKey = !primaryKeyField && !nullable; // First non-nullable field is primary key
+  // Extract fields and validate primary key
+  const fields: SchemaField[] = [];
+  const primaryKeyField = viewConfig.primary_key;
+  
+  // Validate primary key exists in columns
+  if (!viewConfig.columns[primaryKeyField]) {
+    throw new Error(`Primary key field '${primaryKeyField}' not found in columns`);
+  }
+  
+  for (const [fieldName, postgresType] of Object.entries(viewConfig.columns)) {
+    const isPrimaryKey = fieldName === primaryKeyField;
     
-    if (isPrimaryKey) {
-      primaryKeyField = fieldName;
+    // Map Postgres type to GraphQL type
+    const oid = pgTypeNames.oids[postgresType];
+    if (!oid) {
+      throw new Error(`Unknown PostgreSQL type: ${postgresType}`);
     }
+    
+    const graphqlType = TYPE_MAP[oid as keyof typeof TYPE_MAP];
+    if (!graphqlType) {
+      throw new Error(`No GraphQL mapping for PostgreSQL type: ${postgresType}`);
+    }
+    
+    const graphqlTypeName = graphqlType.name;
     
     fields.push({
       name: fieldName,
-      type: cleanType,
-      nullable,
+      type: graphqlTypeName,
+      nullable: !isPrimaryKey, // Primary key is always non-nullable
       isPrimaryKey,
     });
   }
   
-  if (!primaryKeyField) {
-    throw new Error('Schema must contain at least one non-nullable field (ending with !) to serve as primary key');
-  }
-  
   // Generate GraphQL schema
-  const typeFields = Object.entries(viewConfig.columns)
-    .map(([fieldName, fieldType]) => `  ${fieldName}: ${fieldType}`)
+  const typeFields = fields
+    .map(field => {
+      const type = field.nullable ? field.type : `${field.type}!`;
+      return `  ${field.name}: ${type}`;
+    })
     .join('\n');
   
   const typeDefs = `type ${graphqlTypeName} {

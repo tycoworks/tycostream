@@ -50,6 +50,7 @@ export interface CacheSubscriber {
 
 export interface YamlViewConfig {
   view: string;
+  primary_key: string;
   columns: Record<string, string>;
 }
 
