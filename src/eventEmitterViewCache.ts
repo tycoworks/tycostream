@@ -32,8 +32,6 @@ export class EventEmitterViewCache extends EventEmitter implements ViewCache {
     }
 
     let updateEvent: RowUpdateEvent;
-    const previousCacheEntry = this.cache.get(primaryKey);
-    const previousRow = previousCacheEntry?.row;
 
     if (event.diff === 1) {
       // Insert or update
@@ -43,8 +41,7 @@ export class EventEmitterViewCache extends EventEmitter implements ViewCache {
       
       updateEvent = {
         type: operationType,
-        row: { ...event.row },
-        previousRow: isUpdate ? previousRow : undefined
+        row: { ...event.row }
       };
       
       const rowData = truncateForLog(event.row);
@@ -59,8 +56,7 @@ export class EventEmitterViewCache extends EventEmitter implements ViewCache {
       
       updateEvent = {
         type: 'delete',
-        row: { ...event.row },
-        previousRow
+        row: { ...event.row }
       };
       
       const deletedRow = truncateForLog(event.row);
@@ -150,8 +146,7 @@ export class EventEmitterViewCache extends EventEmitter implements ViewCache {
       for (const [primaryKey, entry] of this.cache) {
         const currentStateEvent: RowUpdateEvent = {
           type: 'insert',
-          row: { ...entry.row },
-          previousRow: undefined
+          row: { ...entry.row }
         };
         this.log.debug('Emitting cached row to subscriber', {
           primaryKey,

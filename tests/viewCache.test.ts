@@ -133,8 +133,7 @@ describe('ViewCache', () => {
 
       expect(mockSubscriber.onUpdate).toHaveBeenCalledWith({
         type: 'insert',
-        row: { id: '123', name: 'test', value: 42.5 },
-        previousRow: undefined
+        row: { id: '123', name: 'test', value: 42.5 }
       });
 
       unsubscribe();
@@ -166,8 +165,7 @@ describe('ViewCache', () => {
 
       expect(mockSubscriber.onUpdate).toHaveBeenCalledWith({
         type: 'update',
-        row: { id: '123', name: 'updated', value: 99.9 },
-        previousRow: { id: '123', name: 'test', value: 42.5 }
+        row: { id: '123', name: 'updated', value: 99.9 }
       });
 
       unsubscribe();
@@ -198,8 +196,7 @@ describe('ViewCache', () => {
 
       expect(mockSubscriber.onUpdate).toHaveBeenCalledWith({
         type: 'delete',
-        row: { id: '123', name: 'test', value: 42.5 },
-        previousRow: { id: '123', name: 'test', value: 42.5 }
+        row: { id: '123', name: 'test', value: 42.5 }
       });
 
       unsubscribe();
@@ -273,13 +270,11 @@ describe('ViewCache', () => {
       expect(receivedEvents).toHaveLength(2);
       expect(receivedEvents[0]).toEqual({
         type: 'insert',
-        row: { id: '1', name: 'first', value: 10 },
-        previousRow: undefined
+        row: { id: '1', name: 'first', value: 10 }
       });
       expect(receivedEvents[1]).toEqual({
         type: 'insert',
-        row: { id: '2', name: 'second', value: 20 },
-        previousRow: undefined
+        row: { id: '2', name: 'second', value: 20 }
       });
 
       unsubscribe();
