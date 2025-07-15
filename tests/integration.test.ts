@@ -98,7 +98,7 @@ type Subscription {
 
     // Apply events to cache
     testEvents.forEach(event => {
-      cache.applyStreamEvent(event);
+      cache.handleRowUpdate(event);
     });
 
     // Verify cache state

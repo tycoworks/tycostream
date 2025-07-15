@@ -18,12 +18,12 @@ export interface CacheSubscriber {
 }
 
 export interface ViewCache {
-  applyStreamEvent(event: StreamEvent): void;
+  handleRowUpdate(event: StreamEvent): void;
   getRow(primaryKey: any): Record<string, any> | undefined;
   size(): number;
   clear(): void;
   getAllRows(): Record<string, any>[];
   subscribe(subscriber: CacheSubscriber): () => void;
-  listenerCount(event: string): number;
+  getSubscriberCount(event: string): number;
 }
 

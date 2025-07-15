@@ -20,8 +20,8 @@ describe('Concurrent Client Support', () => {
   describe('Multiple concurrent clients', () => {
     it('should handle multiple clients connecting simultaneously', async () => {
       // Pre-populate cache with some data
-      cache.applyStreamEvent({ row: { id: '1', name: 'existing', value: 100 }, diff: 1, timestamp: BigInt(1000) });
-      cache.applyStreamEvent({ row: { id: '2', name: 'existing2', value: 200 }, diff: 1, timestamp: BigInt(2000) });
+      cache.handleRowUpdate({ row: { id: '1', name: 'existing', value: 100 }, diff: 1, timestamp: BigInt(1000) });
+      cache.handleRowUpdate({ row: { id: '2', name: 'existing2', value: 200 }, diff: 1, timestamp: BigInt(2000) });
 
       // Create multiple clients
       const client1 = createTestSubscriber(cache, 'client-1');
@@ -64,8 +64,8 @@ describe('Concurrent Client Support', () => {
 
       // Send updates after both clients connected
       setTimeout(() => {
-        cache.applyStreamEvent({ row: { id: '1', name: 'test1', value: 10 }, diff: 1, timestamp: BigInt(3000) });
-        cache.applyStreamEvent({ row: { id: '2', name: 'test2', value: 20 }, diff: 1, timestamp: BigInt(4000) });
+        cache.handleRowUpdate({ row: { id: '1', name: 'test1', value: 10 }, diff: 1, timestamp: BigInt(3000) });
+        cache.handleRowUpdate({ row: { id: '2', name: 'test2', value: 20 }, diff: 1, timestamp: BigInt(4000) });
       }, 20);
 
       // Both clients should receive both updates
@@ -91,7 +91,7 @@ describe('Concurrent Client Support', () => {
 
       // Send initial update
       setTimeout(() => {
-        cache.applyStreamEvent({ row: { id: '1', name: 'test', value: 10 }, diff: 1, timestamp: BigInt(1000) });
+        cache.handleRowUpdate({ row: { id: '1', name: 'test', value: 10 }, diff: 1, timestamp: BigInt(1000) });
       }, 20);
 
       // Both clients receive first update
@@ -108,7 +108,7 @@ describe('Concurrent Client Support', () => {
 
       // Send another update - only client2 should receive it
       setTimeout(() => {
-        cache.applyStreamEvent({ row: { id: '2', name: 'test2', value: 20 }, diff: 1, timestamp: BigInt(1000) });
+        cache.handleRowUpdate({ row: { id: '2', name: 'test2', value: 20 }, diff: 1, timestamp: BigInt(1000) });
       }, 20);
 
       const result2_2 = await iterator2.next();
@@ -128,10 +128,10 @@ describe('Concurrent Client Support', () => {
 
       // Send multiple updates in specific order
       setTimeout(() => {
-        cache.applyStreamEvent({ row: { id: '1', name: 'first', value: 1 }, diff: 1, timestamp: BigInt(1000) });
-        cache.applyStreamEvent({ row: { id: '2', name: 'second', value: 2 }, diff: 1, timestamp: BigInt(1000) });
-        cache.applyStreamEvent({ row: { id: '3', name: 'third', value: 3 }, diff: 1, timestamp: BigInt(1000) });
-        cache.applyStreamEvent({ row: { id: '1', name: 'first-updated', value: 11 }, diff: 1, timestamp: BigInt(1000) }); // Update
+        cache.handleRowUpdate({ row: { id: '1', name: 'first', value: 1 }, diff: 1, timestamp: BigInt(1000) });
+        cache.handleRowUpdate({ row: { id: '2', name: 'second', value: 2 }, diff: 1, timestamp: BigInt(1000) });
+        cache.handleRowUpdate({ row: { id: '3', name: 'third', value: 3 }, diff: 1, timestamp: BigInt(1000) });
+        cache.handleRowUpdate({ row: { id: '1', name: 'first-updated', value: 11 }, diff: 1, timestamp: BigInt(1000) }); // Update
       }, 20);
 
       const client1Results: any[] = [];
@@ -165,7 +165,7 @@ describe('Concurrent Client Support', () => {
     it('should handle updates during initial state delivery', async () => {
       // Pre-populate cache with multiple rows to simulate larger initial state
       for (let i = 1; i <= 5; i++) {
-        cache.applyStreamEvent({ 
+        cache.handleRowUpdate({ 
           row: { id: `${i}`, name: `initial-${i}`, value: i * 10 }, 
           diff: 1,
           timestamp: BigInt(i * 1000)
@@ -179,7 +179,7 @@ describe('Concurrent Client Support', () => {
       // Start consuming initial state, but add new data while consuming
       setTimeout(() => {
         // This should queue up and come after initial state
-        cache.applyStreamEvent({ row: { id: '6', name: 'live-update', value: 60 }, diff: 1, timestamp: BigInt(1000) });
+        cache.handleRowUpdate({ row: { id: '6', name: 'live-update', value: 60 }, diff: 1, timestamp: BigInt(1000) });
       }, 10);
 
       // Collect all results (5 initial + 1 live update)
@@ -209,7 +209,7 @@ describe('Concurrent Client Support', () => {
 
       // No initial state, so first result should be live data
       setTimeout(() => {
-        cache.applyStreamEvent({ row: { id: '1', name: 'first-data', value: 100 }, diff: 1, timestamp: BigInt(1000) });
+        cache.handleRowUpdate({ row: { id: '1', name: 'first-data', value: 100 }, diff: 1, timestamp: BigInt(1000) });
       }, 20);
 
       const result = await iterator.next();
@@ -220,11 +220,11 @@ describe('Concurrent Client Support', () => {
 
     it('should handle mid-stream client connection', async () => {
       // Add some initial data
-      cache.applyStreamEvent({ row: { id: '1', name: 'existing', value: 10 }, diff: 1, timestamp: BigInt(1000) });
+      cache.handleRowUpdate({ row: { id: '1', name: 'existing', value: 10 }, diff: 1, timestamp: BigInt(1000) });
       
       // Start sending live updates
       const liveUpdates = setInterval(() => {
-        cache.applyStreamEvent({ 
+        cache.handleRowUpdate({ 
           row: { id: Date.now().toString(), name: 'live', value: Math.random() }, 
           diff: 1,
           timestamp: BigInt(Date.now())
@@ -250,7 +250,7 @@ describe('Concurrent Client Support', () => {
 
     it('should handle rapid successive client connections', async () => {
       // Pre-populate with data
-      cache.applyStreamEvent({ row: { id: '1', name: 'test', value: 100 }, diff: 1, timestamp: BigInt(1000) });
+      cache.handleRowUpdate({ row: { id: '1', name: 'test', value: 100 }, diff: 1, timestamp: BigInt(1000) });
 
       const clients: ClientStreamHandler[] = [];
       const iterators: AsyncIterator<any>[] = [];
@@ -279,8 +279,8 @@ describe('Concurrent Client Support', () => {
 
     it('should handle cache updates with no active clients', async () => {
       // Send updates to cache with no clients
-      cache.applyStreamEvent({ row: { id: '1', name: 'lonely', value: 42 }, diff: 1, timestamp: BigInt(1000) });
-      cache.applyStreamEvent({ row: { id: '2', name: 'lonely2', value: 84 }, diff: 1, timestamp: BigInt(1000) });
+      cache.handleRowUpdate({ row: { id: '1', name: 'lonely', value: 42 }, diff: 1, timestamp: BigInt(1000) });
+      cache.handleRowUpdate({ row: { id: '2', name: 'lonely2', value: 84 }, diff: 1, timestamp: BigInt(1000) });
 
       // Connect client after updates
       const client = createTestSubscriber(cache, 'late-client');
@@ -304,21 +304,21 @@ describe('Concurrent Client Support', () => {
 
       // Start iteration
       setTimeout(() => {
-        cache.applyStreamEvent({ row: { id: '1', name: 'test', value: 10 }, diff: 1, timestamp: BigInt(1000) });
+        cache.handleRowUpdate({ row: { id: '1', name: 'test', value: 10 }, diff: 1, timestamp: BigInt(1000) });
       }, 20);
 
       await iterator.next(); // Get first result
 
       // Check client is active and subscribed
       expect(client.active).toBe(true);
-      expect(cache.listenerCount('update')).toBe(1);
+      expect(cache.getSubscriberCount('update')).toBe(1);
 
       // Close client
       client.close();
 
       // Should clean up
       expect(client.active).toBe(false);
-      expect(cache.listenerCount('update')).toBe(0);
+      expect(cache.getSubscriberCount('update')).toBe(0);
     });
 
     it('should handle multiple subscribe/unsubscribe cycles', async () => {
@@ -340,14 +340,14 @@ describe('Concurrent Client Support', () => {
       await TEST_DELAYS.SHORT();
 
       // Should have some subscribers
-      expect(cache.listenerCount('update')).toBeGreaterThan(0);
+      expect(cache.getSubscriberCount('update')).toBeGreaterThan(0);
 
       // Close all
       clients.forEach(client => client.close());
 
       // All should be unsubscribed
       await TEST_DELAYS.SHORT();
-      expect(cache.listenerCount('update')).toBe(0);
+      expect(cache.getSubscriberCount('update')).toBe(0);
     });
   });
 });

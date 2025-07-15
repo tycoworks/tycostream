@@ -27,7 +27,7 @@ describe('Row Insertion Order Preservation', () => {
     ];
 
     // Apply events to cache in order
-    events.forEach(event => cache.applyStreamEvent(event));
+    events.forEach(event => cache.handleRowUpdate(event));
 
     // Get snapshot - should be in insertion order (3, 1, 2)
     const snapshot = cache.getAllRows();
@@ -48,10 +48,10 @@ describe('Row Insertion Order Preservation', () => {
       { row: { id: '3', name: 'Third', value: 30 }, diff: 1, timestamp: BigInt(3000) },
     ];
 
-    initialEvents.forEach(event => cache.applyStreamEvent(event));
+    initialEvents.forEach(event => cache.handleRowUpdate(event));
 
     // Update the middle row
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '2', name: 'Second Updated', value: 25 },
       diff: 1,
       timestamp: BigInt(4000),
@@ -75,10 +75,10 @@ describe('Row Insertion Order Preservation', () => {
       { row: { id: '3', name: 'Third' }, diff: 1, timestamp: BigInt(3000) },
     ];
 
-    initialEvents.forEach(event => cache.applyStreamEvent(event));
+    initialEvents.forEach(event => cache.handleRowUpdate(event));
 
     // Delete the middle row
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '2', name: 'Second' },
       diff: -1,
       timestamp: BigInt(4000),
@@ -100,10 +100,10 @@ describe('Row Insertion Order Preservation', () => {
       { row: { id: '2', name: 'Second' }, diff: 1, timestamp: BigInt(2000) },
     ];
 
-    initialEvents.forEach(event => cache.applyStreamEvent(event));
+    initialEvents.forEach(event => cache.handleRowUpdate(event));
 
     // Insert a new row
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '3', name: 'Third' },
       diff: 1,
       timestamp: BigInt(3000),
@@ -130,7 +130,7 @@ describe('Row Insertion Order Preservation', () => {
       { row: { id: '4', name: 'Fourth' }, diff: 1, timestamp: BigInt(6000) },     // insert (append)
     ];
 
-    events.forEach(event => cache.applyStreamEvent(event));
+    events.forEach(event => cache.handleRowUpdate(event));
 
     const snapshot = cache.getAllRows();
     

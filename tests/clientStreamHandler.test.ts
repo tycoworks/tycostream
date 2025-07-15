@@ -32,12 +32,12 @@ describe('ClientStreamHandler', () => {
 
   it('should yield initial state when cache has data', async () => {
     // Populate cache with test data
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '1', name: 'first', value: 10 },
       diff: 1,
       timestamp: BigInt(1000),
     });
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '2', name: 'second', value: 20 },
       diff: 1,
       timestamp: BigInt(2000),
@@ -69,7 +69,7 @@ describe('ClientStreamHandler', () => {
     // Should not yield anything for empty cache
     // Add data to trigger live updates
     setTimeout(() => {
-      cache.applyStreamEvent({
+      cache.handleRowUpdate({
         row: { id: '1', name: 'test', value: 42 },
         diff: 1,
         timestamp: BigInt(1000),
@@ -85,7 +85,7 @@ describe('ClientStreamHandler', () => {
 
   it('should receive live updates after initial state', async () => {
     // Start with some initial data
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '1', name: 'initial', value: 10 },
       diff: 1,
       timestamp: BigInt(1000),
@@ -101,7 +101,7 @@ describe('ClientStreamHandler', () => {
 
     // Add new data (should come as live update)
     setTimeout(() => {
-      cache.applyStreamEvent({
+      cache.handleRowUpdate({
         row: { id: '2', name: 'live', value: 20 },
         diff: 1,
         timestamp: BigInt(2000),
@@ -121,7 +121,7 @@ describe('ClientStreamHandler', () => {
 
   it('should handle updates (not just inserts)', async () => {
     // Start with initial data
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '1', name: 'original', value: 10 },
       diff: 1,
       timestamp: BigInt(1000),
@@ -135,7 +135,7 @@ describe('ClientStreamHandler', () => {
 
     // Update the same row
     setTimeout(() => {
-      cache.applyStreamEvent({
+      cache.handleRowUpdate({
         row: { id: '1', name: 'updated', value: 99 },
         diff: 1,
         timestamp: BigInt(2000),
@@ -154,9 +154,9 @@ describe('ClientStreamHandler', () => {
 
     // Send multiple updates in sequence
     setTimeout(() => {
-      cache.applyStreamEvent({ row: { id: '1', name: 'first', value: 1 }, diff: 1, timestamp: BigInt(1000) });
-      cache.applyStreamEvent({ row: { id: '2', name: 'second', value: 2 }, diff: 1, timestamp: BigInt(2000) });
-      cache.applyStreamEvent({ row: { id: '3', name: 'third', value: 3 }, diff: 1, timestamp: BigInt(3000) });
+      cache.handleRowUpdate({ row: { id: '1', name: 'first', value: 1 }, diff: 1, timestamp: BigInt(1000) });
+      cache.handleRowUpdate({ row: { id: '2', name: 'second', value: 2 }, diff: 1, timestamp: BigInt(2000) });
+      cache.handleRowUpdate({ row: { id: '3', name: 'third', value: 3 }, diff: 1, timestamp: BigInt(3000) });
     }, 20);
 
     // Collect results
@@ -182,7 +182,7 @@ describe('ClientStreamHandler', () => {
     expect(handler.active).toBe(false);
 
     // Should not receive any more updates
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '1', name: 'test', value: 42 },
       diff: 1,
       timestamp: BigInt(1000),
@@ -197,7 +197,7 @@ describe('ClientStreamHandler', () => {
 
   it('should skip delete events for now', async () => {
     // Start with data
-    cache.applyStreamEvent({
+    cache.handleRowUpdate({
       row: { id: '1', name: 'test', value: 10 },
       diff: 1,
       timestamp: BigInt(1000),
@@ -211,14 +211,14 @@ describe('ClientStreamHandler', () => {
 
     // Delete the row (should be skipped)
     setTimeout(() => {
-      cache.applyStreamEvent({
+      cache.handleRowUpdate({
         row: { id: '1', name: 'test', value: 10 },
         diff: -1,
         timestamp: BigInt(1500),
       });
       
       // Add new row (should be received)
-      cache.applyStreamEvent({
+      cache.handleRowUpdate({
         row: { id: '2', name: 'new', value: 20 },
         diff: 1,
         timestamp: BigInt(2000),

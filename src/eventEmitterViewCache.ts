@@ -18,7 +18,7 @@ export class EventEmitterViewCache extends EventEmitter implements ViewCache {
   /**
    * Apply a stream event to the cache
    */
-  applyStreamEvent(event: StreamEvent): void {
+  handleRowUpdate(event: StreamEvent): void {
     const primaryKey = event.row[this.primaryKeyField];
     
     if (primaryKey === undefined || primaryKey === null) {
@@ -116,6 +116,10 @@ export class EventEmitterViewCache extends EventEmitter implements ViewCache {
     return Array.from(this.cache.values()).map(entry => entry.row);
   }
 
+  getSubscriberCount(event: string): number {
+    return this.listenerCount(event);
+  }
+
   /**
    * Subscribe to cache updates
    * Immediately emits current state as individual insert events,
@@ -130,7 +134,7 @@ export class EventEmitterViewCache extends EventEmitter implements ViewCache {
     
     this.log.debug('Cache subscriber added', {
       viewName: this.viewName,
-      totalSubscribers: this.listenerCount('update'),
+      totalSubscribers: this.getSubscriberCount('update'),
       currentStateSize: this.cache.size
     });
     
@@ -162,7 +166,7 @@ export class EventEmitterViewCache extends EventEmitter implements ViewCache {
       this.off('update', handler);
       this.log.debug('Cache subscriber removed', {
         viewName: this.viewName,
-        totalSubscribers: this.listenerCount('update')
+        totalSubscribers: this.getSubscriberCount('update')
       });
     };
   }

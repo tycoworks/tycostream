@@ -95,7 +95,7 @@ class CopyStreamProcessor {
       for (const line of lines) {
         const event = this.parseRow(line);
         if (event) {
-          this.cache.applyStreamEvent(event);
+          this.cache.handleRowUpdate(event);
         }
       }
     } catch (error) {
