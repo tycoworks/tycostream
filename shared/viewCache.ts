@@ -8,6 +8,7 @@ const MAX_LISTENERS = 1000; // Maximum event listeners to prevent memory leaks
 export interface StreamEvent {
   row: Record<string, any>;
   diff: number;
+  timestamp: bigint;
 }
 
 export type DiffType = 'insert' | 'update' | 'delete';
@@ -24,7 +25,7 @@ export interface CacheSubscriber {
 
 export class ViewCache extends EventEmitter {
   private static readonly MAX_LISTENERS = MAX_LISTENERS;
-  private cache = new Map<any, Record<string, any>>();
+  private cache = new Map<any, { row: Record<string, any>, timestamp: bigint }>();
   private log = logger.child({ component: 'viewCache' });
 
   constructor(private primaryKeyField: string, private viewName: string) {
@@ -49,13 +50,14 @@ export class ViewCache extends EventEmitter {
     }
 
     let updateEvent: RowUpdateEvent;
-    const previousRow = this.cache.get(primaryKey);
+    const previousCacheEntry = this.cache.get(primaryKey);
+    const previousRow = previousCacheEntry?.row;
 
     if (event.diff === 1) {
       // Insert or update
       const isUpdate = this.cache.has(primaryKey);
       const operationType = isUpdate ? 'update' : 'insert';
-      this.cache.set(primaryKey, { ...event.row });
+      this.cache.set(primaryKey, { row: { ...event.row }, timestamp: event.timestamp });
       
       updateEvent = {
         type: operationType,
@@ -105,7 +107,8 @@ export class ViewCache extends EventEmitter {
    * Get a specific row by primary key
    */
   getRow(primaryKey: any): Record<string, any> | undefined {
-    return this.cache.get(primaryKey);
+    const entry = this.cache.get(primaryKey);
+    return entry?.row;
   }
 
   /**
@@ -128,7 +131,7 @@ export class ViewCache extends EventEmitter {
    * Note: Subscriptions use the subscribe() method for live streaming
    */
   getAllRows(): Record<string, any>[] {
-    return Array.from(this.cache.values());
+    return Array.from(this.cache.values()).map(entry => entry.row);
   }
 
   /**
@@ -158,10 +161,10 @@ export class ViewCache extends EventEmitter {
       });
       
       let emittedCount = 0;
-      for (const [primaryKey, row] of this.cache) {
+      for (const [primaryKey, entry] of this.cache) {
         const currentStateEvent: RowUpdateEvent = {
           type: 'insert',
-          row: { ...row },
+          row: { ...entry.row },
           previousRow: undefined
         };
         this.log.debug('Emitting cached row to subscriber', {

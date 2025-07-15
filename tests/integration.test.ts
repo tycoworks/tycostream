@@ -86,10 +86,12 @@ type Subscription {
       {
         row: { instrument_id: '1', symbol: 'AAPL', net_position: 100 },
         diff: 1,
+        timestamp: BigInt(1000),
       },
       {
         row: { instrument_id: '2', symbol: 'GOOGL', net_position: 50 },
         diff: 1,
+        timestamp: BigInt(2000),
       },
     ];
 
@@ -121,6 +123,7 @@ type Subscription {
     const testEvent: StreamEvent = {
       row: { instrument_id: '123', symbol: 'TEST', net_position: 42 },
       diff: 1,
+      timestamp: BigInt(3000),
     };
 
     pubsub.publishStreamEvent('live_pnl', testEvent);

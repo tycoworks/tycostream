@@ -113,6 +113,11 @@ class CopyStreamProcessor {
     const fields = trimmed.split('\t');
     if (fields.length < 2) return null;
 
+    // Parse timestamp (first field)
+    const timestampField = fields[0];
+    if (!timestampField) return null;
+    const timestamp = BigInt(timestampField);
+
     // Parse diff (second field)
     const diffField = fields[1];
     if (!diffField) return null;
@@ -129,7 +134,7 @@ class CopyStreamProcessor {
       }
     }
 
-    return { row, diff };
+    return { row, diff, timestamp };
   }
 }
 
