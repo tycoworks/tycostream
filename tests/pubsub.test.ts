@@ -42,6 +42,7 @@ describe('PubSub', () => {
     const streamEvent: StreamEvent = {
       row: { id: '123', name: 'test' },
       diff: 1,
+      timestamp: BigInt(1000),
     };
 
     pubsub.subscribeToStream('test_view', callback);
@@ -83,6 +84,7 @@ describe('PubSub', () => {
     const streamEvent: StreamEvent = {
       row: { id: '123', name: 'test' },
       diff: 1,
+      timestamp: BigInt(1000),
     };
 
     pubsub.subscribeToStream('view1', callback1);

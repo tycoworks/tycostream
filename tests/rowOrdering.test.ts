@@ -11,14 +11,17 @@ describe('Row Insertion Order Preservation', () => {
       {
         row: { id: '3', name: 'Third' },
         diff: 1,
+        timestamp: BigInt(1000),
       },
       {
         row: { id: '1', name: 'First' },
         diff: 1,
+        timestamp: BigInt(2000),
       },
       {
         row: { id: '2', name: 'Second' },
         diff: 1,
+        timestamp: BigInt(3000),
       },
     ];
 
@@ -39,9 +42,9 @@ describe('Row Insertion Order Preservation', () => {
     
     // Insert initial rows
     const initialEvents: StreamEvent[] = [
-      { row: { id: '1', name: 'First', value: 10 }, diff: 1 },
-      { row: { id: '2', name: 'Second', value: 20 }, diff: 1 },
-      { row: { id: '3', name: 'Third', value: 30 }, diff: 1 },
+      { row: { id: '1', name: 'First', value: 10 }, diff: 1, timestamp: BigInt(1000) },
+      { row: { id: '2', name: 'Second', value: 20 }, diff: 1, timestamp: BigInt(2000) },
+      { row: { id: '3', name: 'Third', value: 30 }, diff: 1, timestamp: BigInt(3000) },
     ];
 
     initialEvents.forEach(event => cache.applyStreamEvent(event));
@@ -50,6 +53,7 @@ describe('Row Insertion Order Preservation', () => {
     cache.applyStreamEvent({
       row: { id: '2', name: 'Second Updated', value: 25 },
       diff: 1,
+      timestamp: BigInt(4000),
     });
 
     const snapshot = cache.getAllRows();
@@ -65,9 +69,9 @@ describe('Row Insertion Order Preservation', () => {
     
     // Insert initial rows
     const initialEvents: StreamEvent[] = [
-      { row: { id: '1', name: 'First' }, diff: 1 },
-      { row: { id: '2', name: 'Second' }, diff: 1 },
-      { row: { id: '3', name: 'Third' }, diff: 1 },
+      { row: { id: '1', name: 'First' }, diff: 1, timestamp: BigInt(1000) },
+      { row: { id: '2', name: 'Second' }, diff: 1, timestamp: BigInt(2000) },
+      { row: { id: '3', name: 'Third' }, diff: 1, timestamp: BigInt(3000) },
     ];
 
     initialEvents.forEach(event => cache.applyStreamEvent(event));
@@ -76,6 +80,7 @@ describe('Row Insertion Order Preservation', () => {
     cache.applyStreamEvent({
       row: { id: '2', name: 'Second' },
       diff: -1,
+      timestamp: BigInt(4000),
     });
 
     const snapshot = cache.getAllRows();
@@ -90,8 +95,8 @@ describe('Row Insertion Order Preservation', () => {
     
     // Insert initial rows
     const initialEvents: StreamEvent[] = [
-      { row: { id: '1', name: 'First' }, diff: 1 },
-      { row: { id: '2', name: 'Second' }, diff: 1 },
+      { row: { id: '1', name: 'First' }, diff: 1, timestamp: BigInt(1000) },
+      { row: { id: '2', name: 'Second' }, diff: 1, timestamp: BigInt(2000) },
     ];
 
     initialEvents.forEach(event => cache.applyStreamEvent(event));
@@ -100,6 +105,7 @@ describe('Row Insertion Order Preservation', () => {
     cache.applyStreamEvent({
       row: { id: '3', name: 'Third' },
       diff: 1,
+      timestamp: BigInt(3000),
     });
 
     const snapshot = cache.getAllRows();
@@ -115,12 +121,12 @@ describe('Row Insertion Order Preservation', () => {
     
     // Complex sequence: insert, update, delete, insert
     const events: StreamEvent[] = [
-      { row: { id: '1', name: 'First' }, diff: 1 },      // insert
-      { row: { id: '2', name: 'Second' }, diff: 1 },     // insert
-      { row: { id: '3', name: 'Third' }, diff: 1 },      // insert
-      { row: { id: '2', name: 'Updated Second' }, diff: 1 }, // update in-place
-      { row: { id: '1', name: 'First' }, diff: -1 },     // delete
-      { row: { id: '4', name: 'Fourth' }, diff: 1 },     // insert (append)
+      { row: { id: '1', name: 'First' }, diff: 1, timestamp: BigInt(1000) },      // insert
+      { row: { id: '2', name: 'Second' }, diff: 1, timestamp: BigInt(2000) },     // insert
+      { row: { id: '3', name: 'Third' }, diff: 1, timestamp: BigInt(3000) },      // insert
+      { row: { id: '2', name: 'Updated Second' }, diff: 1, timestamp: BigInt(4000) }, // update in-place
+      { row: { id: '1', name: 'First' }, diff: -1, timestamp: BigInt(5000) },     // delete
+      { row: { id: '4', name: 'Fourth' }, diff: 1, timestamp: BigInt(6000) },     // insert (append)
     ];
 
     events.forEach(event => cache.applyStreamEvent(event));

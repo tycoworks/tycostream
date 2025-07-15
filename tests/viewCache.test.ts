@@ -33,12 +33,14 @@ describe('ViewCache', () => {
     cache.applyStreamEvent({
       row: { id: '123', name: 'test', value: 42.5 },
       diff: 1,
+      timestamp: BigInt(1000),
     });
 
     // Update the same row
     const updateEvent: StreamEvent = {
       row: { id: '123', name: 'updated', value: 99.9 },
       diff: 1,
+      timestamp: BigInt(2000),
     };
 
     cache.applyStreamEvent(updateEvent);
@@ -52,6 +54,7 @@ describe('ViewCache', () => {
     cache.applyStreamEvent({
       row: { id: '123', name: 'test', value: 42.5 },
       diff: 1,
+      timestamp: BigInt(1000),
     });
 
     expect(cache.size()).toBe(1);
@@ -60,6 +63,7 @@ describe('ViewCache', () => {
     const deleteEvent: StreamEvent = {
       row: { id: '123', name: 'test', value: 42.5 },
       diff: -1,
+      timestamp: BigInt(2000),
     };
 
     cache.applyStreamEvent(deleteEvent);
@@ -71,9 +75,9 @@ describe('ViewCache', () => {
 
   it('should handle multiple rows', () => {
     const events: StreamEvent[] = [
-      { row: { id: '1', name: 'first', value: 10 }, diff: 1 },
-      { row: { id: '2', name: 'second', value: 20 }, diff: 1 },
-      { row: { id: '3', name: 'third', value: 30 }, diff: 1 },
+      { row: { id: '1', name: 'first', value: 10 }, diff: 1, timestamp: BigInt(1000) },
+      { row: { id: '2', name: 'second', value: 20 }, diff: 1, timestamp: BigInt(2000) },
+      { row: { id: '3', name: 'third', value: 30 }, diff: 1, timestamp: BigInt(3000) },
     ];
 
     events.forEach(event => cache.applyStreamEvent(event));
@@ -87,6 +91,7 @@ describe('ViewCache', () => {
     const invalidEvent: StreamEvent = {
       row: { name: 'no-id', value: 42.5 }, // Missing 'id' field
       diff: 1,
+      timestamp: BigInt(1000),
     };
 
     // Should not throw, but also should not add to cache
@@ -99,6 +104,7 @@ describe('ViewCache', () => {
     cache.applyStreamEvent({
       row: { id: '123', name: 'test', value: 42.5 },
       diff: 1,
+      timestamp: BigInt(1000),
     });
 
     expect(cache.size()).toBe(1);
@@ -120,6 +126,7 @@ describe('ViewCache', () => {
       const insertEvent: StreamEvent = {
         row: { id: '123', name: 'test', value: 42.5 },
         diff: 1,
+        timestamp: BigInt(1000),
       };
 
       cache.applyStreamEvent(insertEvent);
@@ -142,6 +149,7 @@ describe('ViewCache', () => {
       cache.applyStreamEvent({
         row: { id: '123', name: 'test', value: 42.5 },
         diff: 1,
+        timestamp: BigInt(1000),
       });
 
       // Subscribe after initial insert
@@ -151,6 +159,7 @@ describe('ViewCache', () => {
       const updateEvent: StreamEvent = {
         row: { id: '123', name: 'updated', value: 99.9 },
         diff: 1,
+        timestamp: BigInt(2000),
       };
 
       cache.applyStreamEvent(updateEvent);
@@ -173,6 +182,7 @@ describe('ViewCache', () => {
       cache.applyStreamEvent({
         row: { id: '123', name: 'test', value: 42.5 },
         diff: 1,
+        timestamp: BigInt(1000),
       });
 
       const unsubscribe = cache.subscribe(mockSubscriber);
@@ -181,6 +191,7 @@ describe('ViewCache', () => {
       const deleteEvent: StreamEvent = {
         row: { id: '123', name: 'test', value: 42.5 },
         diff: -1,
+        timestamp: BigInt(2000),
       };
 
       cache.applyStreamEvent(deleteEvent);
@@ -204,6 +215,7 @@ describe('ViewCache', () => {
       cache.applyStreamEvent({
         row: { id: '123', name: 'test', value: 42.5 },
         diff: 1,
+        timestamp: BigInt(1000),
       });
 
       expect(subscriber1.onUpdate).toHaveBeenCalledTimes(1);
@@ -224,6 +236,7 @@ describe('ViewCache', () => {
       cache.applyStreamEvent({
         row: { id: '123', name: 'test', value: 42.5 },
         diff: 1,
+        timestamp: BigInt(1000),
       });
       
       expect(mockSubscriber.onUpdate).toHaveBeenCalledTimes(1);
@@ -235,6 +248,7 @@ describe('ViewCache', () => {
       cache.applyStreamEvent({
         row: { id: '456', name: 'test2', value: 100 },
         diff: 1,
+        timestamp: BigInt(2000),
       });
       
       expect(mockSubscriber.onUpdate).toHaveBeenCalledTimes(1); // Still only 1
@@ -242,8 +256,8 @@ describe('ViewCache', () => {
 
     it('should emit current state to new subscribers', async () => {
       // Pre-populate cache
-      cache.applyStreamEvent({ row: { id: '1', name: 'first', value: 10 }, diff: 1 });
-      cache.applyStreamEvent({ row: { id: '2', name: 'second', value: 20 }, diff: 1 });
+      cache.applyStreamEvent({ row: { id: '1', name: 'first', value: 10 }, diff: 1, timestamp: BigInt(1000) });
+      cache.applyStreamEvent({ row: { id: '2', name: 'second', value: 20 }, diff: 1, timestamp: BigInt(2000) });
 
       const receivedEvents: RowUpdateEvent[] = [];
       const mockSubscriber: CacheSubscriber = {

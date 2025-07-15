@@ -35,10 +35,12 @@ describe('ClientStreamHandler', () => {
     cache.applyStreamEvent({
       row: { id: '1', name: 'first', value: 10 },
       diff: 1,
+      timestamp: BigInt(1000),
     });
     cache.applyStreamEvent({
       row: { id: '2', name: 'second', value: 20 },
       diff: 1,
+      timestamp: BigInt(2000),
     });
 
     const iterator = handler.createAsyncIterator();
@@ -70,6 +72,7 @@ describe('ClientStreamHandler', () => {
       cache.applyStreamEvent({
         row: { id: '1', name: 'test', value: 42 },
         diff: 1,
+        timestamp: BigInt(1000),
       });
     }, 20);
 
@@ -85,6 +88,7 @@ describe('ClientStreamHandler', () => {
     cache.applyStreamEvent({
       row: { id: '1', name: 'initial', value: 10 },
       diff: 1,
+      timestamp: BigInt(1000),
     });
 
     const iterator = handler.createAsyncIterator();
@@ -100,6 +104,7 @@ describe('ClientStreamHandler', () => {
       cache.applyStreamEvent({
         row: { id: '2', name: 'live', value: 20 },
         diff: 1,
+        timestamp: BigInt(2000),
       });
     }, 20);
 
@@ -119,6 +124,7 @@ describe('ClientStreamHandler', () => {
     cache.applyStreamEvent({
       row: { id: '1', name: 'original', value: 10 },
       diff: 1,
+      timestamp: BigInt(1000),
     });
 
     const iterator = handler.createAsyncIterator();
@@ -132,6 +138,7 @@ describe('ClientStreamHandler', () => {
       cache.applyStreamEvent({
         row: { id: '1', name: 'updated', value: 99 },
         diff: 1,
+        timestamp: BigInt(2000),
       });
     }, 20);
 
@@ -147,9 +154,9 @@ describe('ClientStreamHandler', () => {
 
     // Send multiple updates in sequence
     setTimeout(() => {
-      cache.applyStreamEvent({ row: { id: '1', name: 'first', value: 1 }, diff: 1 });
-      cache.applyStreamEvent({ row: { id: '2', name: 'second', value: 2 }, diff: 1 });
-      cache.applyStreamEvent({ row: { id: '3', name: 'third', value: 3 }, diff: 1 });
+      cache.applyStreamEvent({ row: { id: '1', name: 'first', value: 1 }, diff: 1, timestamp: BigInt(1000) });
+      cache.applyStreamEvent({ row: { id: '2', name: 'second', value: 2 }, diff: 1, timestamp: BigInt(2000) });
+      cache.applyStreamEvent({ row: { id: '3', name: 'third', value: 3 }, diff: 1, timestamp: BigInt(3000) });
     }, 20);
 
     // Collect results
@@ -178,6 +185,7 @@ describe('ClientStreamHandler', () => {
     cache.applyStreamEvent({
       row: { id: '1', name: 'test', value: 42 },
       diff: 1,
+      timestamp: BigInt(1000),
     });
 
     // Give it a moment to potentially process (it shouldn't)
@@ -192,6 +200,7 @@ describe('ClientStreamHandler', () => {
     cache.applyStreamEvent({
       row: { id: '1', name: 'test', value: 10 },
       diff: 1,
+      timestamp: BigInt(1000),
     });
 
     const iterator = handler.createAsyncIterator();
@@ -205,12 +214,14 @@ describe('ClientStreamHandler', () => {
       cache.applyStreamEvent({
         row: { id: '1', name: 'test', value: 10 },
         diff: -1,
+        timestamp: BigInt(1500),
       });
       
       // Add new row (should be received)
       cache.applyStreamEvent({
         row: { id: '2', name: 'new', value: 20 },
         diff: 1,
+        timestamp: BigInt(2000),
       });
     }, 20);
 

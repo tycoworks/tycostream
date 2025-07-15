@@ -86,9 +86,10 @@ export const TestData = {
   /**
    * Create a stream event for testing
    */
-  streamEvent: (row: Record<string, any>, diff: number = 1) => ({
+  streamEvent: (row: Record<string, any>, diff: number = 1, timestamp: bigint = BigInt(1000)) => ({
     row,
-    diff
+    diff,
+    timestamp
   }),
 } as const;
 
