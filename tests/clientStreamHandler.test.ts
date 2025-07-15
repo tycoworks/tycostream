@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
+import { ClientStreamHandler } from '../src/clientStreamHandler.js';
 import { ViewCache } from '../shared/viewCache.js';
 import type { StreamEvent } from '../shared/viewCache.js';
 import { TEST_DELAYS, createTestCache } from './test-utils.js';

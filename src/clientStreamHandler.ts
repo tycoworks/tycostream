@@ -1,6 +1,6 @@
-import { logger, truncateForLog } from './logger.js';
+import { logger, truncateForLog } from '../shared/logger.js';
 import { nanoid } from 'nanoid';
-import type { ViewCache, RowUpdateEvent, CacheSubscriber } from './viewCache.js';
+import type { ViewCache, RowUpdateEvent, CacheSubscriber } from '../shared/viewCache.js';
 import PQueue from 'p-queue';
 
 /**

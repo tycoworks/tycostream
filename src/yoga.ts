@@ -8,7 +8,7 @@ import type { LoadedSchema } from '../shared/schema.js';
 import type { StreamEvent } from '../shared/viewCache.js';
 import { logger } from '../shared/logger.js';
 import { ViewCache } from '../shared/viewCache.js';
-import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
+import { ClientStreamHandler } from './clientStreamHandler.js';
 import { pubsub, type PubSub } from './pubsub.js';
 import { EVENTS } from '../shared/events.js';
 

@@ -5,7 +5,7 @@
 
 import { ViewCache } from '../shared/viewCache.js';
 import { EventEmitterViewCache } from '../src/eventEmitterViewCache.js';
-import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
+import { ClientStreamHandler } from '../src/clientStreamHandler.js';
 
 // Test-specific constants to reduce duplication
 export const TEST_CONSTANTS = {
