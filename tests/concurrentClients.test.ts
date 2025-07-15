@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ViewCache } from '../shared/viewCache.js';
 import { ClientStreamHandler } from '../src/clientStreamHandler.js';
 import type { StreamEvent } from '../shared/viewCache.js';
-import { TEST_DELAYS, createTestCache } from './test-utils.js';
+import { TEST_DELAYS, createTestCache, createTestSubscriber } from './test-utils.js';
 
 describe('Concurrent Client Support', () => {
   let cache: ViewCache;
@@ -24,9 +24,9 @@ describe('Concurrent Client Support', () => {
       cache.applyStreamEvent({ row: { id: '2', name: 'existing2', value: 200 }, diff: 1, timestamp: BigInt(2000) });
 
       // Create multiple clients
-      const client1 = new ClientStreamHandler(viewName, cache, 'client-1');
-      const client2 = new ClientStreamHandler(viewName, cache, 'client-2');
-      const client3 = new ClientStreamHandler(viewName, cache, 'client-3');
+      const client1 = createTestSubscriber(cache, 'client-1');
+      const client2 = createTestSubscriber(cache, 'client-2');
+      const client3 = createTestSubscriber(cache, 'client-3');
 
       const iterator1 = client1.createAsyncIterator();
       const iterator2 = client2.createAsyncIterator();
@@ -56,8 +56,8 @@ describe('Concurrent Client Support', () => {
     });
 
     it('should isolate each client stream independently', async () => {
-      const client1 = new ClientStreamHandler(viewName, cache, 'client-1');
-      const client2 = new ClientStreamHandler(viewName, cache, 'client-2');
+      const client1 = createTestSubscriber(cache, 'client-1');
+      const client2 = createTestSubscriber(cache, 'client-2');
 
       const iterator1 = client1.createAsyncIterator();
       const iterator2 = client2.createAsyncIterator();
@@ -83,8 +83,8 @@ describe('Concurrent Client Support', () => {
     });
 
     it('should handle client disconnection without affecting others', async () => {
-      const client1 = new ClientStreamHandler(viewName, cache, 'client-1');
-      const client2 = new ClientStreamHandler(viewName, cache, 'client-2');
+      const client1 = createTestSubscriber(cache, 'client-1');
+      const client2 = createTestSubscriber(cache, 'client-2');
 
       const iterator1 = client1.createAsyncIterator();
       const iterator2 = client2.createAsyncIterator();
@@ -120,8 +120,8 @@ describe('Concurrent Client Support', () => {
 
   describe('Order preservation', () => {
     it('should preserve update order across multiple clients', async () => {
-      const client1 = new ClientStreamHandler(viewName, cache, 'client-1');
-      const client2 = new ClientStreamHandler(viewName, cache, 'client-2');
+      const client1 = createTestSubscriber(cache, 'client-1');
+      const client2 = createTestSubscriber(cache, 'client-2');
 
       const iterator1 = client1.createAsyncIterator();
       const iterator2 = client2.createAsyncIterator();
@@ -172,7 +172,7 @@ describe('Concurrent Client Support', () => {
         });
       }
 
-      const client = new ClientStreamHandler(viewName, cache, 'test-client');
+      const client = createTestSubscriber(cache, 'test-client');
       const iterator = client.createAsyncIterator();
       const results: any[] = [];
 
@@ -204,7 +204,7 @@ describe('Concurrent Client Support', () => {
   describe('Edge cases', () => {
     it('should handle early client connection (before any data)', async () => {
       // Client connects to empty cache
-      const client = new ClientStreamHandler(viewName, cache, 'early-client');
+      const client = createTestSubscriber(cache, 'early-client');
       const iterator = client.createAsyncIterator();
 
       // No initial state, so first result should be live data
@@ -235,7 +235,7 @@ describe('Concurrent Client Support', () => {
       await TEST_DELAYS.LONG();
 
       // Now connect a new client mid-stream
-      const midStreamClient = new ClientStreamHandler(viewName, cache, 'mid-stream-client');
+      const midStreamClient = createTestSubscriber(cache, 'mid-stream-client');
       const iterator = midStreamClient.createAsyncIterator();
 
       // Should get current state (which includes the ongoing updates)
@@ -257,7 +257,7 @@ describe('Concurrent Client Support', () => {
 
       // Create 10 clients rapidly
       for (let i = 0; i < 10; i++) {
-        const client = new ClientStreamHandler(viewName, cache, `rapid-client-${i}`);
+        const client = createTestSubscriber(cache, `rapid-client-${i}`);
         clients.push(client);
         iterators.push(client.createAsyncIterator());
       }
@@ -283,7 +283,7 @@ describe('Concurrent Client Support', () => {
       cache.applyStreamEvent({ row: { id: '2', name: 'lonely2', value: 84 }, diff: 1, timestamp: BigInt(1000) });
 
       // Connect client after updates
-      const client = new ClientStreamHandler(viewName, cache, 'late-client');
+      const client = createTestSubscriber(cache, 'late-client');
       const iterator = client.createAsyncIterator();
 
       // Should receive current state (both rows)
@@ -299,7 +299,7 @@ describe('Concurrent Client Support', () => {
 
   describe('Resource management', () => {
     it('should properly clean up resources on client close', async () => {
-      const client = new ClientStreamHandler(viewName, cache, 'cleanup-test');
+      const client = createTestSubscriber(cache, 'cleanup-test');
       const iterator = client.createAsyncIterator();
 
       // Start iteration
@@ -328,7 +328,7 @@ describe('Concurrent Client Support', () => {
 
       // Create multiple clients and consume from iterators (this subscribes them)
       for (let i = 0; i < 3; i++) {
-        const client = new ClientStreamHandler(viewName, cache, `cycle-client-${i}`);
+        const client = createTestSubscriber(cache, `cycle-client-${i}`);
         clients.push(client);
         const iterator = client.createAsyncIterator();
         iterators.push(iterator);

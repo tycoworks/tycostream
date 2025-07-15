@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ClientStreamHandler } from '../src/clientStreamHandler.js';
 import { ViewCache } from '../shared/viewCache.js';
 import type { StreamEvent } from '../shared/viewCache.js';
-import { TEST_DELAYS, createTestCache } from './test-utils.js';
+import { TEST_DELAYS, createTestCache, createTestSubscriber } from './test-utils.js';
 
 describe('ClientStreamHandler', () => {
   let cache: ViewCache;
@@ -12,7 +12,7 @@ describe('ClientStreamHandler', () => {
 
   beforeEach(() => {
     cache = createTestCache(primaryKeyField, viewName);
-    handler = new ClientStreamHandler(viewName, cache);
+    handler = createTestSubscriber(cache, undefined, viewName);
   });
 
   afterEach(() => {
@@ -25,7 +25,7 @@ describe('ClientStreamHandler', () => {
   });
 
   it('should create handler with custom client ID', () => {
-    const customHandler = new ClientStreamHandler(viewName, cache, 'custom-id');
+    const customHandler = createTestSubscriber(cache, 'custom-id', viewName);
     expect(customHandler.id).toBe('custom-id');
     customHandler.close();
   });

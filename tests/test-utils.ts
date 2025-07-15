@@ -46,7 +46,7 @@ export function createTestCache(
 /**
  * Create a test ClientStreamHandler instance
  */
-export function createTestClient(
+export function createTestSubscriber(
   cache: ViewCache,
   clientId?: string,
   viewName: string = TEST_CONSTANTS.VIEW_NAME
