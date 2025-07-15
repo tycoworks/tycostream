@@ -10,6 +10,7 @@ import type { DatabaseConfig } from '../src/config.js';
 import { Client } from 'pg';
 import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
+import { createTestCache } from './test-utils.js';
 
 // Create a mock client instance that can be accessed in tests
 const mockClientInstance = {
@@ -74,7 +75,7 @@ type Subscription {
 
   it('should integrate components together', async () => {
     // Create components following new architecture
-    const cache = new ViewCache(testSchema.primaryKeyField, testSchema.databaseViewName);
+    const cache = createTestCache(testSchema.primaryKeyField, testSchema.databaseViewName);
     const streamer = new MaterializeStreamer(testConfig, testSchema.fields, cache);
     
     // Test connection
@@ -150,7 +151,7 @@ type Subscription {
   });
 
   it('should handle connection error scenarios gracefully', async () => {
-    const cache = new ViewCache(testSchema.primaryKeyField, testSchema.viewName);
+    const cache = createTestCache(testSchema.primaryKeyField, testSchema.viewName);
     const streamer = new MaterializeStreamer(testConfig, testSchema.fields, cache);
     
     // Mock connection failure
@@ -163,7 +164,7 @@ type Subscription {
   it('should test MaterializeStreamer construction', () => {
     // Test that MaterializeStreamer can be constructed with proper schema fields
     // The internal parser and connection logic will be tested through integration
-    const cache = new ViewCache(testSchema.primaryKeyField, testSchema.viewName);
+    const cache = createTestCache(testSchema.primaryKeyField, testSchema.viewName);
     
     expect(() => {
       new MaterializeStreamer(testConfig, testSchema.fields, cache);

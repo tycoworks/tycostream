@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { ViewCache } from '../shared/viewCache.js';
 import type { StreamEvent } from '../shared/viewCache.js';
+import { createTestCache } from './test-utils.js';
 
 describe('Row Insertion Order Preservation', () => {
   it('should preserve insertion order in snapshots', () => {
-    const cache = new ViewCache('id', 'test_view');
+    const cache = createTestCache('id', 'test_view');
     
     // Insert rows in a specific order
     const events: StreamEvent[] = [
@@ -38,7 +39,7 @@ describe('Row Insertion Order Preservation', () => {
   });
 
   it('should preserve position on update (replace in-place)', () => {
-    const cache = new ViewCache('id', 'test_view');
+    const cache = createTestCache('id', 'test_view');
     
     // Insert initial rows
     const initialEvents: StreamEvent[] = [
@@ -65,7 +66,7 @@ describe('Row Insertion Order Preservation', () => {
   });
 
   it('should remove row on delete', () => {
-    const cache = new ViewCache('id', 'test_view');
+    const cache = createTestCache('id', 'test_view');
     
     // Insert initial rows
     const initialEvents: StreamEvent[] = [
@@ -91,7 +92,7 @@ describe('Row Insertion Order Preservation', () => {
   });
 
   it('should append new inserts to the end', () => {
-    const cache = new ViewCache('id', 'test_view');
+    const cache = createTestCache('id', 'test_view');
     
     // Insert initial rows
     const initialEvents: StreamEvent[] = [
@@ -117,7 +118,7 @@ describe('Row Insertion Order Preservation', () => {
   });
 
   it('should handle complex sequence of operations', () => {
-    const cache = new ViewCache('id', 'test_view');
+    const cache = createTestCache('id', 'test_view');
     
     // Complex sequence: insert, update, delete, insert
     const events: StreamEvent[] = [

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
 import { ViewCache } from '../shared/viewCache.js';
 import type { StreamEvent } from '../shared/viewCache.js';
-import { TEST_DELAYS } from './test-utils.js';
+import { TEST_DELAYS, createTestCache } from './test-utils.js';
 
 describe('ClientStreamHandler', () => {
   let cache: ViewCache;
@@ -11,7 +11,7 @@ describe('ClientStreamHandler', () => {
   const primaryKeyField = 'id';
 
   beforeEach(() => {
-    cache = new ViewCache(primaryKeyField, viewName);
+    cache = createTestCache(primaryKeyField, viewName);
     handler = new ClientStreamHandler(viewName, cache);
   });
 

@@ -1,9 +1,9 @@
 import { loadDatabaseConfig, loadSchema, ConfigError, getGraphQLPort } from './config.js';
 import { MaterializeStreamer } from './materialize.js';
 import { GraphQLServer } from './yoga.js';
-import { ViewCache } from '../shared/viewCache.js';
+import { EventEmitterViewCache } from './eventEmitterViewCache.js';
 import { logger } from '../shared/logger.js';
-import { shutdownManager } from '../shared/shutdown.js';
+import { shutdownManager } from './shutdown.js';
 import { EVENTS } from '../shared/events.js';
 import { pubsub } from './pubsub.js';
 
@@ -34,7 +34,7 @@ async function main(): Promise<void> {
 
     // Phase 3: Create streaming components
     log.info('Initializing streaming components');
-    const cache = new ViewCache(schema.primaryKeyField, schema.databaseViewName);
+    const cache = new EventEmitterViewCache(schema.primaryKeyField, schema.databaseViewName);
     const streamer = new MaterializeStreamer(dbConfig, schema.fields, cache);
     log.info('Components initialized');
 

@@ -1,5 +1,5 @@
-import { logger } from './logger.js';
-import { EVENTS } from './events.js';
+import { logger } from '../shared/logger.js';
+import { EVENTS } from '../shared/events.js';
 
 export type ShutdownHandler = () => Promise<void> | void;
 

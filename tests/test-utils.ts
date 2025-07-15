@@ -4,6 +4,7 @@
  */
 
 import { ViewCache } from '../shared/viewCache.js';
+import { EventEmitterViewCache } from '../src/eventEmitterViewCache.js';
 import { ClientStreamHandler } from '../shared/clientStreamHandler.js';
 
 // Test-specific constants to reduce duplication
@@ -39,7 +40,7 @@ export function createTestCache(
   primaryKeyField: string = TEST_CONSTANTS.PRIMARY_KEY_FIELD,
   viewName: string = TEST_CONSTANTS.VIEW_NAME
 ): ViewCache {
-  return new ViewCache(primaryKeyField, viewName);
+  return new EventEmitterViewCache(primaryKeyField, viewName);
 }
 
 /**
