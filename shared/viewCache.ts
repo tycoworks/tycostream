@@ -5,10 +5,10 @@ export interface StreamEvent {
   timestamp: bigint;
 }
 
-export type DiffType = 'insert' | 'update' | 'delete';
+export type RowUpdateType = 'insert' | 'update' | 'delete';
 
 export interface RowUpdateEvent {
-  type: DiffType;
+  type: RowUpdateType;
   row: Record<string, any>;
 }
 
