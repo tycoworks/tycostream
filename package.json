@@ -8,8 +8,9 @@
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/src/index.js",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "tsc --noEmit && vitest run",
+    "test:watch": "vitest",
+    "test:typecheck": "tsc --noEmit"
   },
   "keywords": [
     "graphql",
