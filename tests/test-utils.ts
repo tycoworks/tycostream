@@ -188,3 +188,17 @@ export function createMockSubscriber(): StreamSubscriber & {
     count: () => events.length,
   };
 }
+
+/**
+ * Helper to simulate Materialize streaming events
+ * Uses the internal applyOperation method
+ */
+export function simulateMaterializeEvent(
+  streamer: any, // MaterializeStreamer
+  event: RowUpdateEvent
+): void {
+  // Access the private applyOperation method to simulate events
+  const timestamp = BigInt(Date.now());
+  const isDelete = event.type === RowUpdateType.Delete;
+  streamer['applyOperation'](event.row, timestamp, isDelete);
+}

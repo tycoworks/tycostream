@@ -1,6 +1,6 @@
-import { EventEmitter } from 'events';
 import { Client } from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
+import { Subject, ReplaySubject, filter, Subscription } from 'rxjs';
 import type { SchemaField, LoadedSchema } from '../shared/schema.js';
 import type { RowUpdateEvent, StreamSubscriber, DatabaseStreamer } from '../shared/databaseStreamer.js';
 import { RowUpdateType } from '../shared/databaseStreamer.js';
@@ -10,14 +10,14 @@ import { SimpleCache } from './simpleCache.js';
 import { DatabaseConnection } from './databaseConnection.js';
 
 
-// Maximum event listeners to prevent memory leaks
-const MAX_LISTENERS = 1000;
+// Maximum subscribers to prevent memory leaks
+const MAX_SUBSCRIBERS = 1000;
 
 /**
  * Materialize streaming database adapter
  * Handles connection management, Materialize-specific streaming protocol, subscription management, and data caching
  */
-export class MaterializeStreamer extends EventEmitter implements DatabaseStreamer {
+export class MaterializeStreamer implements DatabaseStreamer {
   private log = logger.child({ component: 'materialize' });
   private isStreaming = false;
   private copyStream: any = null;
@@ -26,14 +26,13 @@ export class MaterializeStreamer extends EventEmitter implements DatabaseStreame
   private isShuttingDown = false;
   private cache: SimpleCache;
   private columnNames: string[];
+  private updates$ = new Subject<RowUpdateEvent & { timestamp: bigint }>();
+  private _subscriberCount = 0;
 
   constructor(
     private config: DatabaseConfig,
     private schema: LoadedSchema
   ) {
-    super();
-    this.setMaxListeners(MAX_LISTENERS);
-    
     // Create internal simple cache
     this.cache = new SimpleCache(schema.primaryKeyField, schema.databaseViewName);
     
@@ -157,45 +156,54 @@ export class MaterializeStreamer extends EventEmitter implements DatabaseStreame
    * Returns an unsubscribe function
    */
   subscribe(subscriber: StreamSubscriber): () => void {
-    const handler = (event: RowUpdateEvent) => {
-      subscriber.onUpdate(event);
-    };
+    // Check if we've reached the maximum subscriber limit
+    if (this._subscriberCount >= MAX_SUBSCRIBERS) {
+      throw new Error(`Maximum subscriber limit (${MAX_SUBSCRIBERS}) reached`);
+    }
     
-    this.on('update', handler);
+    // Increment subscriber count
+    this._subscriberCount++;
+    
+    // 1. Create a replayable tee stream
+    const tee$ = new ReplaySubject<RowUpdateEvent>();
+    
+    // 2. Begin teeing updates into it
+    const teeSub = this.updates$.subscribe(event => tee$.next(event));
+    
+    // 3. Take snapshot and emit rows
+    // Get timestamp first to avoid race condition
+    const latestSeenTimestamp = this.cache.timestamp;
+    const snapshot = this.cache.getAllRows();
+    
+    // Emit snapshot as insert events
+    for (const row of snapshot) {
+      subscriber.onUpdate({
+        type: RowUpdateType.Insert,
+        row: { ...row }
+      });
+    }
+    
+    // 4. Subscribe to tee$ with filter
+    const liveSub = tee$.pipe(
+      filter((event: RowUpdateEvent & { timestamp?: bigint }) => {
+        // Only emit events newer than snapshot timestamp
+        return event.timestamp ? event.timestamp > latestSeenTimestamp : true;
+      })
+    ).subscribe(event => subscriber.onUpdate(event));
     
     this.log.debug('Subscriber added', {
       viewName: this.schema.viewName,
-      totalSubscribers: this.listenerCount('update'),
-      currentStateSize: this.cache.size
+      currentStateSize: this.cache.size,
+      subscriberCount: this._subscriberCount
     });
     
-    // Immediately emit current state as insert events
-    // Use setTimeout(0) to defer to next event loop tick
-    setTimeout(() => {
-      this.log.debug('Emitting current state to new subscriber', {
-        viewName: this.schema.viewName,
-        stateSize: this.cache.size
-      });
-      
-      const rows = this.cache.getAllRows();
-      for (let i = 0; i < rows.length; i++) {
-        const currentStateEvent: RowUpdateEvent = {
-          type: RowUpdateType.Insert,
-          row: { ...rows[i] }
-        };
-        this.log.debug('Emitting cached row to subscriber', {
-          rowIndex: i + 1,
-          totalRows: rows.length
-        });
-        subscriber.onUpdate(currentStateEvent);
-      }
-    }, 0);
-    
     return () => {
-      this.off('update', handler);
+      teeSub.unsubscribe();
+      liveSub.unsubscribe();
+      this._subscriberCount--;
       this.log.debug('Subscriber removed', {
         viewName: this.schema.viewName,
-        totalSubscribers: this.listenerCount('update')
+        subscriberCount: this._subscriberCount
       });
     };
   }
@@ -217,8 +225,8 @@ export class MaterializeStreamer extends EventEmitter implements DatabaseStreame
   /**
    * Get subscriber count for monitoring
    */
-  getSubscriberCount(event: string): number {
-    return this.listenerCount(event);
+  get subscriberCount(): number {
+    return this._subscriberCount;
   }
 
   /**
@@ -312,10 +320,12 @@ export class MaterializeStreamer extends EventEmitter implements DatabaseStreame
     });
 
     // Emit event to subscribers
-    const event: RowUpdateEvent = {
+    const event: RowUpdateEvent & { timestamp: bigint } = {
       type: eventType,
-      row: { ...row }
+      row: { ...row },
+      timestamp
     };
-    this.emit('update', event);
+    this.updates$.next(event);
   }
+
 }

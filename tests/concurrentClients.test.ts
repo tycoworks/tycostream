@@ -5,7 +5,7 @@ import type { RowUpdateEvent } from '../shared/databaseStreamer.js';
 import { RowUpdateType } from '../shared/databaseStreamer.js';
 import type { LoadedSchema } from '../shared/schema.js';
 import type { DatabaseConfig } from '../src/config.js';
-import { TEST_DELAYS, createTestSubscriber, TestData } from './test-utils.js';
+import { TEST_DELAYS, createTestSubscriber, TestData, simulateMaterializeEvent } from './test-utils.js';
 import { Client } from 'pg';
 
 // Mock pg and pg-copy-streams modules
@@ -77,7 +77,7 @@ describe('Concurrent Client Support', () => {
 
       // Emit an event from the streamer
       setTimeout(() => {
-        streamer['emit']('update', TestData.rowUpdateEvent({ id: '1', name: 'test', value: 100 }));
+        simulateMaterializeEvent(streamer, TestData.rowUpdateEvent({ id: '1', name: 'test', value: 100 }));
       }, 20);
 
       // All clients should receive the same event
@@ -108,7 +108,7 @@ describe('Concurrent Client Support', () => {
 
       // Emit first event
       setTimeout(() => {
-        streamer['emit']('update', TestData.rowUpdateEvent({ id: '1', name: 'first' }));
+        simulateMaterializeEvent(streamer, TestData.rowUpdateEvent({ id: '1', name: 'first' }));
       }, 20);
 
       const event1 = await iter1.next();
@@ -119,9 +119,13 @@ describe('Concurrent Client Support', () => {
       const unsub2 = streamer.subscribe(handler2);
       const iter2 = handler2.createAsyncIterator();
 
-      // Emit second event (both clients should get it)
+      // Second client will receive the replayed first event from ReplaySubject
+      const event2_1 = await iter2.next();
+      expect(event2_1.value).toEqual({ [viewName]: { id: '1', name: 'first' } });
+
+      // Then emit second event (both clients should get it)
       setTimeout(() => {
-        streamer['emit']('update', TestData.rowUpdateEvent({ id: '2', name: 'second' }));
+        simulateMaterializeEvent(streamer, TestData.rowUpdateEvent({ id: '2', name: 'second' }));
       }, 20);
 
       const event1_2 = await iter1.next();
@@ -136,7 +140,7 @@ describe('Concurrent Client Support', () => {
 
       // Emit third event (only client 2 should get it)
       setTimeout(() => {
-        streamer['emit']('update', TestData.rowUpdateEvent({ id: '3', name: 'third' }));
+        simulateMaterializeEvent(streamer, TestData.rowUpdateEvent({ id: '3', name: 'third' }));
       }, 20);
 
       const event2_3 = await iter2.next();
@@ -148,21 +152,21 @@ describe('Concurrent Client Support', () => {
     });
 
     it('should track subscriber count correctly', () => {
-      expect(streamer.getSubscriberCount('update')).toBe(0);
+      expect(streamer.subscriberCount).toBe(0);
 
       const handler1 = createTestSubscriber(viewName);
       const unsub1 = streamer.subscribe(handler1);
-      expect(streamer.getSubscriberCount('update')).toBe(1);
+      expect(streamer.subscriberCount).toBe(1);
 
       const handler2 = createTestSubscriber(viewName);
       const unsub2 = streamer.subscribe(handler2);
-      expect(streamer.getSubscriberCount('update')).toBe(2);
+      expect(streamer.subscriberCount).toBe(2);
 
       unsub1();
-      expect(streamer.getSubscriberCount('update')).toBe(1);
+      expect(streamer.subscriberCount).toBe(1);
 
       unsub2();
-      expect(streamer.getSubscriberCount('update')).toBe(0);
+      expect(streamer.subscriberCount).toBe(0);
 
       handler1.close();
       handler2.close();

@@ -9,7 +9,7 @@ import type { DatabaseConfig } from '../src/config.js';
 import { Client } from 'pg';
 import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
-import { createTestCache } from './test-utils.js';
+import { createTestCache, simulateMaterializeEvent } from './test-utils.js';
 
 // Create a mock client instance that can be accessed in tests
 const mockClientInstance = {
@@ -101,17 +101,15 @@ type Subscription {
     });
 
     // Manually emit an event (simulating what would happen in processRow)
-    streamer['emit']('update', {
+    simulateMaterializeEvent(streamer, {
       type: RowUpdateType.Insert,
       row: { instrument_id: '123', symbol: 'TEST', net_position: 42 }
     });
 
     // Verify event was received
     expect(receivedEvents).toHaveLength(1);
-    expect(receivedEvents[0]).toEqual({
-      type: RowUpdateType.Insert,
-      row: { instrument_id: '123', symbol: 'TEST', net_position: 42 }
-    });
+    expect(receivedEvents[0]?.type).toEqual(RowUpdateType.Insert);
+    expect(receivedEvents[0]?.row).toEqual({ instrument_id: '123', symbol: 'TEST', net_position: 42 });
 
     unsubscribe();
   });

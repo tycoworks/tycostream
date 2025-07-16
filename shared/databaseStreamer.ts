@@ -24,9 +24,9 @@ export interface DatabaseStreamer {
   subscribe(subscriber: StreamSubscriber): () => void;
   getAllRows(): Record<string, any>[];
   getRow(primaryKey: any): Record<string, any> | undefined;
-  getSubscriberCount(event: string): number;
   
   // Status
   get streaming(): boolean;
+  get subscriberCount(): number;
 }
 
