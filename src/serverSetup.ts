@@ -12,22 +12,47 @@ export interface ServerContext {
   primaryKeyField: string;
 }
 
-export interface ServerSetupResult {
-  httpServer: ReturnType<typeof createServer>;
-  wsServer: WebSocketServer;
+export interface GraphQLServers {
+  start(port: number): Promise<void>;
+  stop(): Promise<void>;
 }
 
 /**
- * Sets up HTTP and WebSocket servers for GraphQL
+ * Creates HTTP and WebSocket servers for GraphQL
  */
-export async function setupGraphQLServers(
+export function createGraphQLServers(
   schema: GraphQLSchema,
-  context: ServerContext,
-  port: number
-): Promise<ServerSetupResult> {
-  const log = logger.child({ component: 'server-setup' });
+  context: ServerContext
+): GraphQLServers {
+  // Create Yoga instance
+  const yoga = createYogaServer(schema, context);
+  
+  // Create HTTP server
+  const httpServer = createServer(yoga);
+  
+  // Setup WebSocket server
+  const wsServer = setupWebSocketServer(httpServer, schema, context, yoga.graphqlEndpoint);
+  
+  return { 
+    start: async (port: number) => {
+      await startHttpServer(httpServer, port);
+    },
+    stop: async () => {
+      wsServer.close();
+      await new Promise<void>((resolve) => {
+        httpServer.close(() => resolve());
+      });
+    }
+  };
+}
 
-  const yoga = createYoga({
+/**
+ * Creates a Yoga GraphQL server instance with logging plugins
+ */
+function createYogaServer(schema: GraphQLSchema, context: ServerContext) {
+  const log = logger.child({ component: 'graphql-yoga' });
+  
+  return createYoga({
     schema,
     graphiql: isGraphQLUIEnabled() ? {
       subscriptionsProtocol: 'WS',
@@ -69,13 +94,22 @@ export async function setupGraphQLServers(
       }
     ],
   });
+}
 
-  const httpServer = createServer(yoga);
+/**
+ * Sets up WebSocket server for GraphQL subscriptions
+ */
+function setupWebSocketServer(
+  httpServer: ReturnType<typeof createServer>,
+  schema: GraphQLSchema,
+  context: ServerContext,
+  graphqlEndpoint: string
+): WebSocketServer {
+  const log = logger.child({ component: 'websocket' });
   
-  // Setup WebSocket server for subscriptions
   const wsServer = new WebSocketServer({
     server: httpServer,
-    path: yoga.graphqlEndpoint,
+    path: graphqlEndpoint,
   });
 
   useServer(
@@ -110,8 +144,14 @@ export async function setupGraphQLServers(
     },
     wsServer
   );
+  
+  return wsServer;
+}
 
-  // Start the HTTP server
+/**
+ * Starts the HTTP server on the specified port
+ */
+async function startHttpServer(httpServer: ReturnType<typeof createServer>, port: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     httpServer.on('error', (err: any) => {
       if (err.code === 'EADDRINUSE') {
@@ -124,6 +164,5 @@ export async function setupGraphQLServers(
       resolve();
     });
   });
-
-  return { httpServer, wsServer };
 }
+

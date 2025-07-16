@@ -5,14 +5,14 @@ import type { DatabaseStreamer } from '../shared/databaseStreamer.js';
 import type { DatabaseConfig } from './config.js';
 import { MaterializeStreamer } from './materialize.js';
 import { createViewSubscriptionResolver, createViewQueryResolver } from './subscriptionResolver.js';
-import { setupGraphQLServers, type ServerSetupResult } from './serverSetup.js';
+import { createGraphQLServers, type GraphQLServers } from './serverSetup.js';
 
 // Component-specific configuration
 const DEFAULT_GRAPHQL_PORT = 4000;
 
 export class GraphQLServer {
   private log = logger.child({ component: 'graphql' });
-  private servers: ServerSetupResult | null = null;
+  private servers: GraphQLServers | null = null;
   private stream: DatabaseStreamer | null = null;
 
   constructor(
@@ -33,16 +33,18 @@ export class GraphQLServer {
 
       const schema = this.buildGraphQLSchema();
       
-      // Setup HTTP and WebSocket servers
-      this.servers = await setupGraphQLServers(
+      // Create HTTP and WebSocket servers
+      this.servers = createGraphQLServers(
         schema,
         {
           viewName: this.viewName,
           stream: this.stream!,
           primaryKeyField: this.schema.primaryKeyField,
-        },
-        this.port
+        }
       );
+      
+      // Start servers
+      await this.servers.start(this.port);
 
       this.log.info('GraphQL server started', { 
         port: this.port,
@@ -58,11 +60,7 @@ export class GraphQLServer {
 
   async stop(): Promise<void> {
     if (this.servers) {
-      this.servers.wsServer.close();
-      
-      await new Promise<void>((resolve) => {
-        this.servers!.httpServer.close(() => resolve());
-      });
+      await this.servers.stop();
       this.servers = null;
     }
     
