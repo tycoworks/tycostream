@@ -28,22 +28,13 @@ async function main(): Promise<void> {
       viewName: schema.viewName
     });
 
-    // Phase 3: Create streaming components
-    log.info('Initializing streaming components');
+    // Phase 3: Start database streamer
+    log.info('Starting database streamer');
     const streamer = new MaterializeStreamer(dbConfig, schema);
-    log.info('Components initialized');
+    await streamer.start();
+    log.info('Database streamer started');
 
-    // Phase 4: Connect to Materialize
-    log.info('Connecting to Materialize');
-    await streamer.connect();
-    log.info('Connected to Materialize');
-
-    // Phase 5: Start streaming from view
-    log.info('Starting view subscription', { databaseViewName: schema.databaseViewName });
-    await streamer.startStreaming(schema.databaseViewName);
-    log.info('View subscription started');
-
-    // Phase 6: Start GraphQL server
+    // Phase 4: Start GraphQL server
     log.info('Starting GraphQL server');
     const port = getGraphQLPort();
     const graphqlServer = new GraphQLServer(schema, schema.viewName, streamer, port);
@@ -56,11 +47,7 @@ async function main(): Promise<void> {
     });
 
     shutdownManager.addHandler(async () => {
-      await streamer.stopStreaming();
-    });
-
-    shutdownManager.addHandler(async () => {
-      await streamer.disconnect();
+      await streamer.stop();
     });
 
     log.info('tycostream is ready', {

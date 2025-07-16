@@ -14,11 +14,9 @@ export interface StreamSubscriber {
 }
 
 export interface DatabaseStreamer {
-  // Connection management
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  startStreaming(viewName: string): Promise<void>;
-  stopStreaming(): Promise<void>;
+  // Lifecycle management
+  start(): Promise<void>;
+  stop(): Promise<void>;
   
   // Subscription management
   subscribe(subscriber: StreamSubscriber): () => void;

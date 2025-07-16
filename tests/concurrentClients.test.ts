@@ -13,7 +13,13 @@ vi.mock('pg', () => ({
   Client: vi.fn().mockImplementation(() => ({
     connect: vi.fn().mockResolvedValue(undefined),
     end: vi.fn().mockResolvedValue(undefined), 
-    query: vi.fn(),
+    query: vi.fn().mockImplementation((stream) => {
+      // Return the stream for COPY queries
+      if (stream && stream.on) {
+        return stream;
+      }
+      return Promise.resolve({ rows: [] });
+    }),
     on: vi.fn(),
   })),
 }));
@@ -21,9 +27,15 @@ vi.mock('pg', () => ({
 vi.mock('pg-copy-streams', () => ({
   from: vi.fn(),
   to: vi.fn().mockReturnValue({
-    on: vi.fn(),
+    on: vi.fn((event, handler) => {
+      // Immediately call 'end' handler for tests
+      if (event === 'end') {
+        setImmediate(() => handler());
+      }
+    }),
     write: vi.fn(),
     end: vi.fn(),
+    destroy: vi.fn(),
   }),
 }));
 
@@ -51,12 +63,14 @@ describe('Concurrent Client Support', () => {
     databaseViewName: 'test_view'
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     streamer = new MaterializeStreamer(testConfig, testSchema);
+    await streamer.start();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Cleanup
+    await streamer.stop();
   });
 
   describe('Multiple concurrent clients', () => {

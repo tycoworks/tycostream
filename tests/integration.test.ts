@@ -15,7 +15,13 @@ import { createTestCache, simulateMaterializeEvent } from './test-utils.js';
 const mockClientInstance = {
   connect: vi.fn().mockResolvedValue(undefined),
   end: vi.fn().mockResolvedValue(undefined), 
-  query: vi.fn(),
+  query: vi.fn().mockImplementation((stream) => {
+    // Return the stream for COPY queries
+    if (stream && stream.on) {
+      return stream;
+    }
+    return Promise.resolve({ rows: [] });
+  }),
   on: vi.fn(),
 };
 
@@ -27,9 +33,15 @@ vi.mock('pg', () => ({
 vi.mock('pg-copy-streams', () => ({
   from: vi.fn(),
   to: vi.fn().mockReturnValue({
-    on: vi.fn(),
+    on: vi.fn((event, handler) => {
+      // Immediately call 'end' handler for tests
+      if (event === 'end') {
+        setImmediate(() => handler());
+      }
+    }),
     write: vi.fn(),
     end: vi.fn(),
+    destroy: vi.fn(),
   }),
 }));
 
@@ -81,18 +93,20 @@ type Subscription {
     const streamer = new MaterializeStreamer(testConfig, testSchema);
     
     // Test connection
-    await streamer.connect();
+    await streamer.start();
     expect(vi.mocked(Client)).toHaveBeenCalled();
 
     // Test we can get rows
     expect(streamer.getAllRows()).toEqual([]);
     expect(streamer.streaming).toBe(false);
 
-    await streamer.disconnect();
+    await streamer.stop();
   });
 
   it('should handle subscription and emit events', async () => {
     const streamer = new MaterializeStreamer(testConfig, testSchema);
+    await streamer.start(); // Need to start first
+    
     const receivedEvents: RowUpdateEvent[] = [];
     
     // Subscribe to events
@@ -100,11 +114,17 @@ type Subscription {
       onUpdate: (event) => receivedEvents.push(event)
     });
 
+    // Wait a bit for initialization
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     // Manually emit an event (simulating what would happen in processRow)
     simulateMaterializeEvent(streamer, {
       type: RowUpdateType.Insert,
       row: { instrument_id: '123', symbol: 'TEST', net_position: 42 }
     });
+
+    // Wait for event processing
+    await new Promise(resolve => setTimeout(resolve, 10));
 
     // Verify event was received
     expect(receivedEvents).toHaveLength(1);
@@ -112,6 +132,7 @@ type Subscription {
     expect(receivedEvents[0]?.row).toEqual({ instrument_id: '123', symbol: 'TEST', net_position: 42 });
 
     unsubscribe();
+    await streamer.stop();
   });
 
   it('should handle connection error scenarios gracefully', async () => {
@@ -121,7 +142,7 @@ type Subscription {
     mockClientInstance.connect.mockReset();
     mockClientInstance.connect.mockRejectedValueOnce(new Error('Connection failed'));
 
-    await expect(streamer.connect()).rejects.toThrow('Database connection failed');
+    await expect(streamer.start()).rejects.toThrow('Database connection failed');
   });
 
   it('should test MaterializeStreamer construction', () => {

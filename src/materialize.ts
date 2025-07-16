@@ -51,16 +51,24 @@ export class MaterializeStreamer implements DatabaseStreamer {
   }
 
   /**
-   * Connect to Materialize database
+   * Start the database connection
    */
-  async connect(): Promise<void> {
+  async start(): Promise<void> {
     this.client = await this.dbConnection.connect(this.config);
   }
 
   /**
-   * Disconnect from Materialize database
+   * Stop the database connection
    */
-  async disconnect(): Promise<void> {
+  async stop(): Promise<void> {
+    // Set shutdown flag first to prevent new subscriptions
+    this.isShuttingDown = true;
+    
+    // Stop streaming if active
+    if (this.isStreaming) {
+      await this.stopStreaming();
+    }
+    
     if (this.client) {
       await this.dbConnection.disconnect(this.client);
       this.client = null;
@@ -70,23 +78,26 @@ export class MaterializeStreamer implements DatabaseStreamer {
   /**
    * Start streaming from a Materialize view
    */
-  async startStreaming(viewName: string): Promise<void> {
+  private async startStreaming(): Promise<void> {
     if (!this.client) {
-      throw new Error('Must connect to database before starting stream');
+      throw new Error('Client connection lost before streaming could start');
     }
-
+    
     if (this.isStreaming) {
-      this.log.warn('Stream already active', { viewName });
+      this.log.warn('Stream already active', { viewName: this.schema.databaseViewName });
       return;
     }
 
+    // Set flag immediately to prevent concurrent starts
+    this.isStreaming = true;
+    
     try {
-      this.log.info('Starting stream subscription', { viewName });
+      this.log.info('Starting stream subscription', { viewName: this.schema.databaseViewName });
 
       // Start streaming subscription with initial snapshot using COPY
       // Use ENVELOPE UPSERT to get clean upsert/delete events instead of -1/+1 retractions
       const keyColumn = this.schema.primaryKeyField;
-      const subscribeQuery = `COPY (SUBSCRIBE TO ${viewName} ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)) TO STDOUT`;
+      const subscribeQuery = `COPY (SUBSCRIBE TO ${this.schema.databaseViewName} ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)) TO STDOUT`;
       this.log.debug('Executing streaming SUBSCRIBE query', { query: subscribeQuery });
 
       // Use pg-copy-streams for proper COPY streaming
@@ -101,7 +112,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
       this.copyStream.on('end', () => {
         // Only warn about unexpected stream end
         if (!this.isShuttingDown) {
-          this.log.warn('COPY stream ended', { viewName });
+          this.log.warn('COPY stream ended', { viewName: this.schema.databaseViewName });
         }
         this.isStreaming = false;
       });
@@ -109,17 +120,17 @@ export class MaterializeStreamer implements DatabaseStreamer {
       this.copyStream.on('error', (error: Error) => {
         // Don't log errors during intentional shutdown
         if (!this.isShuttingDown) {
-          this.log.error('COPY stream error', { viewName }, error);
+          this.log.error('COPY stream error', { viewName: this.schema.databaseViewName }, error);
+          this.isStreaming = false; // Reset on error
           throw error;
         }
-        this.isStreaming = false;
       });
 
-      this.isStreaming = true;
-      this.log.info('Stream subscription started', { viewName });
+      this.log.info('Stream subscription started', { viewName: this.schema.databaseViewName });
 
     } catch (error) {
-      this.log.error('Failed to start streaming', { viewName }, error as Error);
+      this.isStreaming = false; // Reset on error
+      this.log.error('Failed to start streaming', { viewName: this.schema.databaseViewName }, error as Error);
       throw new Error(`Stream initialization failed: ${(error as Error).message}`);
     }
   }
@@ -127,9 +138,8 @@ export class MaterializeStreamer implements DatabaseStreamer {
   /**
    * Stop streaming
    */
-  async stopStreaming(): Promise<void> {
+  private async stopStreaming(): Promise<void> {
     this.isStreaming = false;
-    this.isShuttingDown = true;
     
     if (this.copyStream) {
       try {
@@ -156,6 +166,14 @@ export class MaterializeStreamer implements DatabaseStreamer {
    * Returns an unsubscribe function
    */
   subscribe(subscriber: StreamSubscriber): () => void {
+    if (!this.client) {
+      throw new Error('Database streamer must be started before subscribing. Call start() first.');
+    }
+    
+    if (this.isShuttingDown) {
+      throw new Error('Database streamer is shutting down, cannot accept new subscriptions');
+    }
+    
     // Check if we've reached the maximum subscriber limit
     if (this._subscriberCount >= MAX_SUBSCRIBERS) {
       throw new Error(`Maximum subscriber limit (${MAX_SUBSCRIBERS}) reached`);
@@ -190,6 +208,11 @@ export class MaterializeStreamer implements DatabaseStreamer {
         return event.timestamp ? event.timestamp > latestSeenTimestamp : true;
       })
     ).subscribe(event => subscriber.onUpdate(event));
+    
+    // Start streaming if not already started (after all subscriptions are set up)
+    if (!this.isStreaming) {
+      this.startStreaming();
+    }
     
     this.log.debug('Subscriber added', {
       viewName: this.schema.viewName,
