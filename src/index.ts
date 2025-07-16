@@ -1,11 +1,8 @@
 import { loadDatabaseConfig, loadSchema, ConfigError, getGraphQLPort } from './config.js';
 import { MaterializeStreamer } from './materialize.js';
-import { GraphQLServer } from './yoga.js';
-import { EventEmitterViewCache } from './eventEmitterViewCache.js';
+import { GraphQLServer } from './graphqlServer.js';
 import { logger } from '../shared/logger.js';
 import { shutdownManager } from './shutdown.js';
-import { EVENTS } from '../shared/events.js';
-import { pubsub } from './pubsub.js';
 
 async function main(): Promise<void> {
   const log = logger.child({ component: 'main' });
@@ -30,12 +27,10 @@ async function main(): Promise<void> {
       fieldsCount: schema.fields.length,
       viewName: schema.viewName
     });
-    pubsub.publish(EVENTS.SCHEMA_LOADED, { viewName: schema.viewName, schema });
 
     // Phase 3: Create streaming components
     log.info('Initializing streaming components');
-    const cache = new EventEmitterViewCache(schema.primaryKeyField, schema.databaseViewName);
-    const streamer = new MaterializeStreamer(dbConfig, schema.fields, cache);
+    const streamer = new MaterializeStreamer(dbConfig, schema);
     log.info('Components initialized');
 
     // Phase 4: Connect to Materialize
@@ -51,7 +46,7 @@ async function main(): Promise<void> {
     // Phase 6: Start GraphQL server
     log.info('Starting GraphQL server');
     const port = getGraphQLPort();
-    const graphqlServer = new GraphQLServer(schema, schema.viewName, cache, port);
+    const graphqlServer = new GraphQLServer(schema, schema.viewName, streamer, port);
     await graphqlServer.start();
     log.info('GraphQL server started', { port });
 

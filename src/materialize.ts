@@ -1,162 +1,54 @@
+import { EventEmitter } from 'events';
 import { Client } from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
-import type { SchemaField } from '../shared/schema.js';
-import type { StreamEvent } from '../shared/viewCache.js';
+import type { SchemaField, LoadedSchema } from '../shared/schema.js';
+import type { RowUpdateEvent, StreamSubscriber, DatabaseStreamer } from '../shared/databaseStreamer.js';
+import { RowUpdateType } from '../shared/databaseStreamer.js';
 import type { DatabaseConfig } from './config.js';
-import { logger } from '../shared/logger.js';
-import { ViewCache } from '../shared/viewCache.js';
+import { logger, truncateForLog } from '../shared/logger.js';
+import { SimpleCache } from './simpleCache.js';
+import { DatabaseConnection } from './databaseConnection.js';
 
-// Component-specific database configuration
-const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
-const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
 
-/**
- * Pure database connection management
- * Internal utility for streaming database adapters
- */
-class DatabaseConnection {
-  private log = logger.child({ component: 'database' });
-
-  /**
-   * Connect to streaming database
-   */
-  async connect(config: DatabaseConfig): Promise<Client> {
-    this.log.info('Connecting to streaming database', { 
-      host: config.host, 
-      port: config.port,
-      database: config.database,
-      user: config.user
-    });
-
-    const client = new Client({
-      host: config.host,
-      port: config.port,
-      database: config.database,
-      user: config.user,
-      password: config.password,
-      // Connection timeout and keep-alive settings
-      connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
-      query_timeout: 0, // No timeout for streaming queries
-      keepAlive: true,
-      keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
-    });
-
-    try {
-      await client.connect();
-      this.log.info('Connected to streaming database');
-      return client;
-    } catch (error) {
-      this.log.error('Failed to connect to streaming database', {}, error as Error);
-      throw new Error(`Database connection failed: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Disconnect from database
-   */
-  async disconnect(client: Client): Promise<void> {
-    try {
-      await client.end();
-      this.log.info('Database connection closed');
-    } catch (error) {
-      this.log.error('Error during disconnect', {}, error as Error);
-      throw error;
-    }
-  }
-}
-
-/**
- * Materialize COPY stream processor
- * Handles buffer chunking, line parsing, and cache updates
- */
-class CopyStreamProcessor {
-  private log = logger.child({ component: 'parser' });
-  private columnNames: string[];
-
-  constructor(
-    schemaFields: SchemaField[],
-    private cache: ViewCache
-  ) {
-    // COPY (SUBSCRIBE...) output format is: [mz_timestamp, diff, ...view_columns...]
-    this.columnNames = ['mz_timestamp', 'diff', ...schemaFields.map(field => field.name)];
-
-    this.log.debug('COPY processor initialized', { 
-      columnCount: this.columnNames.length,
-      columns: this.columnNames
-    });
-  }
-
-  /**
-   * Process a chunk of COPY stream data
-   */
-  processChunk(chunk: Buffer): void {
-    try {
-      const lines = chunk.toString('utf8').split('\n');
-      for (const line of lines) {
-        const event = this.parseRow(line);
-        if (event) {
-          this.cache.handleRowUpdate(event);
-        }
-      }
-    } catch (error) {
-      this.log.error('Error processing COPY chunk', {}, error as Error);
-    }
-  }
-
-  /**
-   * Parse a single line of COPY output into a StreamEvent
-   */
-  private parseRow(line: string): StreamEvent | null {
-    const trimmed = line.trim();
-    if (!trimmed) return null;
-
-    const fields = trimmed.split('\t');
-    if (fields.length < 2) return null;
-
-    // Parse timestamp (first field)
-    const timestampField = fields[0];
-    if (!timestampField) return null;
-    const timestamp = BigInt(timestampField);
-
-    // Parse diff (second field)
-    const diffField = fields[1];
-    if (!diffField) return null;
-    const diff = parseInt(diffField, 10);
-    if (isNaN(diff)) return null;
-
-    // Map remaining fields to row data (skip mz_timestamp and diff)
-    const row: Record<string, any> = {};
-    for (let i = 2; i < fields.length && i < this.columnNames.length; i++) {
-      const columnName = this.columnNames[i];
-      const field = fields[i];
-      if (columnName && field !== undefined) {
-        row[columnName] = field === '\\N' ? null : field;
-      }
-    }
-
-    return { row, diff, timestamp };
-  }
-}
+// Maximum event listeners to prevent memory leaks
+const MAX_LISTENERS = 1000;
 
 /**
  * Materialize streaming database adapter
- * Handles connection management and Materialize-specific streaming protocol
+ * Handles connection management, Materialize-specific streaming protocol, subscription management, and data caching
  */
-export class MaterializeStreamer {
+export class MaterializeStreamer extends EventEmitter implements DatabaseStreamer {
   private log = logger.child({ component: 'materialize' });
   private isStreaming = false;
   private copyStream: any = null;
-  private processor: CopyStreamProcessor;
   private dbConnection = new DatabaseConnection();
   private client: Client | null = null;
   private isShuttingDown = false;
+  private cache: SimpleCache;
+  private columnNames: string[];
 
   constructor(
     private config: DatabaseConfig,
-    schemaFields: SchemaField[],
-    cache: ViewCache
+    private schema: LoadedSchema
   ) {
-    this.processor = new CopyStreamProcessor(schemaFields, cache);
+    super();
+    this.setMaxListeners(MAX_LISTENERS);
+    
+    // Create internal simple cache
+    this.cache = new SimpleCache(schema.primaryKeyField, schema.databaseViewName);
+    
+    // Initialize column names for COPY stream parsing
+    // With ENVELOPE UPSERT, output format is: [mz_timestamp, mz_state, key_columns..., value_columns...]
+    // Since key columns come first after mz_state, we need to reorder our fields
+    const keyFields = schema.fields.filter(f => f.name === schema.primaryKeyField);
+    const nonKeyFields = schema.fields.filter(f => f.name !== schema.primaryKeyField);
+    this.columnNames = ['mz_timestamp', 'mz_state', ...keyFields.map(f => f.name), ...nonKeyFields.map(f => f.name)];
+    
+    this.log.debug('MaterializeStreamer initialized', { 
+      columnCount: this.columnNames.length,
+      columns: this.columnNames,
+      primaryKeyField: schema.primaryKeyField
+    });
   }
 
   /**
@@ -193,7 +85,9 @@ export class MaterializeStreamer {
       this.log.info('Starting stream subscription', { viewName });
 
       // Start streaming subscription with initial snapshot using COPY
-      const subscribeQuery = `COPY (SUBSCRIBE TO ${viewName} WITH (SNAPSHOT)) TO STDOUT`;
+      // Use ENVELOPE UPSERT to get clean upsert/delete events instead of -1/+1 retractions
+      const keyColumn = this.schema.primaryKeyField;
+      const subscribeQuery = `COPY (SUBSCRIBE TO ${viewName} ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)) TO STDOUT`;
       this.log.debug('Executing streaming SUBSCRIBE query', { query: subscribeQuery });
 
       // Use pg-copy-streams for proper COPY streaming
@@ -202,7 +96,7 @@ export class MaterializeStreamer {
 
       // Handle stream data chunks
       this.copyStream.on('data', (chunk: Buffer) => {
-        this.processor.processChunk(chunk);
+        this.processChunk(chunk);
       });
 
       this.copyStream.on('end', () => {
@@ -256,5 +150,172 @@ export class MaterializeStreamer {
    */
   get streaming(): boolean {
     return this.isStreaming;
+  }
+
+  /**
+   * Subscribe to stream updates
+   * Returns an unsubscribe function
+   */
+  subscribe(subscriber: StreamSubscriber): () => void {
+    const handler = (event: RowUpdateEvent) => {
+      subscriber.onUpdate(event);
+    };
+    
+    this.on('update', handler);
+    
+    this.log.debug('Subscriber added', {
+      viewName: this.schema.viewName,
+      totalSubscribers: this.listenerCount('update'),
+      currentStateSize: this.cache.size
+    });
+    
+    // Immediately emit current state as insert events
+    // Use setTimeout(0) to defer to next event loop tick
+    setTimeout(() => {
+      this.log.debug('Emitting current state to new subscriber', {
+        viewName: this.schema.viewName,
+        stateSize: this.cache.size
+      });
+      
+      const rows = this.cache.getAllRows();
+      for (let i = 0; i < rows.length; i++) {
+        const currentStateEvent: RowUpdateEvent = {
+          type: RowUpdateType.Insert,
+          row: { ...rows[i] }
+        };
+        this.log.debug('Emitting cached row to subscriber', {
+          rowIndex: i + 1,
+          totalRows: rows.length
+        });
+        subscriber.onUpdate(currentStateEvent);
+      }
+    }, 0);
+    
+    return () => {
+      this.off('update', handler);
+      this.log.debug('Subscriber removed', {
+        viewName: this.schema.viewName,
+        totalSubscribers: this.listenerCount('update')
+      });
+    };
+  }
+
+  /**
+   * Get current state snapshot
+   */
+  getAllRows(): Record<string, any>[] {
+    return this.cache.getAllRows();
+  }
+
+  /**
+   * Get a specific row by primary key
+   */
+  getRow(primaryKey: any): Record<string, any> | undefined {
+    return this.cache.get(primaryKey);
+  }
+
+  /**
+   * Get subscriber count for monitoring
+   */
+  getSubscriberCount(event: string): number {
+    return this.listenerCount(event);
+  }
+
+  /**
+   * Process a chunk of COPY stream data
+   */
+  private processChunk(chunk: Buffer): void {
+    try {
+      const lines = chunk.toString('utf8').split('\n');
+      for (const line of lines) {
+        this.processRow(line);
+      }
+    } catch (error) {
+      this.log.error('Error processing COPY chunk', {}, error as Error);
+    }
+  }
+
+  /**
+   * Process a single line of COPY output
+   */
+  private processRow(line: string): void {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    const fields = trimmed.split('\t');
+    if (fields.length < 2) return;
+
+    // Parse timestamp (first field)
+    const timestampField = fields[0];
+    if (!timestampField) return;
+    const timestamp = BigInt(timestampField);
+
+    // Parse mz_state (second field) - either 'upsert' or 'delete'
+    const mzState = fields[1];
+    if (!mzState) return;
+
+    // Map remaining fields to row data (skip mz_timestamp and mz_state)
+    const row: Record<string, any> = {};
+    for (let i = 2; i < fields.length && i < this.columnNames.length; i++) {
+      const columnName = this.columnNames[i];
+      const field = fields[i];
+      if (columnName && field !== undefined) {
+        row[columnName] = field === '\\N' ? null : field;
+      }
+    }
+
+    // Apply the appropriate operation based on mz_state
+    if (mzState === 'upsert') {
+      this.applyOperation(row, timestamp, false); // insert or update
+    } else if (mzState === 'delete') {
+      this.applyOperation(row, timestamp, true);  // delete
+    }
+  }
+
+  /**
+   * Apply a data operation (upsert or delete)
+   */
+  private applyOperation(row: Record<string, any>, timestamp: bigint, isDelete: boolean): void {
+    const primaryKey = row[this.schema.primaryKeyField];
+    
+    if (primaryKey === undefined || primaryKey === null) {
+      this.log.warn('Data row missing required primary key field', {
+        viewName: this.schema.viewName,
+        primaryKeyField: this.schema.primaryKeyField,
+        rowKeys: Object.keys(row),
+        operation: isDelete ? 'delete' : 'upsert',
+        suggestion: `Check that your view has a field named '${this.schema.primaryKeyField}' with type ID!`
+      });
+      return;
+    }
+
+    let eventType: RowUpdateType;
+    
+    if (isDelete) {
+      // Delete operation
+      const deleted = this.cache.delete(row);
+      if (!deleted) return;
+      eventType = RowUpdateType.Delete;
+    } else {
+      // Upsert operation - determine if it's insert or update
+      const isUpdate = this.cache.has(primaryKey);
+      eventType = isUpdate ? RowUpdateType.Update : RowUpdateType.Insert;
+      this.cache.set(row, timestamp);
+    }
+    
+    // Log the operation
+    const rowData = truncateForLog(row);
+    this.log.debug(`Cache updated: ${eventType} - ${rowData}`, {
+      viewName: this.schema.viewName,
+      primaryKey,
+      cacheSize: this.cache.size
+    });
+
+    // Emit event to subscribers
+    const event: RowUpdateEvent = {
+      type: eventType,
+      row: { ...row }
+    };
+    this.emit('update', event);
   }
 }

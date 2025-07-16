@@ -1,25 +1,23 @@
 import { logger, truncateForLog } from '../shared/logger.js';
 import { nanoid } from 'nanoid';
-import type { ViewCache, RowUpdateEvent, CacheSubscriber } from '../shared/viewCache.js';
+import type { RowUpdateEvent, StreamSubscriber } from '../shared/databaseStreamer.js';
 import PQueue from 'p-queue';
 
 /**
- * Handles streaming for a single GraphQL client subscription
+ * Handles streaming for a single GraphQL subscription
  * Manages lifecycle from connection to disconnection with proper cleanup
  */
-export class ClientStreamHandler implements CacheSubscriber {
-  private log = logger.child({ component: 'clientStreamHandler' });
+export class GraphQLSubscriptionHandler implements StreamSubscriber {
+  private log = logger.child({ component: 'graphqlSubscription' });
   private isActive = true;
   private updateQueue: PQueue;
   private pendingUpdates: RowUpdateEvent[] = [];
   private eventSignal: (() => void) | null = null;
   private eventPromise: Promise<void> | null = null;
-  private unsubscribeFromCache?: () => void;
   private clientId: string;
 
   constructor(
     private viewName: string,
-    private cache: ViewCache,
     clientId?: string
   ) {
     this.clientId = clientId || `client-${nanoid(10)}`;
@@ -33,7 +31,7 @@ export class ClientStreamHandler implements CacheSubscriber {
       autoStart: true 
     });
     
-    this.log.debug('ClientStreamHandler created with event queue', {
+    this.log.debug('GraphQL subscription handler created with event queue', {
       concurrency: 1,
       autoStart: true
     });
@@ -41,22 +39,16 @@ export class ClientStreamHandler implements CacheSubscriber {
 
   /**
    * Create async iterator for GraphQL subscription
-   * Single stream: current state + live updates via subscribe
+   * Note: The caller is responsible for subscribing this handler to a stream
    */
   async* createAsyncIterator(): AsyncIterator<Record<string, any>> {
     if (!this.isActive) {
-      throw new Error('ClientStreamHandler is not active');
+      throw new Error('GraphQL subscription handler is not active');
     }
 
-    this.log.debug('Starting client stream', { viewName: this.viewName });
+    this.log.debug('Starting GraphQL subscription stream', { viewName: this.viewName });
 
     try {
-      // Subscribe to cache - this will immediately emit current state,
-      // then continue with live updates. Single path, no race conditions!
-      this.unsubscribeFromCache = this.cache.subscribe(this);
-      
-      this.log.debug('Subscribed to cache, processing event queue');
-
       // Process all events in a purely event-driven manner
       while (this.isActive) {
         // Wait for events to arrive using promise-based signaling
@@ -74,14 +66,10 @@ export class ClientStreamHandler implements CacheSubscriber {
             eventQueueSize: this.updateQueue.size
           });
 
-          // For now, only yield inserts and updates (skip deletes)
-          // TODO: In 1.2, we'll need to handle deletes and filtering
-          if (update.type === 'insert' || update.type === 'update') {
-            const payload = { [this.viewName]: update.row };
-            const payloadSample = truncateForLog(payload);
-            this.log.debug(`Yielding data to client: ${payloadSample}`);
-            yield payload;
-          }
+          const payload = { [this.viewName]: update.row };
+          const payloadSample = truncateForLog(payload);
+          this.log.debug(`Yielding data to client: ${payloadSample}`);
+          yield payload;
         }
       }
     } finally {
@@ -90,12 +78,12 @@ export class ClientStreamHandler implements CacheSubscriber {
   }
 
   /**
-   * Callback for cache updates (implements CacheSubscriber)
+   * Handle incoming stream updates (implements StreamSubscriber interface)
    */
   onUpdate(event: RowUpdateEvent): void {
     if (!this.isActive) return;
 
-    this.log.debug('Received cache update', {
+    this.log.debug('Received row update', {
       type: event.type,
       pendingCount: this.pendingUpdates.length,
       eventQueueSize: this.updateQueue.size
@@ -126,24 +114,19 @@ export class ClientStreamHandler implements CacheSubscriber {
   }
 
   /**
-   * Close the stream handler and cleanup resources
+   * Close the subscription handler and cleanup resources
    */
   close(): void {
     if (!this.isActive) return;
 
-    this.log.debug('Closing client stream');
+    this.log.debug('Closing GraphQL subscription stream');
     this.isActive = false;
-
-    if (this.unsubscribeFromCache) {
-      this.unsubscribeFromCache();
-      this.unsubscribeFromCache = undefined;
-    }
 
     // Clear any remaining queued updates
     this.pendingUpdates.length = 0;
     this.updateQueue.clear();
 
-    this.log.debug('Client stream closed', {
+    this.log.debug('GraphQL subscription stream closed', {
       eventQueueCleared: true,
       pendingCleared: true
     });

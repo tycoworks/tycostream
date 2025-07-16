@@ -1,0 +1,89 @@
+import { logger } from '../shared/logger.js';
+
+/**
+ * Simple cache for storing row data by primary key
+ * Pure data storage with no event emission or business logic
+ */
+export class SimpleCache {
+  private cache = new Map<any, Record<string, any>>();
+  private log = logger.child({ component: 'cache' });
+  private latestTimestamp: bigint = BigInt(0);
+
+  constructor(
+    private primaryKeyField: string,
+    private viewName: string
+  ) {}
+
+  /**
+   * Store a row in the cache
+   */
+  set(row: Record<string, any>, timestamp: bigint): void {
+    const primaryKey = row[this.primaryKeyField];
+    if (primaryKey === undefined || primaryKey === null) {
+      this.log.warn('Row missing primary key field', {
+        viewName: this.viewName,
+        primaryKeyField: this.primaryKeyField,
+        rowKeys: Object.keys(row)
+      });
+      return;
+    }
+
+    this.cache.set(primaryKey, { ...row });
+    this.latestTimestamp = timestamp;
+  }
+
+  /**
+   * Get a row by primary key
+   */
+  get(primaryKey: any): Record<string, any> | undefined {
+    return this.cache.get(primaryKey);
+  }
+
+  /**
+   * Check if a primary key exists
+   */
+  has(primaryKey: any): boolean {
+    return this.cache.has(primaryKey);
+  }
+
+  /**
+   * Delete a row by primary key
+   */
+  delete(row: Record<string, any>): boolean {
+    const primaryKey = row[this.primaryKeyField];
+    if (primaryKey === undefined || primaryKey === null) {
+      return false;
+    }
+    return this.cache.delete(primaryKey);
+  }
+
+  /**
+   * Get all rows as an array
+   */
+  getAllRows(): Record<string, any>[] {
+    return Array.from(this.cache.values());
+  }
+
+
+  /**
+   * Get cache size
+   */
+  get size(): number {
+    return this.cache.size;
+  }
+
+  /**
+   * Clear all data
+   */
+  clear(): void {
+    this.cache.clear();
+    this.log.debug('Cache cleared', { viewName: this.viewName });
+  }
+
+  /**
+   * Get the latest timestamp seen
+   */
+  get timestamp(): bigint {
+    return this.latestTimestamp;
+  }
+}

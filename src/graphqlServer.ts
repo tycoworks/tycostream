@@ -5,12 +5,9 @@ import { useServer } from 'graphql-ws/lib/use/ws';
 import { WebSocketServer } from 'ws';
 import { buildSchema } from 'graphql';
 import type { LoadedSchema } from '../shared/schema.js';
-import type { StreamEvent } from '../shared/viewCache.js';
 import { logger } from '../shared/logger.js';
-import { ViewCache } from '../shared/viewCache.js';
-import { ClientStreamHandler } from './clientStreamHandler.js';
-import { pubsub, type PubSub } from './pubsub.js';
-import { EVENTS } from '../shared/events.js';
+import { GraphQLSubscriptionHandler } from './graphqlSubscriptionHandler.js';
+import type { DatabaseStreamer } from '../shared/databaseStreamer.js';
 
 // Component-specific configuration
 const DEFAULT_GRAPHQL_PORT = 4000;
@@ -24,9 +21,8 @@ export class GraphQLServer {
   constructor(
     private loadedSchema: LoadedSchema,
     private viewName: string,
-    private viewCache: ViewCache,
-    private port: number = DEFAULT_GRAPHQL_PORT,
-    private eventBus: PubSub = pubsub
+    private stream: DatabaseStreamer,
+    private port: number = DEFAULT_GRAPHQL_PORT
   ) {
     this.schema = loadedSchema;
   }
@@ -53,9 +49,8 @@ export class GraphQLServer {
           subscriptionsProtocol: 'WS',
         } : false,
         context: () => ({
-          pubsub: this.eventBus,
           viewName: this.viewName,
-          viewCache: this.viewCache,
+          stream: this.stream,
           primaryKeyField: this.schema!.primaryKeyField,
         }),
         maskedErrors: false,
@@ -107,16 +102,15 @@ export class GraphQLServer {
         {
           schema,
           context: () => ({
-            pubsub: this.eventBus,
             viewName: this.viewName,
-            viewCache: this.viewCache,
+            stream: this.stream,
             primaryKeyField: this.schema!.primaryKeyField,
           }),
           onConnect: (ctx) => {
             this.log.debug('GraphQL WebSocket client connected', { 
               connectionParams: ctx.connectionParams 
             });
-            this.eventBus.publish(EVENTS.CLIENT_SUBSCRIBED, { viewName: this.viewName });
+            // Client connected
           },
           onSubscribe: (ctx, msg) => {
             const operationName = msg.payload.operationName || 'Anonymous';
@@ -131,7 +125,7 @@ export class GraphQLServer {
           },
           onDisconnect: (ctx) => {
             this.log.debug('GraphQL WebSocket client disconnected');
-            this.eventBus.publish(EVENTS.CLIENT_UNSUBSCRIBED, { viewName: this.viewName });
+            // Client disconnected
           },
           onError: (ctx, message, errors) => {
             this.log.debug('GraphQL WebSocket error', { 
@@ -197,13 +191,16 @@ export class GraphQLServer {
     const subscriptionFieldName = this.mapFieldToView(this.viewName);
     subscriptionResolvers[subscriptionFieldName] = {
       subscribe: async function* (parent: any, args: any, context: any) {
-        const { viewCache, viewName } = context;
+        const { stream, viewName } = context;
         const log = logger.child({ component: 'subscription' });
         
-        log.debug('Creating new client stream handler', { viewName });
+        log.debug('Creating new GraphQL subscription handler', { viewName });
         
-        // Create a new ClientStreamHandler for this subscription
-        const streamHandler = new ClientStreamHandler(viewName, viewCache);
+        // Create a new GraphQLSubscriptionHandler for this subscription
+        const streamHandler = new GraphQLSubscriptionHandler(viewName);
+        
+        // Subscribe the handler to the stream
+        const unsubscribe = stream.subscribe(streamHandler);
         
         try {
           // Delegate to the ClientStreamHandler
@@ -215,10 +212,15 @@ export class GraphQLServer {
             result = await iterator.next();
           }
         } finally {
-          log.debug('Subscription ended, cleaning up stream handler', { 
+          log.debug('Subscription ended, cleaning up handler', { 
             viewName, 
             handlerId: streamHandler.id 
           });
+          
+          // Unsubscribe from the stream
+          unsubscribe();
+          
+          // Close the handler
           streamHandler.close();
         }
       },
@@ -229,8 +231,8 @@ export class GraphQLServer {
     const queryResolvers: Record<string, any> = {};
     const queryFieldName = this.mapFieldToView(this.viewName);
     queryResolvers[queryFieldName] = (parent: any, args: any, context: any) => {
-      const { viewCache } = context;
-      return viewCache.getAllRows();
+      const { stream } = context;
+      return stream.getAllRows();
     };
 
     const resolvers = {
