@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { MaterializeStreamer } from '../src/database/materialize.js';
 import { GraphQLServer } from '../src/graphql/server.js';
-import { EVENTS } from '../src/core/events.js';
 import type { LoadedSchema } from '../src/core/schema.js';
 import type { RowUpdateEvent } from '../src/database/types.js';
 import { RowUpdateType } from '../src/database/types.js';
