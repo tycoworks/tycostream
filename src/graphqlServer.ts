@@ -3,6 +3,7 @@ import type { LoadedSchema } from '../shared/schema.js';
 import { logger } from '../shared/logger.js';
 import type { DatabaseStreamer } from '../shared/databaseStreamer.js';
 import type { DatabaseConfig } from './config.js';
+import { isGraphQLUIEnabled } from './config.js';
 import { MaterializeStreamer } from './materialize.js';
 import { createViewSubscriptionResolver, createViewQueryResolver } from './subscriptionResolver.js';
 import { createGraphQLServers, type GraphQLServers } from './serverSetup.js';
@@ -40,6 +41,9 @@ export class GraphQLServer {
           viewName: this.viewName,
           stream: this.stream!,
           primaryKeyField: this.schema.primaryKeyField,
+        },
+        {
+          graphiqlEnabled: isGraphQLUIEnabled()
         }
       );
       

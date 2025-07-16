@@ -3,7 +3,6 @@ import { createServer } from 'http';
 import { useServer } from 'graphql-ws/lib/use/ws';
 import { WebSocketServer } from 'ws';
 import type { GraphQLSchema } from 'graphql';
-import { isGraphQLUIEnabled } from './config.js';
 import { logger } from '../shared/logger.js';
 
 export interface ServerContext {
@@ -22,10 +21,11 @@ export interface GraphQLServers {
  */
 export function createGraphQLServers(
   schema: GraphQLSchema,
-  context: ServerContext
+  context: ServerContext,
+  options: { graphiqlEnabled: boolean }
 ): GraphQLServers {
   // Create Yoga instance
-  const yoga = createYogaServer(schema, context);
+  const yoga = createYogaServer(schema, context, options);
   
   // Create HTTP server
   const httpServer = createServer(yoga);
@@ -49,12 +49,12 @@ export function createGraphQLServers(
 /**
  * Creates a Yoga GraphQL server instance with logging plugins
  */
-function createYogaServer(schema: GraphQLSchema, context: ServerContext) {
+function createYogaServer(schema: GraphQLSchema, context: ServerContext, options: { graphiqlEnabled: boolean }) {
   const log = logger.child({ component: 'graphql-yoga' });
   
   return createYoga({
     schema,
-    graphiql: isGraphQLUIEnabled() ? {
+    graphiql: options.graphiqlEnabled ? {
       subscriptionsProtocol: 'WS',
     } : false,
     context: () => context,
