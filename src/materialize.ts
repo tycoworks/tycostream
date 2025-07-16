@@ -1,17 +1,14 @@
 import { Client } from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
 import { Subject, ReplaySubject, filter, Subscription } from 'rxjs';
+import { eachValueFrom } from 'rxjs-for-await';
 import type { SchemaField, LoadedSchema } from '../shared/schema.js';
-import type { RowUpdateEvent, StreamSubscriber, DatabaseStreamer } from '../shared/databaseStreamer.js';
+import type { RowUpdateEvent, DatabaseStreamer } from '../shared/databaseStreamer.js';
 import { RowUpdateType } from '../shared/databaseStreamer.js';
 import type { DatabaseConfig } from './config.js';
 import { logger, truncateForLog } from '../shared/logger.js';
 import { SimpleCache } from './simpleCache.js';
 import { DatabaseConnection } from './databaseConnection.js';
-
-
-// Maximum subscribers to prevent memory leaks
-const MAX_SUBSCRIBERS = 1000;
 
 /**
  * Materialize streaming database adapter
@@ -161,22 +158,17 @@ export class MaterializeStreamer implements DatabaseStreamer {
     return this.isStreaming;
   }
 
+
   /**
-   * Subscribe to stream updates
-   * Returns an unsubscribe function
+   * Get async iterator for streaming updates with late-joiner support
    */
-  subscribe(subscriber: StreamSubscriber): () => void {
+  async *getUpdates(): AsyncIterableIterator<RowUpdateEvent> {
     if (!this.client) {
       throw new Error('Database streamer must be started before subscribing. Call start() first.');
     }
     
     if (this.isShuttingDown) {
       throw new Error('Database streamer is shutting down, cannot accept new subscriptions');
-    }
-    
-    // Check if we've reached the maximum subscriber limit
-    if (this._subscriberCount >= MAX_SUBSCRIBERS) {
-      throw new Error(`Maximum subscriber limit (${MAX_SUBSCRIBERS}) reached`);
     }
     
     // Increment subscriber count
@@ -195,10 +187,10 @@ export class MaterializeStreamer implements DatabaseStreamer {
     
     // Emit snapshot as insert events
     for (const row of snapshot) {
-      subscriber.onUpdate({
+      yield {
         type: RowUpdateType.Insert,
         row: { ...row }
-      });
+      };
     }
     
     // 4. Subscribe to tee$ with filter
@@ -207,7 +199,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
         // Only emit events newer than snapshot timestamp
         return event.timestamp ? event.timestamp > latestSeenTimestamp : true;
       })
-    ).subscribe(event => subscriber.onUpdate(event));
+    );
     
     // Start streaming if not already started (after all subscriptions are set up)
     if (!this.isStreaming) {
@@ -220,15 +212,20 @@ export class MaterializeStreamer implements DatabaseStreamer {
       subscriberCount: this._subscriberCount
     });
     
-    return () => {
+    try {
+      // Use rxjs-for-await to convert the observable to async iterable
+      for await (const event of eachValueFrom(liveSub)) {
+        yield event;
+      }
+    } finally {
       teeSub.unsubscribe();
-      liveSub.unsubscribe();
+      // Note: eachValueFrom handles its own subscription cleanup
       this._subscriberCount--;
       this.log.debug('Subscriber removed', {
         viewName: this.schema.viewName,
         subscriberCount: this._subscriberCount
       });
-    };
+    }
   }
 
   /**

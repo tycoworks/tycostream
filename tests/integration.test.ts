@@ -109,10 +109,17 @@ type Subscription {
     
     const receivedEvents: RowUpdateEvent[] = [];
     
-    // Subscribe to events
-    const unsubscribe = streamer.subscribe({
-      onUpdate: (event) => receivedEvents.push(event)
-    });
+    // Create async iterator consumer
+    const consumeEvents = async () => {
+      for await (const event of streamer.getUpdates()) {
+        receivedEvents.push(event);
+        // Break after first event for test
+        if (receivedEvents.length === 1) break;
+      }
+    };
+    
+    // Start consuming in background
+    const consumerPromise = consumeEvents();
 
     // Wait a bit for initialization
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -123,15 +130,14 @@ type Subscription {
       row: { instrument_id: '123', symbol: 'TEST', net_position: 42 }
     });
 
-    // Wait for event processing
-    await new Promise(resolve => setTimeout(resolve, 10));
+    // Wait for consumer to receive event
+    await consumerPromise;
 
     // Verify event was received
     expect(receivedEvents).toHaveLength(1);
     expect(receivedEvents[0]?.type).toEqual(RowUpdateType.Insert);
     expect(receivedEvents[0]?.row).toEqual({ instrument_id: '123', symbol: 'TEST', net_position: 42 });
 
-    unsubscribe();
     await streamer.stop();
   });
 

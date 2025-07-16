@@ -3,7 +3,7 @@
  * Provides common test data, setup helpers, and timing utilities
  */
 
-import type { DatabaseStreamer, RowUpdateEvent, StreamSubscriber } from '../shared/databaseStreamer.js';
+import type { DatabaseStreamer, RowUpdateEvent } from '../shared/databaseStreamer.js';
 import { RowUpdateType } from '../shared/databaseStreamer.js';
 import { SimpleCache } from '../src/simpleCache.js';
 
@@ -160,23 +160,6 @@ export class EventCollector<T = any> {
   }
 }
 
-/**
- * Helper to create mock subscribers for testing
- */
-export function createMockSubscriber(): StreamSubscriber & {
-  events: () => RowUpdateEvent[];
-  clear: () => void;
-  count: () => number;
-} {
-  const events: RowUpdateEvent[] = [];
-  
-  return {
-    onUpdate: (event: RowUpdateEvent) => events.push(event),
-    events: () => [...events],
-    clear: () => events.length = 0,
-    count: () => events.length,
-  };
-}
 
 /**
  * Helper to simulate Materialize streaming events

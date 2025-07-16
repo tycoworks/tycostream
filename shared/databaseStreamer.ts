@@ -9,19 +9,17 @@ export interface RowUpdateEvent {
   row: Record<string, any>;
 }
 
-export interface StreamSubscriber {
-  onUpdate(event: RowUpdateEvent): void;
-}
-
 export interface DatabaseStreamer {
   // Lifecycle management
   start(): Promise<void>;
   stop(): Promise<void>;
   
-  // Subscription management
-  subscribe(subscriber: StreamSubscriber): () => void;
+  // Data access
   getAllRows(): Record<string, any>[];
   getRow(primaryKey: any): Record<string, any> | undefined;
+  
+  // Async iteration for streaming updates
+  getUpdates(): AsyncIterableIterator<RowUpdateEvent>;
   
   // Status
   get streaming(): boolean;

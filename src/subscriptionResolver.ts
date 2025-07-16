@@ -1,6 +1,4 @@
-import { Subject } from 'rxjs';
-import { eachValueFrom } from 'rxjs-for-await';
-import type { DatabaseStreamer, RowUpdateEvent } from '../shared/databaseStreamer.js';
+import type { DatabaseStreamer } from '../shared/databaseStreamer.js';
 import { logger } from '../shared/logger.js';
 
 /**
@@ -14,25 +12,9 @@ export function createViewSubscriptionResolver(viewName: string) {
       
       log.debug('Creating new GraphQL subscription', { viewName });
       
-      // Create a Subject to bridge between push (stream) and pull (async iterator)
-      const updates$ = new Subject<RowUpdateEvent>();
-      
-      // Subscribe to the stream
-      const unsubscribe = stream.subscribe({
-        onUpdate: (event: RowUpdateEvent) => {
-          updates$.next(event);
-        }
-      });
-      
-      try {
-        // Use rxjs-for-await to convert the observable to an async iterable
-        for await (const event of eachValueFrom(updates$)) {
-          yield { [viewName]: event.row };
-        }
-      } finally {
-        log.debug('Subscription ended, cleaning up', { viewName });
-        updates$.complete();
-        unsubscribe();
+      // Use the async iterator directly from the stream
+      for await (const event of stream.getUpdates()) {
+        yield { [viewName]: event.row };
       }
     },
     resolve: (payload: any) => payload[viewName],
