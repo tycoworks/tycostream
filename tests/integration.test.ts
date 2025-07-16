@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { MaterializeStreamer } from '../src/materialize.js';
-import { ViewCache } from '../shared/viewCache.js';
-import { GraphQLServer } from '../src/yoga.js';
-import { pubsub } from '../src/pubsub.js';
+import { GraphQLServer } from '../src/graphqlServer.js';
 import { EVENTS } from '../shared/events.js';
 import type { LoadedSchema } from '../shared/schema.js';
-import type { StreamEvent } from '../shared/viewCache.js';
+import type { RowUpdateEvent } from '../shared/databaseStreamer.js';
+import { RowUpdateType } from '../shared/databaseStreamer.js';
 import type { DatabaseConfig } from '../src/config.js';
 import { Client } from 'pg';
 import { writeFileSync, mkdirSync, rmSync } from 'fs';
@@ -27,7 +26,11 @@ vi.mock('pg', () => ({
 
 vi.mock('pg-copy-streams', () => ({
   from: vi.fn(),
-  to: vi.fn(),
+  to: vi.fn().mockReturnValue({
+    on: vi.fn(),
+    write: vi.fn(),
+    end: vi.fn(),
+  }),
 }));
 
 describe('Integration Tests', () => {
@@ -75,84 +78,46 @@ type Subscription {
 
   it('should integrate components together', async () => {
     // Create components following new architecture
-    const cache = createTestCache(testSchema.primaryKeyField, testSchema.databaseViewName);
-    const streamer = new MaterializeStreamer(testConfig, testSchema.fields, cache);
+    const streamer = new MaterializeStreamer(testConfig, testSchema);
     
     // Test connection
     await streamer.connect();
     expect(vi.mocked(Client)).toHaveBeenCalled();
 
-    // Simulate stream events directly on cache (since we're testing integration)
-    const testEvents: StreamEvent[] = [
-      {
-        row: { instrument_id: '1', symbol: 'AAPL', net_position: 100 },
-        diff: 1,
-        timestamp: BigInt(1000),
-      },
-      {
-        row: { instrument_id: '2', symbol: 'GOOGL', net_position: 50 },
-        diff: 1,
-        timestamp: BigInt(2000),
-      },
-    ];
-
-    // Apply events to cache
-    testEvents.forEach(event => {
-      cache.handleRowUpdate(event);
-    });
-
-    // Verify cache state
-    expect(cache.size()).toBe(2);
-    expect(cache.getRow('1')).toEqual({ 
-      instrument_id: '1', 
-      symbol: 'AAPL', 
-      net_position: 100 
-    });
+    // Test we can get rows
+    expect(streamer.getAllRows()).toEqual([]);
+    expect(streamer.streaming).toBe(false);
 
     await streamer.disconnect();
   });
 
-  it('should integrate pub/sub with stream events', async () => {
-    const receivedEvents: StreamEvent[] = [];
+  it('should handle subscription and emit events', async () => {
+    const streamer = new MaterializeStreamer(testConfig, testSchema);
+    const receivedEvents: RowUpdateEvent[] = [];
     
-    // Subscribe to stream events
-    pubsub.subscribeToStream('live_pnl', (event: StreamEvent) => {
-      receivedEvents.push(event);
+    // Subscribe to events
+    const unsubscribe = streamer.subscribe({
+      onUpdate: (event) => receivedEvents.push(event)
     });
 
-    // Publish test events
-    const testEvent: StreamEvent = {
-      row: { instrument_id: '123', symbol: 'TEST', net_position: 42 },
-      diff: 1,
-      timestamp: BigInt(3000),
-    };
-
-    pubsub.publishStreamEvent('live_pnl', testEvent);
+    // Manually emit an event (simulating what would happen in processRow)
+    streamer['emit']('update', {
+      type: RowUpdateType.Insert,
+      row: { instrument_id: '123', symbol: 'TEST', net_position: 42 }
+    });
 
     // Verify event was received
     expect(receivedEvents).toHaveLength(1);
-    expect(receivedEvents[0]).toEqual(testEvent);
-  });
+    expect(receivedEvents[0]).toEqual({
+      type: RowUpdateType.Insert,
+      row: { instrument_id: '123', symbol: 'TEST', net_position: 42 }
+    });
 
-  it('should handle startup sequence correctly', async () => {
-    const events: string[] = [];
-    
-    // Track startup events
-    pubsub.subscribe(EVENTS.STREAM_CONNECTED, () => events.push('connected'));
-    pubsub.subscribe(EVENTS.SCHEMA_LOADED, () => events.push('schema'));
-    pubsub.subscribe(EVENTS.STREAM_UPDATE_RECEIVED, () => events.push('update'));
-
-    // Simulate startup sequence
-    pubsub.publish(EVENTS.SCHEMA_LOADED, { viewName: 'live_pnl' });
-    pubsub.publish(EVENTS.STREAM_CONNECTED, { viewName: 'live_pnl' });
-    pubsub.publish(EVENTS.STREAM_UPDATE_RECEIVED, { viewName: 'live_pnl' });
-
-    expect(events).toEqual(['schema', 'connected', 'update']);
+    unsubscribe();
   });
 
   it('should handle connection error scenarios gracefully', async () => {
-    const cache = createTestCache(testSchema.primaryKeyField, testSchema.viewName);
-    const streamer = new MaterializeStreamer(testConfig, testSchema.fields, cache);
+    const streamer = new MaterializeStreamer(testConfig, testSchema);
     
     // Mock connection failure
     mockClientInstance.connect.mockReset();
@@ -162,12 +127,9 @@ type Subscription {
   });
 
   it('should test MaterializeStreamer construction', () => {
-    // Test that MaterializeStreamer can be constructed with proper schema fields
-    // The internal parser and connection logic will be tested through integration
-    const cache = createTestCache(testSchema.primaryKeyField, testSchema.viewName);
-    
+    // Test that MaterializeStreamer can be constructed with proper schema
     expect(() => {
-      new MaterializeStreamer(testConfig, testSchema.fields, cache);
+      new MaterializeStreamer(testConfig, testSchema);
     }).not.toThrow();
   });
 });

@@ -3,9 +3,10 @@
  * Provides common test data, setup helpers, and timing utilities
  */
 
-import { ViewCache } from '../shared/viewCache.js';
-import { EventEmitterViewCache } from '../src/eventEmitterViewCache.js';
-import { ClientStreamHandler } from '../src/clientStreamHandler.js';
+import type { DatabaseStreamer, RowUpdateEvent, StreamSubscriber } from '../shared/databaseStreamer.js';
+import { RowUpdateType } from '../shared/databaseStreamer.js';
+import { GraphQLSubscriptionHandler } from '../src/graphqlSubscriptionHandler.js';
+import { SimpleCache } from '../src/simpleCache.js';
 
 // Test-specific constants to reduce duplication
 export const TEST_CONSTANTS = {
@@ -34,24 +35,23 @@ const TEST_DELAY_MEDIUM = 50;   // Component initialization in tests
 const TEST_DELAY_LONG = 100;    // Integration test coordination
 
 /**
- * Create a standard test ViewCache instance
+ * Create a standard test SimpleCache instance
  */
 export function createTestCache(
   primaryKeyField: string = TEST_CONSTANTS.PRIMARY_KEY_FIELD,
   viewName: string = TEST_CONSTANTS.VIEW_NAME
-): ViewCache {
-  return new EventEmitterViewCache(primaryKeyField, viewName);
+): SimpleCache {
+  return new SimpleCache(primaryKeyField, viewName);
 }
 
 /**
- * Create a test ClientStreamHandler instance
+ * Create a test GraphQLSubscriptionHandler instance
  */
 export function createTestSubscriber(
-  cache: ViewCache,
-  clientId?: string,
-  viewName: string = TEST_CONSTANTS.VIEW_NAME
-): ClientStreamHandler {
-  return new ClientStreamHandler(viewName, cache, clientId);
+  viewName: string = TEST_CONSTANTS.VIEW_NAME,
+  clientId?: string
+): GraphQLSubscriptionHandler {
+  return new GraphQLSubscriptionHandler(viewName, clientId);
 }
 
 /**
@@ -85,12 +85,11 @@ export const TestData = {
     })),
 
   /**
-   * Create a stream event for testing
+   * Create a row update event for testing
    */
-  streamEvent: (row: Record<string, any>, diff: number = 1, timestamp: bigint = BigInt(1000)) => ({
+  rowUpdateEvent: (row: Record<string, any>, type: RowUpdateType = RowUpdateType.Insert): RowUpdateEvent => ({
     row,
-    diff,
-    timestamp
+    type
   }),
 } as const;
 
@@ -175,11 +174,15 @@ export class EventCollector<T = any> {
 /**
  * Helper to create mock subscribers for testing
  */
-export function createMockSubscriber() {
-  const events: any[] = [];
+export function createMockSubscriber(): StreamSubscriber & {
+  events: () => RowUpdateEvent[];
+  clear: () => void;
+  count: () => number;
+} {
+  const events: RowUpdateEvent[] = [];
   
   return {
-    onUpdate: (event: any) => events.push(event),
+    onUpdate: (event: RowUpdateEvent) => events.push(event),
     events: () => [...events],
     clear: () => events.length = 0,
     count: () => events.length,
