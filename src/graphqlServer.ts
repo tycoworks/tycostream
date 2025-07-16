@@ -6,8 +6,12 @@ import { WebSocketServer } from 'ws';
 import { buildSchema } from 'graphql';
 import type { LoadedSchema } from '../shared/schema.js';
 import { logger } from '../shared/logger.js';
-import { GraphQLSubscriptionHandler } from './graphqlSubscriptionHandler.js';
 import type { DatabaseStreamer } from '../shared/databaseStreamer.js';
+import type { DatabaseConfig } from './config.js';
+import { MaterializeStreamer } from './materialize.js';
+import { Subject } from 'rxjs';
+import type { RowUpdateEvent } from '../shared/databaseStreamer.js';
+import { eachValueFrom } from 'rxjs-for-await';
 
 // Component-specific configuration
 const DEFAULT_GRAPHQL_PORT = 4000;
@@ -17,11 +21,12 @@ export class GraphQLServer {
   private server: ReturnType<typeof createServer> | null = null;
   private wsServer: WebSocketServer | null = null;
   private schema: LoadedSchema | null = null;
+  private stream: DatabaseStreamer | null = null;
 
   constructor(
+    private dbConfig: DatabaseConfig,
     private loadedSchema: LoadedSchema,
     private viewName: string,
-    private stream: DatabaseStreamer,
     private port: number = DEFAULT_GRAPHQL_PORT
   ) {
     this.schema = loadedSchema;
@@ -41,6 +46,11 @@ export class GraphQLServer {
     try {
       this.log.info('Starting GraphQL server', { port: this.port, viewName: this.viewName });
 
+      // Create and start the database streamer
+      this.stream = new MaterializeStreamer(this.dbConfig, this.loadedSchema);
+      await this.stream.start();
+      this.log.debug('Database streamer created and started');
+
       const schema = this.buildGraphQLSchema();
       
       const yoga = createYoga({
@@ -50,7 +60,7 @@ export class GraphQLServer {
         } : false,
         context: () => ({
           viewName: this.viewName,
-          stream: this.stream,
+          stream: this.stream!,
           primaryKeyField: this.schema!.primaryKeyField,
         }),
         maskedErrors: false,
@@ -103,7 +113,7 @@ export class GraphQLServer {
           schema,
           context: () => ({
             viewName: this.viewName,
-            stream: this.stream,
+            stream: this.stream!,
             primaryKeyField: this.schema!.primaryKeyField,
           }),
           onConnect: (ctx) => {
@@ -175,6 +185,11 @@ export class GraphQLServer {
       this.server = null;
     }
     
+    if (this.stream) {
+      await this.stream.stop();
+      this.stream = null;
+    }
+    
     this.log.info('GraphQL server stopped');
   }
 
@@ -194,34 +209,27 @@ export class GraphQLServer {
         const { stream, viewName } = context;
         const log = logger.child({ component: 'subscription' });
         
-        log.debug('Creating new GraphQL subscription handler', { viewName });
+        log.debug('Creating new GraphQL subscription', { viewName });
         
-        // Create a new GraphQLSubscriptionHandler for this subscription
-        const streamHandler = new GraphQLSubscriptionHandler(viewName);
+        // Create a Subject to bridge between push (stream) and pull (async iterator)
+        const updates$ = new Subject<RowUpdateEvent>();
         
-        // Subscribe the handler to the stream
-        const unsubscribe = stream.subscribe(streamHandler);
+        // Subscribe to the stream
+        const unsubscribe = stream.subscribe({
+          onUpdate: (event: RowUpdateEvent) => {
+            updates$.next(event);
+          }
+        });
         
         try {
-          // Delegate to the ClientStreamHandler
-          const iterator = streamHandler.createAsyncIterator();
-          let result = await iterator.next();
-          
-          while (!result.done) {
-            yield result.value;
-            result = await iterator.next();
+          // Use rxjs-for-await to convert the observable to an async iterable
+          for await (const event of eachValueFrom(updates$)) {
+            yield { [viewName]: event.row };
           }
         } finally {
-          log.debug('Subscription ended, cleaning up handler', { 
-            viewName, 
-            handlerId: streamHandler.id 
-          });
-          
-          // Unsubscribe from the stream
+          log.debug('Subscription ended, cleaning up', { viewName });
+          updates$.complete();
           unsubscribe();
-          
-          // Close the handler
-          streamHandler.close();
         }
       },
       resolve: (payload: any) => payload[this.viewName],

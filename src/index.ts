@@ -1,5 +1,4 @@
 import { loadDatabaseConfig, loadSchema, ConfigError, getGraphQLPort } from './config.js';
-import { MaterializeStreamer } from './materialize.js';
 import { GraphQLServer } from './graphqlServer.js';
 import { logger } from '../shared/logger.js';
 import { shutdownManager } from './shutdown.js';
@@ -28,26 +27,16 @@ async function main(): Promise<void> {
       viewName: schema.viewName
     });
 
-    // Phase 3: Start database streamer
-    log.info('Starting database streamer');
-    const streamer = new MaterializeStreamer(dbConfig, schema);
-    await streamer.start();
-    log.info('Database streamer started');
-
-    // Phase 4: Start GraphQL server
+    // Phase 3: Start GraphQL server (which will create its own database streamer)
     log.info('Starting GraphQL server');
     const port = getGraphQLPort();
-    const graphqlServer = new GraphQLServer(schema, schema.viewName, streamer, port);
+    const graphqlServer = new GraphQLServer(dbConfig, schema, schema.viewName, port);
     await graphqlServer.start();
     log.info('GraphQL server started', { port });
 
-    // Register shutdown handlers
+    // Register shutdown handler
     shutdownManager.addHandler(async () => {
       await graphqlServer.stop();
-    });
-
-    shutdownManager.addHandler(async () => {
-      await streamer.stop();
     });
 
     log.info('tycostream is ready', {

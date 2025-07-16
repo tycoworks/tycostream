@@ -5,7 +5,6 @@
 
 import type { DatabaseStreamer, RowUpdateEvent, StreamSubscriber } from '../shared/databaseStreamer.js';
 import { RowUpdateType } from '../shared/databaseStreamer.js';
-import { GraphQLSubscriptionHandler } from '../src/graphqlSubscriptionHandler.js';
 import { SimpleCache } from '../src/simpleCache.js';
 
 // Test-specific constants to reduce duplication
@@ -42,16 +41,6 @@ export function createTestCache(
   viewName: string = TEST_CONSTANTS.VIEW_NAME
 ): SimpleCache {
   return new SimpleCache(primaryKeyField, viewName);
-}
-
-/**
- * Create a test GraphQLSubscriptionHandler instance
- */
-export function createTestSubscriber(
-  viewName: string = TEST_CONSTANTS.VIEW_NAME,
-  clientId?: string
-): GraphQLSubscriptionHandler {
-  return new GraphQLSubscriptionHandler(viewName, clientId);
 }
 
 /**
