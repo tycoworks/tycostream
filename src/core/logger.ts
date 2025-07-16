@@ -1,5 +1,5 @@
 import pino from 'pino';
-import { getLogLevel } from '../src/config.js';
+import { getLogLevel } from './config.js';
 
 // Logging types
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';

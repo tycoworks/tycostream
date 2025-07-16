@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { loadSchemaFromYaml } from '../shared/schema.js';
+import { loadSchemaFromYaml } from '../src/core/schema.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';

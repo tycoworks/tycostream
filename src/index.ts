@@ -1,7 +1,7 @@
-import { loadDatabaseConfig, loadSchema, ConfigError, getGraphQLPort } from './config.js';
-import { GraphQLServer } from './graphqlServer.js';
-import { logger } from '../shared/logger.js';
-import { shutdownManager } from './shutdown.js';
+import { loadDatabaseConfig, loadSchema, ConfigError, getGraphQLPort } from './core/config.js';
+import { GraphQLServer } from './graphql/server.js';
+import { logger } from './core/logger.js';
+import { shutdownManager } from './core/shutdown.js';
 
 async function main(): Promise<void> {
   const log = logger.child({ component: 'main' });

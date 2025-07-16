@@ -1,6 +1,6 @@
 import { Client } from 'pg';
-import { logger } from '../shared/logger.js';
-import type { DatabaseConfig } from './config.js';
+import { logger } from '../core/logger.js';
+import type { DatabaseConfig } from '../core/config.js';
 
 // Component-specific database configuration
 const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency

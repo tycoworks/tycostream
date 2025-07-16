@@ -1,12 +1,12 @@
 import { makeExecutableSchema } from '@graphql-tools/schema';
-import type { LoadedSchema } from '../shared/schema.js';
-import { logger } from '../shared/logger.js';
-import type { DatabaseStreamer } from '../shared/databaseStreamer.js';
-import type { DatabaseConfig } from './config.js';
-import { isGraphQLUIEnabled } from './config.js';
-import { MaterializeStreamer } from './materialize.js';
-import { createViewSubscriptionResolver, createViewQueryResolver } from './subscriptionResolver.js';
-import { createGraphQLServers, type GraphQLServers } from './serverSetup.js';
+import type { LoadedSchema } from '../core/schema.js';
+import { logger } from '../core/logger.js';
+import type { DatabaseStreamer } from '../database/types.js';
+import type { DatabaseConfig } from '../core/config.js';
+import { isGraphQLUIEnabled } from '../core/config.js';
+import { MaterializeStreamer } from '../database/materialize.js';
+import { createViewSubscriptionResolver, createViewQueryResolver } from './resolvers.js';
+import { createGraphQLServers, type GraphQLServers } from './setup.js';
 
 // Component-specific configuration
 const DEFAULT_GRAPHQL_PORT = 4000;
@@ -77,19 +77,12 @@ export class GraphQLServer {
   }
 
   private buildGraphQLSchema() {
-    if (!this.schema) {
-      throw new Error('Schema not loaded');
-    }
-
-    // Field names map to view names by convention (1:1 in Milestone 1.1)
-    const fieldName = this.viewName;
-
     const resolvers = {
       Query: {
-        [fieldName]: createViewQueryResolver()
+        [this.viewName]: createViewQueryResolver()
       },
       Subscription: {
-        [fieldName]: createViewSubscriptionResolver(this.viewName)
+        [this.viewName]: createViewSubscriptionResolver(this.viewName)
       },
     };
 

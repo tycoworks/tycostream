@@ -2,13 +2,13 @@ import { Client } from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
 import { Subject, ReplaySubject, filter, Subscription } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
-import type { SchemaField, LoadedSchema } from '../shared/schema.js';
-import type { RowUpdateEvent, DatabaseStreamer } from '../shared/databaseStreamer.js';
-import { RowUpdateType } from '../shared/databaseStreamer.js';
-import type { DatabaseConfig } from './config.js';
-import { logger, truncateForLog } from '../shared/logger.js';
-import { SimpleCache } from './simpleCache.js';
-import { DatabaseConnection } from './databaseConnection.js';
+import type { SchemaField, LoadedSchema } from '../core/schema.js';
+import type { RowUpdateEvent, DatabaseStreamer } from './types.js';
+import { RowUpdateType } from './types.js';
+import type { DatabaseConfig } from '../core/config.js';
+import { logger, truncateForLog } from '../core/logger.js';
+import { SimpleCache } from './cache.js';
+import { DatabaseConnection } from './connection.js';
 
 /**
  * Materialize streaming database adapter

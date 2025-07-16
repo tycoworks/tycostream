@@ -3,9 +3,9 @@
  * Provides common test data, setup helpers, and timing utilities
  */
 
-import type { DatabaseStreamer, RowUpdateEvent } from '../shared/databaseStreamer.js';
-import { RowUpdateType } from '../shared/databaseStreamer.js';
-import { SimpleCache } from '../src/simpleCache.js';
+import type { DatabaseStreamer, RowUpdateEvent } from '../src/database/types.js';
+import { RowUpdateType } from '../src/database/types.js';
+import { SimpleCache } from '../src/database/cache.js';
 
 // Test-specific constants to reduce duplication
 export const TEST_CONSTANTS = {

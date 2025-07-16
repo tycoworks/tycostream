@@ -3,11 +3,12 @@ import { createServer } from 'http';
 import { useServer } from 'graphql-ws/lib/use/ws';
 import { WebSocketServer } from 'ws';
 import type { GraphQLSchema } from 'graphql';
-import { logger } from '../shared/logger.js';
+import { logger } from '../core/logger.js';
+import type { DatabaseStreamer } from '../database/types.js';
 
 export interface ServerContext {
   viewName: string;
-  stream: any;
+  stream: DatabaseStreamer;
   primaryKeyField: string;
 }
 
@@ -16,21 +17,13 @@ export interface GraphQLServers {
   stop(): Promise<void>;
 }
 
-/**
- * Creates HTTP and WebSocket servers for GraphQL
- */
 export function createGraphQLServers(
   schema: GraphQLSchema,
   context: ServerContext,
   options: { graphiqlEnabled: boolean }
 ): GraphQLServers {
-  // Create Yoga instance
   const yoga = createYogaServer(schema, context, options);
-  
-  // Create HTTP server
   const httpServer = createServer(yoga);
-  
-  // Setup WebSocket server
   const wsServer = setupWebSocketServer(httpServer, schema, context, yoga.graphqlEndpoint);
   
   return { 
@@ -46,9 +39,6 @@ export function createGraphQLServers(
   };
 }
 
-/**
- * Creates a Yoga GraphQL server instance with logging plugins
- */
 function createYogaServer(schema: GraphQLSchema, context: ServerContext, options: { graphiqlEnabled: boolean }) {
   const log = logger.child({ component: 'graphql-yoga' });
   
@@ -96,9 +86,6 @@ function createYogaServer(schema: GraphQLSchema, context: ServerContext, options
   });
 }
 
-/**
- * Sets up WebSocket server for GraphQL subscriptions
- */
 function setupWebSocketServer(
   httpServer: ReturnType<typeof createServer>,
   schema: GraphQLSchema,
@@ -148,9 +135,6 @@ function setupWebSocketServer(
   return wsServer;
 }
 
-/**
- * Starts the HTTP server on the specified port
- */
 async function startHttpServer(httpServer: ReturnType<typeof createServer>, port: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     httpServer.on('error', (err: any) => {

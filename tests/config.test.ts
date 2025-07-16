@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadDatabaseConfig, loadSchema, ConfigError } from '../src/config.js';
+import { loadDatabaseConfig, loadSchema, ConfigError } from '../src/core/config.js';
 import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 

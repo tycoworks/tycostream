@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { config } from 'dotenv';
-import type { LogLevel } from '../shared/logger.js';
-import { loadSchemaFromYaml, type LoadedSchema } from '../shared/schema.js';
+import type { LogLevel } from './logger.js';
+import { loadSchemaFromYaml, type LoadedSchema } from './schema.js';
 
 // Database configuration
 export interface DatabaseConfig {

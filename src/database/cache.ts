@@ -1,4 +1,4 @@
-import { logger } from '../shared/logger.js';
+import { logger } from '../core/logger.js';
 
 /**
  * Simple cache for storing row data by primary key
