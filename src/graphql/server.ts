@@ -1,14 +1,19 @@
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import type { LoadedSchema } from '../core/schema.js';
-import { logger } from '../core/logger.js';
+import { logger, truncateForLog } from '../core/logger.js';
 import type { DatabaseConfig } from '../core/config.js';
 import { isGraphQLUIEnabled } from '../core/config.js';
-import { createViewSubscriptionResolver, createViewQueryResolver } from './resolvers.js';
 import { createGraphQLServers, type GraphQLServers } from './setup.js';
 import { StreamerManager } from '../database/streamerManager.js';
 
 // Component-specific configuration
 const DEFAULT_GRAPHQL_PORT = 4000;
+
+// GraphQL subscription resolver type
+type SubscriptionResolver = {
+  subscribe: (parent: any, args: any, context: any) => AsyncIterator<any>;
+  resolve?: (payload: any) => any;
+};
 
 export class GraphQLServer {
   private log = logger.child({ component: 'graphql' });
@@ -72,20 +77,46 @@ export class GraphQLServer {
   }
 
   private buildGraphQLSchema() {
-    const resolvers: any = {
-      Query: {},
-      Subscription: {},
+    const resolvers = {
+      Query: {
+        _empty: () => null
+      },
+      Subscription: {} as Record<string, SubscriptionResolver>,
     };
 
-    // Create resolvers for each view
+    // Create resolvers for each view (subscriptions only)
     for (const [viewName, viewSchema] of this.schema.views) {
-      resolvers.Query[viewName] = createViewQueryResolver(viewName);
-      resolvers.Subscription[viewName] = createViewSubscriptionResolver(viewName);
+      resolvers.Subscription[viewName] = this.createViewSubscriptionResolver(viewName);
     }
 
     return makeExecutableSchema({
       typeDefs: this.schema.typeDefs,
       resolvers
     });
+  }
+
+  private createViewSubscriptionResolver(viewName: string) {
+    return {
+      subscribe: async function* (_parent: unknown, _args: unknown, context: { streamerManager: StreamerManager }) {
+        const stream = context.streamerManager.getStreamer(viewName);
+        if (!stream) {
+          throw new Error(`No streamer found for view: ${viewName}`);
+        }
+        
+        for await (const event of stream.getUpdates()) {
+          const payload = { [viewName]: event.row };
+          logger.debug({
+            component: 'graphql-subscription',
+            viewName,
+            eventType: event.type,
+            data: truncateForLog(event.row)
+          }, 'Sending subscription update to client');
+          yield payload;
+        }
+      },
+      resolve: (payload: Record<string, unknown>) => {
+        return payload[viewName];
+      },
+    };
   }
 }

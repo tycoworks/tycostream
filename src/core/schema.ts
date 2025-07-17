@@ -180,19 +180,16 @@ ${typeFields}
     }
   }
   
-  // Generate combined Query and Subscription types
-  const queryFields = Array.from(loadedViews.entries())
-    .map(([typeName]) => `  # Current snapshot of ${typeName} data\n  ${typeName}: [${typeName}!]!`)
-    .join('\n');
-    
+  // Generate combined Subscription type
   const subscriptionFields = Array.from(loadedViews.entries())
     .map(([typeName]) => `  ${typeName}: ${typeName}!`)
     .join('\n');
   
   const typeDefs = `${typeDefsList.join('\n\n')}
 
+# Minimal Query type required by GraphQL spec
 type Query {
-${queryFields}
+  _empty: String
 }
 
 type Subscription {

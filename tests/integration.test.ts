@@ -90,9 +90,9 @@ describe('Integration Tests', () => {
   theoretical_pnl: Float
 }
 
+# Minimal Query type required by GraphQL spec
 type Query {
-  # Current snapshot of live_pnl data
-  live_pnl: [live_pnl!]!
+  _empty: String
 }
 
 type Subscription {

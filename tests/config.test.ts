@@ -89,8 +89,8 @@ describe('loadSchema', () => {
       const testView = schema.views.get('TestType')!;
       
       expect(schema.typeDefs).toContain('type TestType');
-      expect(schema.typeDefs).toContain('type Query');
       expect(schema.typeDefs).toContain('type Subscription');
+      expect(schema.typeDefs).toContain('type Query');
       expect(testView.primaryKeyField).toBe('id');
       expect(testView.viewName).toBe('TestType');
       expect(testView.fields).toHaveLength(3);
