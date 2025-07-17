@@ -28,12 +28,13 @@ describe('YAML Schema Processing', () => {
 
     // Load schema
     const schema = loadSchemaFromYaml(configDir);
+    const view = schema.views.get('CustomTypeName')!;
     
     // GraphQL type name should be the YAML key
-    expect(schema.viewName).toBe('CustomTypeName');
+    expect(view.viewName).toBe('CustomTypeName');
     
     // Database view name should be the 'view' field value
-    expect(schema.databaseViewName).toBe('actual_database_view');
+    expect(view.databaseViewName).toBe('actual_database_view');
     
     // Generated GraphQL schema should use the GraphQL type name
     expect(schema.typeDefs).toContain('type CustomTypeName');
@@ -59,10 +60,11 @@ describe('YAML Schema Processing', () => {
 
     // Load schema
     const schema = loadSchemaFromYaml(configDir);
+    const view = schema.views.get('live_pnl')!;
     
     // Both should be the same
-    expect(schema.viewName).toBe('live_pnl');
-    expect(schema.databaseViewName).toBe('live_pnl');
+    expect(view.viewName).toBe('live_pnl');
+    expect(view.databaseViewName).toBe('live_pnl');
   });
 
   it('should validate that GraphQL and database view names are used correctly', () => {
@@ -83,6 +85,7 @@ describe('YAML Schema Processing', () => {
 
     // Load schema
     const schema = loadSchemaFromYaml(configDir);
+    const view = schema.views.get('MyGraphQLType')!;
     
     // Should use GraphQL type name in schema
     expect(schema.typeDefs).toContain('type MyGraphQLType');
@@ -93,8 +96,8 @@ describe('YAML Schema Processing', () => {
     expect(schema.typeDefs).not.toContain('my_db_view');
     
     // But should have correct database view name in schema object
-    expect(schema.databaseViewName).toBe('my_db_view');
-    expect(schema.viewName).toBe('MyGraphQLType');
+    expect(view.databaseViewName).toBe('my_db_view');
+    expect(view.viewName).toBe('MyGraphQLType');
   });
 
   it('should map PostgreSQL types to GraphQL types correctly', () => {
@@ -128,9 +131,10 @@ describe('YAML Schema Processing', () => {
 
     // Load schema
     const schema = loadSchemaFromYaml(configDir);
+    const view = schema.views.get('TypeMappingTest')!;
     
     // Verify type mappings
-    const typeMap = new Map(schema.fields.map(f => [f.name, f.type]));
+    const typeMap = new Map(view.fields.map(f => [f.name, f.type]));
     
     expect(typeMap.get('id')).toBe('Int');
     expect(typeMap.get('is_active')).toBe('Boolean');
@@ -149,13 +153,13 @@ describe('YAML Schema Processing', () => {
     expect(typeMap.get('settings')).toBe('String');
     
     // Verify primary key
-    expect(schema.primaryKeyField).toBe('id');
-    const idField = schema.fields.find(f => f.name === 'id');
+    expect(view.primaryKeyField).toBe('id');
+    const idField = view.fields.find(f => f.name === 'id');
     expect(idField?.isPrimaryKey).toBe(true);
     expect(idField?.nullable).toBe(false);
     
     // Verify other fields are nullable
-    const nameField = schema.fields.find(f => f.name === 'name');
+    const nameField = view.fields.find(f => f.name === 'name');
     expect(nameField?.nullable).toBe(true);
   });
 
@@ -175,7 +179,7 @@ describe('YAML Schema Processing', () => {
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Should throw error
-    expect(() => loadSchemaFromYaml(configDir)).toThrow('Schema must contain a primary_key attribute');
+    expect(() => loadSchemaFromYaml(configDir)).toThrow('View \'NoPrimaryKey\' must contain a primary_key attribute');
   });
 
   it('should validate primary key exists in columns', () => {

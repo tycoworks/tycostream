@@ -1,12 +1,11 @@
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import type { LoadedSchema } from '../core/schema.js';
 import { logger } from '../core/logger.js';
-import type { DatabaseStreamer } from '../database/types.js';
 import type { DatabaseConfig } from '../core/config.js';
 import { isGraphQLUIEnabled } from '../core/config.js';
-import { MaterializeStreamer } from '../database/materialize.js';
 import { createViewSubscriptionResolver, createViewQueryResolver } from './resolvers.js';
 import { createGraphQLServers, type GraphQLServers } from './setup.js';
+import { StreamerManager } from '../database/streamerManager.js';
 
 // Component-specific configuration
 const DEFAULT_GRAPHQL_PORT = 4000;
@@ -14,34 +13,30 @@ const DEFAULT_GRAPHQL_PORT = 4000;
 export class GraphQLServer {
   private log = logger.child({ component: 'graphql' });
   private servers: GraphQLServers | null = null;
-  private stream: DatabaseStreamer | null = null;
+  private streamerManager: StreamerManager | null = null;
 
   constructor(
     private dbConfig: DatabaseConfig,
     private schema: LoadedSchema,
-    private viewName: string,
     private port: number = DEFAULT_GRAPHQL_PORT
   ) {}
 
   async start(): Promise<void> {
     try {
-      this.log.info('Starting GraphQL server', { port: this.port, viewName: this.viewName });
+      this.log.info('Starting GraphQL server', { port: this.port, viewCount: this.schema.views.size });
 
-      // Create and start the database streamer
-      this.stream = new MaterializeStreamer(this.dbConfig, this.schema);
-      await this.stream.start();
-      this.log.debug('Database streamer created and started');
+      // Create and start streamer manager
+      this.streamerManager = new StreamerManager(this.dbConfig, this.schema);
+      await this.streamerManager.start();
+      
+      this.log.debug('All database streamers created and started');
 
       const schema = this.buildGraphQLSchema();
       
       // Create HTTP and WebSocket servers
       this.servers = createGraphQLServers(
         schema,
-        {
-          viewName: this.viewName,
-          stream: this.stream!,
-          primaryKeyField: this.schema.primaryKeyField,
-        },
+        this.streamerManager,
         {
           graphiqlEnabled: isGraphQLUIEnabled()
         }
@@ -68,23 +63,25 @@ export class GraphQLServer {
       this.servers = null;
     }
     
-    if (this.stream) {
-      await this.stream.stop();
-      this.stream = null;
+    if (this.streamerManager) {
+      await this.streamerManager.stop();
+      this.streamerManager = null;
     }
     
     this.log.info('GraphQL server stopped');
   }
 
   private buildGraphQLSchema() {
-    const resolvers = {
-      Query: {
-        [this.viewName]: createViewQueryResolver()
-      },
-      Subscription: {
-        [this.viewName]: createViewSubscriptionResolver()
-      },
+    const resolvers: any = {
+      Query: {},
+      Subscription: {},
     };
+
+    // Create resolvers for each view
+    for (const [viewName, viewSchema] of this.schema.views) {
+      resolvers.Query[viewName] = createViewQueryResolver(viewName);
+      resolvers.Subscription[viewName] = createViewSubscriptionResolver(viewName);
+    }
 
     return makeExecutableSchema({
       typeDefs: this.schema.typeDefs,

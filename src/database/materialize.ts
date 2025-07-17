@@ -2,7 +2,7 @@ import { Client } from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
 import { Subject, ReplaySubject, filter, Subscription } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
-import type { SchemaField, LoadedSchema } from '../core/schema.js';
+import type { SchemaField, ViewSchema } from '../core/schema.js';
 import type { RowUpdateEvent, DatabaseStreamer } from './types.js';
 import { RowUpdateType } from './types.js';
 import type { DatabaseConfig } from '../core/config.js';
@@ -28,7 +28,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
 
   constructor(
     private config: DatabaseConfig,
-    private schema: LoadedSchema
+    private schema: ViewSchema
   ) {
     // Create internal simple cache
     this.cache = new SimpleCache(schema.primaryKeyField, schema.databaseViewName);

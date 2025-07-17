@@ -10,3 +10,13 @@ views:
       market_value: double precision
       avg_cost_basis: numeric
       theoretical_pnl: double precision
+  
+  trades:
+    view: trades
+    primary_key: id
+    columns:
+      id: integer
+      instrument_id: integer
+      quantity: integer
+      price: numeric
+      executed_at: timestamp without time zone

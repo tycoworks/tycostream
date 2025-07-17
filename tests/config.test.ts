@@ -86,14 +86,15 @@ describe('loadSchema', () => {
 
     try {
       const schema = loadSchema();
+      const testView = schema.views.get('TestType')!;
       
       expect(schema.typeDefs).toContain('type TestType');
       expect(schema.typeDefs).toContain('type Query');
       expect(schema.typeDefs).toContain('type Subscription');
-      expect(schema.primaryKeyField).toBe('id');
-      expect(schema.viewName).toBe('TestType');
-      expect(schema.fields).toHaveLength(3);
-      expect(schema.fields[0]).toEqual({
+      expect(testView.primaryKeyField).toBe('id');
+      expect(testView.viewName).toBe('TestType');
+      expect(testView.fields).toHaveLength(3);
+      expect(testView.fields[0]).toEqual({
         name: 'id',
         type: 'Int',
         nullable: false,

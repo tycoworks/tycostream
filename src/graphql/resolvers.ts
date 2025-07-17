@@ -1,10 +1,9 @@
 import type { DatabaseStreamer, RowUpdateEvent } from '../database/types.js';
 import { logger, truncateForLog } from '../core/logger.js';
+import type { StreamerManager } from '../database/streamerManager.js';
 
 interface GraphQLContext {
-  stream: DatabaseStreamer;
-  viewName: string;
-  primaryKeyField: string;
+  streamerManager: StreamerManager;
 }
 
 interface SubscriptionResolver {
@@ -14,10 +13,13 @@ interface SubscriptionResolver {
 
 type QueryResolver = (_parent: unknown, _args: unknown, context: GraphQLContext) => Record<string, any>[];
 
-export function createViewSubscriptionResolver(): SubscriptionResolver {
+export function createViewSubscriptionResolver(viewName: string): SubscriptionResolver {
   return {
     subscribe: async function* (_parent: unknown, _args: unknown, context: GraphQLContext) {
-      const { stream, viewName } = context;
+      const stream = context.streamerManager.getStreamer(viewName);
+      if (!stream) {
+        throw new Error(`No streamer found for view: ${viewName}`);
+      }
       
       for await (const event of stream.getUpdates()) {
         const payload = { [viewName]: event.row };
@@ -25,21 +27,24 @@ export function createViewSubscriptionResolver(): SubscriptionResolver {
           component: 'graphql-subscription',
           viewName,
           eventType: event.type,
-          primaryKey: event.row[context.primaryKeyField],
           data: truncateForLog(event.row)
         }, 'Sending subscription update to client');
         yield payload;
       }
     },
-    resolve: (payload: Record<string, unknown>, _args: unknown, context: GraphQLContext) => {
-      return payload[context.viewName];
+    resolve: (payload: Record<string, unknown>) => {
+      return payload[viewName];
     },
   };
 }
 
-export function createViewQueryResolver(): QueryResolver {
+export function createViewQueryResolver(viewName: string): QueryResolver {
   return (_parent: unknown, _args: unknown, context: GraphQLContext) => {
-    const { stream, viewName } = context;
+    const stream = context.streamerManager.getStreamer(viewName);
+    if (!stream) {
+      throw new Error(`No streamer found for view: ${viewName}`);
+    }
+    
     const rows = stream.getAllRows();
     logger.debug({
       component: 'graphql-query',

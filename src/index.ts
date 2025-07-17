@@ -22,15 +22,14 @@ async function main(): Promise<void> {
     log.info('Loading schema');
     const schema = loadSchema();
     log.info('Schema loaded', {
-      primaryKeyField: schema.primaryKeyField,
-      fieldsCount: schema.fields.length,
-      viewName: schema.viewName
+      viewCount: schema.views.size,
+      views: Array.from(schema.views.keys())
     });
 
     // Phase 3: Start GraphQL server (which will create its own database streamer)
     log.info('Starting GraphQL server');
     const port = getGraphQLPort();
-    const graphqlServer = new GraphQLServer(dbConfig, schema, schema.viewName, port);
+    const graphqlServer = new GraphQLServer(dbConfig, schema, port);
     await graphqlServer.start();
     log.info('GraphQL server started', { port });
 
@@ -42,8 +41,7 @@ async function main(): Promise<void> {
     log.info('tycostream is ready', {
       graphqlEndpoint: `http://localhost:${port}/graphql`,
       subscriptionsEndpoint: `ws://localhost:${port}/graphql`,
-      graphqlTypeName: schema.viewName,
-      databaseViewName: schema.databaseViewName
+      views: Array.from(schema.views.keys())
     });
 
   } catch (error) {

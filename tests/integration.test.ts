@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { MaterializeStreamer } from '../src/database/materialize.js';
 import { GraphQLServer } from '../src/graphql/server.js';
-import type { LoadedSchema } from '../src/core/schema.js';
+import type { LoadedSchema, ViewSchema } from '../src/core/schema.js';
 import type { RowUpdateEvent } from '../src/database/types.js';
 import { RowUpdateType } from '../src/database/types.js';
 import type { DatabaseConfig } from '../src/core/config.js';
@@ -54,7 +54,32 @@ describe('Integration Tests', () => {
   };
 
   // Use a hardcoded test schema (matches production YAML structure)
+  const testViewSchema: ViewSchema = {
+    typeDefs: `type live_pnl {
+  instrument_id: ID!
+  symbol: String
+  net_position: Int
+  latest_price: Float
+  market_value: Float
+  avg_cost_basis: Float
+  theoretical_pnl: Float
+}`,
+    fields: [
+      { name: 'instrument_id', type: 'ID', nullable: false, isPrimaryKey: true },
+      { name: 'symbol', type: 'String', nullable: true, isPrimaryKey: false },
+      { name: 'net_position', type: 'Int', nullable: true, isPrimaryKey: false },
+      { name: 'latest_price', type: 'Float', nullable: true, isPrimaryKey: false },
+      { name: 'market_value', type: 'Float', nullable: true, isPrimaryKey: false },
+      { name: 'avg_cost_basis', type: 'Float', nullable: true, isPrimaryKey: false },
+      { name: 'theoretical_pnl', type: 'Float', nullable: true, isPrimaryKey: false },
+    ],
+    primaryKeyField: 'instrument_id',
+    viewName: 'live_pnl',
+    databaseViewName: 'live_pnl'
+  };
+  
   const testSchema: LoadedSchema = {
+    views: new Map([['live_pnl', testViewSchema]]),
     typeDefs: `type live_pnl {
   instrument_id: ID!
   symbol: String
@@ -72,24 +97,12 @@ type Query {
 
 type Subscription {
   live_pnl: live_pnl!
-}`,
-    fields: [
-      { name: 'instrument_id', type: 'ID', nullable: false, isPrimaryKey: true },
-      { name: 'symbol', type: 'String', nullable: true, isPrimaryKey: false },
-      { name: 'net_position', type: 'Int', nullable: true, isPrimaryKey: false },
-      { name: 'latest_price', type: 'Float', nullable: true, isPrimaryKey: false },
-      { name: 'market_value', type: 'Float', nullable: true, isPrimaryKey: false },
-      { name: 'avg_cost_basis', type: 'Float', nullable: true, isPrimaryKey: false },
-      { name: 'theoretical_pnl', type: 'Float', nullable: true, isPrimaryKey: false },
-    ],
-    primaryKeyField: 'instrument_id',
-    viewName: 'live_pnl',
-    databaseViewName: 'live_pnl'
+}`
   };
 
   it('should integrate components together', async () => {
     // Create components following new architecture
-    const streamer = new MaterializeStreamer(testConfig, testSchema);
+    const streamer = new MaterializeStreamer(testConfig, testViewSchema);
     
     // Test connection
     await streamer.start();
@@ -103,7 +116,7 @@ type Subscription {
   });
 
   it('should handle subscription and emit events', async () => {
-    const streamer = new MaterializeStreamer(testConfig, testSchema);
+    const streamer = new MaterializeStreamer(testConfig, testViewSchema);
     await streamer.start(); // Need to start first
     
     const receivedEvents: RowUpdateEvent[] = [];
@@ -141,7 +154,7 @@ type Subscription {
   });
 
   it('should handle connection error scenarios gracefully', async () => {
-    const streamer = new MaterializeStreamer(testConfig, testSchema);
+    const streamer = new MaterializeStreamer(testConfig, testViewSchema);
     
     // Mock connection failure
     mockClientInstance.connect.mockReset();
@@ -153,7 +166,7 @@ type Subscription {
   it('should test MaterializeStreamer construction', () => {
     // Test that MaterializeStreamer can be constructed with proper schema
     expect(() => {
-      new MaterializeStreamer(testConfig, testSchema);
+      new MaterializeStreamer(testConfig, testViewSchema);
     }).not.toThrow();
   });
 });

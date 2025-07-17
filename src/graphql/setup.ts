@@ -4,13 +4,8 @@ import { useServer } from 'graphql-ws/lib/use/ws';
 import { WebSocketServer } from 'ws';
 import type { GraphQLSchema } from 'graphql';
 import { logger } from '../core/logger.js';
-import type { DatabaseStreamer } from '../database/types.js';
+import type { StreamerManager } from '../database/streamerManager.js';
 
-export interface ServerContext {
-  viewName: string;
-  stream: DatabaseStreamer;
-  primaryKeyField: string;
-}
 
 export interface GraphQLServers {
   start(port: number): Promise<void>;
@@ -19,12 +14,12 @@ export interface GraphQLServers {
 
 export function createGraphQLServers(
   schema: GraphQLSchema,
-  context: ServerContext,
+  streamerManager: StreamerManager,
   options: { graphiqlEnabled: boolean }
 ): GraphQLServers {
-  const yoga = createYogaServer(schema, context, options);
+  const yoga = createYogaServer(schema, streamerManager, options);
   const httpServer = createServer(yoga);
-  const wsServer = setupWebSocketServer(httpServer, schema, context, yoga.graphqlEndpoint);
+  const wsServer = setupWebSocketServer(httpServer, schema, streamerManager, yoga.graphqlEndpoint);
   
   return { 
     start: async (port: number) => {
@@ -39,7 +34,7 @@ export function createGraphQLServers(
   };
 }
 
-function createYogaServer(schema: GraphQLSchema, context: ServerContext, options: { graphiqlEnabled: boolean }) {
+function createYogaServer(schema: GraphQLSchema, streamerManager: StreamerManager, options: { graphiqlEnabled: boolean }) {
   const log = logger.child({ component: 'graphql-yoga' });
   
   return createYoga({
@@ -47,7 +42,7 @@ function createYogaServer(schema: GraphQLSchema, context: ServerContext, options
     graphiql: options.graphiqlEnabled ? {
       subscriptionsProtocol: 'WS',
     } : false,
-    context: () => context,
+    context: () => ({ streamerManager }),
     maskedErrors: false,
     plugins: [
       {
@@ -89,7 +84,7 @@ function createYogaServer(schema: GraphQLSchema, context: ServerContext, options
 function setupWebSocketServer(
   httpServer: ReturnType<typeof createServer>,
   schema: GraphQLSchema,
-  context: ServerContext,
+  streamerManager: StreamerManager,
   graphqlEndpoint: string
 ): WebSocketServer {
   const log = logger.child({ component: 'websocket' });
@@ -102,7 +97,7 @@ function setupWebSocketServer(
   useServer(
     {
       schema,
-      context: () => context,
+      context: () => ({ streamerManager }),
       onConnect: (ctx) => {
         log.debug('GraphQL WebSocket client connected', { 
           connectionParams: ctx.connectionParams 
@@ -115,8 +110,7 @@ function setupWebSocketServer(
         log.info({
           operationName,
           operationType: 'subscription',
-          hasVariables,
-          viewName: context.viewName
+          hasVariables
         }, 'GraphQL Operation');
       },
       onDisconnect: (ctx) => {
