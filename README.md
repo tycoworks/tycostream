@@ -87,12 +87,17 @@ SOURCE_HOST=host.docker.internal
 
 ## Testing
 
-For development testing, enable the GraphQL explorer:
+There are three ways to test tycostream:
 
+### 1. GraphQL Explorer UI
+Enable the built-in GraphQL explorer UI:
 ```bash
 GRAPHQL_UI=true npm run dev
 ```
+Then visit http://localhost:4000/graphql to test queries and subscriptions interactively.
 
-Then visit `http://localhost:${GRAPHQL_PORT}/graphql` (default: http://localhost:4000/graphql) to test queries and subscriptions interactively.
+### 2. Command Line Tools
+Use `curl` for queries or `npx` for subscriptions.
 
-Alternatively, use `curl` for queries or `npx` for subscriptions via command line.
+### 3. Demo Project
+See a complete example at https://github.com/tycoworks/tycostream-demo
