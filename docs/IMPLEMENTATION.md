@@ -110,11 +110,18 @@ const SHUTDOWN_TIMEOUT_MS = 5000;
 
 ## Error Handling
 
-### Principles
-- Fail fast with clear error messages
+### Fail Fast Philosophy
+- **Exit immediately** on configuration errors or unrecoverable states
+- **Validate everything at startup** - schema files, environment variables, port availability
+- **No partial states** - either fully operational or not running
+- **Clear error messages** with actionable guidance for users
+- **Graceful shutdown** - clean up resources in reverse order of initialization
+
+### Error Handling Principles
 - Include context in errors (what failed, why, what to do)
 - Use custom error classes for domain-specific errors
 - Log errors at the boundary, not throughout the stack
+- Exit with appropriate codes (1 for general errors, specific codes for known issues)
 
 ### Example
 ```typescript
@@ -125,6 +132,35 @@ class ConfigError extends Error {
   }
 }
 ```
+
+### User-Facing Error Messages
+- Avoid technical jargon ("unhandled promise rejection", "SUBSCRIBE query")
+- Use clear language ("database connection failed", "schema file not found")
+- Provide next steps ("Check your .env file", "Ensure Materialize is running")
+- Include relevant context without exposing sensitive data
+
+## Logging Strategy
+
+### Log Levels
+- **ERROR**: System failures requiring immediate attention
+- **WARN**: Recoverable issues that may indicate problems  
+- **INFO**: Key business events (startup, connections, operations)
+- **DEBUG**: Detailed operational information (use sampling for high-frequency events)
+
+### What We Log
+- System lifecycle events
+- Connection state changes
+- GraphQL operations
+- Errors with full context
+- Performance metrics (sampled)
+
+### Standards
+- Use structured logging with consistent field names
+- Create child loggers per component
+- No emojis in logs
+- Never log sensitive data (passwords, tokens, PII)
+- Present tense ("Starting server" not "Started server")
+- Include units in measurements ("45ms" not "45")
 
 ## Testing Standards
 

@@ -33,43 +33,30 @@ tycostream is a real-time GraphQL API that streams updates from Materialize view
 
 ## Component Architecture
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│                 │     │                 │     │                 │
-│   Materialize   │────▶│  tycostream     │────▶│  GraphQL        │
-│   Database      │     │                 │     │  Clients        │
-│                 │     │                 │     │                 │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        │                        │                        │
-        │                   ┌────┴────┐                   │
-        │                   │         │                   │
-    SUBSCRIBE           ┌───▼───┐ ┌──▼───┐          WebSocket
-    (COPY protocol)     │Database│ │GraphQL│         Subscriptions
-                        │ Layer  │ │ Layer │
-                        └───┬───┘ └──┬───┘
-                            │         │
-                        ┌───▼────────▼───┐
-                        │  Core Utilities │
-                        │  (config, log)  │
-                        └────────────────┘
-```
+The system is organized into three logical layers:
 
 ### Database Layer (`src/database/`)
-- **MaterializeStreamer**: Manages SUBSCRIBE connection and COPY protocol
-- **SimpleCache**: In-memory state storage with O(1) lookups
-- **DatabaseConnection**: Connection lifecycle and error handling
-- **Types**: Shared interfaces for streaming events
+Handles all interaction with Materialize:
+- Manages SUBSCRIBE connections using Postgres wire protocol
+- Implements COPY protocol parsing for streaming data
+- Maintains in-memory cache of current view state
+- Provides async iterators for consuming updates
+- Handles connection lifecycle and reconnection logic
 
 ### GraphQL Layer (`src/graphql/`)
-- **GraphQLServer**: Main server orchestration
-- **Setup**: HTTP and WebSocket server configuration
-- **Resolvers**: Query and subscription resolver factories
+Serves the GraphQL API:
+- Orchestrates HTTP and WebSocket servers
+- Dynamically generates GraphQL schema from YAML configuration
+- Implements subscription resolvers that consume database streams
+- Manages client connection lifecycle
+- Handles graceful shutdown of active subscriptions
 
 ### Core Utilities (`src/core/`)
-- **Config**: Environment and schema loading with validation
-- **Logger**: Structured logging with Pino
-- **Schema**: YAML to GraphQL schema transformation
-- **Shutdown**: Graceful shutdown coordination
+Shared infrastructure:
+- Configuration loading and validation with environment variables
+- Structured logging with component isolation
+- YAML to GraphQL schema transformation
+- Graceful shutdown coordination across components
 
 ## Data Flow
 
