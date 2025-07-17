@@ -107,6 +107,13 @@ export function loadSchemaFromYaml(configDir: string): LoadedSchema {
     throw new Error(`Primary key field '${primaryKeyField}' not found in columns`);
   }
   
+  // Validate primary key type is supported
+  const primaryKeyType = viewConfig.columns[primaryKeyField];
+  const supportedPrimaryKeyTypes = ['integer', 'bigint', 'text', 'varchar', 'uuid'];
+  if (!supportedPrimaryKeyTypes.includes(primaryKeyType)) {
+    throw new Error(`Primary key type '${primaryKeyType}' is not supported. Supported types: ${supportedPrimaryKeyTypes.join(', ')}`);
+  }
+  
   for (const [fieldName, postgresType] of Object.entries(viewConfig.columns)) {
     const isPrimaryKey = fieldName === primaryKeyField;
     

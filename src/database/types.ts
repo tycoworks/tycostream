@@ -16,7 +16,7 @@ export interface DatabaseStreamer {
   
   // Data access
   getAllRows(): Record<string, any>[];
-  getRow(primaryKey: any): Record<string, any> | undefined;
+  getRow(primaryKey: string | number): Record<string, any> | undefined;
   
   // Async iteration for streaming updates
   getUpdates(): AsyncIterableIterator<RowUpdateEvent>;

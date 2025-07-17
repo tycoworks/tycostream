@@ -238,7 +238,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
   /**
    * Get a specific row by primary key
    */
-  getRow(primaryKey: any): Record<string, any> | undefined {
+  getRow(primaryKey: string | number): Record<string, any> | undefined {
     return this.cache.get(primaryKey);
   }
 

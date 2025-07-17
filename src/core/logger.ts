@@ -9,7 +9,7 @@ export interface LogContext {
   operation?: string;
   viewName?: string;
   clientId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Component-specific configuration
@@ -41,7 +41,7 @@ const logger = pino({
  * @param maxLength - Maximum length before truncation (default: 200)
  * @returns Truncated JSON string
  */
-export function truncateForLog(obj: any, maxLength: number = LOG_TRUNCATE_LENGTH): string {
+export function truncateForLog(obj: unknown, maxLength: number = LOG_TRUNCATE_LENGTH): string {
   const jsonString = JSON.stringify(obj);
   return jsonString.length > maxLength 
     ? jsonString.substring(0, maxLength) + '...'

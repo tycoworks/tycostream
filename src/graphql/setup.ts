@@ -137,7 +137,7 @@ function setupWebSocketServer(
 
 async function startHttpServer(httpServer: ReturnType<typeof createServer>, port: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    httpServer.on('error', (err: any) => {
+    httpServer.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
         reject(new Error(`Port ${port} is already in use. Please ensure no other process is using this port or change GRAPHQL_PORT in your .env file.`));
       } else {

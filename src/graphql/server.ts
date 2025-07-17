@@ -82,7 +82,7 @@ export class GraphQLServer {
         [this.viewName]: createViewQueryResolver()
       },
       Subscription: {
-        [this.viewName]: createViewSubscriptionResolver(this.viewName)
+        [this.viewName]: createViewSubscriptionResolver()
       },
     };
 

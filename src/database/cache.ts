@@ -35,14 +35,14 @@ export class SimpleCache {
   /**
    * Get a row by primary key
    */
-  get(primaryKey: any): Record<string, any> | undefined {
+  get(primaryKey: string | number): Record<string, any> | undefined {
     return this.cache.get(primaryKey);
   }
 
   /**
    * Check if a primary key exists
    */
-  has(primaryKey: any): boolean {
+  has(primaryKey: string | number): boolean {
     return this.cache.has(primaryKey);
   }
 
