@@ -1,74 +1,126 @@
-# System Architecture
-*High-level system design, technology choices, and component architecture*
+# Architecture
 
 ## Overview
 
-This document outlines the system architecture for tycostream: a real-time GraphQL API that streams updates from Materialize views to subscribed clients. The system is implemented as a single Node.js process combining Materialize streaming and GraphQL delivery logic in one modular backend.
+tycostream is a real-time GraphQL API that streams updates from Materialize views to subscribed clients. It provides a simple, configuration-driven approach to exposing streaming SQL data through standard GraphQL subscriptions.
 
-## System Goals
+## Technology Stack
 
-* Stream updates from Materialize views to GraphQL clients over WebSocket
-* Support multiple concurrent client subscriptions with isolation
-* Deliver current view state followed by incremental updates
-* Manually defined schema using YAML configuration files
-* Minimal configuration surface for users
-* Clean, extensible architecture that supports future enhancements
+- **Runtime**: Node.js with TypeScript
+- **GraphQL Server**: GraphQL Yoga (WebSocket subscriptions)
+- **Database Client**: node-postgres (Materialize uses Postgres wire protocol)
+- **Streaming**: RxJS for reactive stream processing
+- **Async Iteration**: rxjs-for-await for Observable to AsyncIterator conversion
+- **Schema**: @graphql-tools/schema for dynamic schema generation
+- **Configuration**: Zod for validation, YAML for schema definitions
 
----
+## Architecture Principles
 
-## Key Components
+### Single Process Design
+- All components run in a single Node.js process
+- Simplifies deployment and reduces operational complexity
+- Suitable for most real-time streaming use cases
 
-### Backend Service
+### Reactive Streaming
+- RxJS Observables for internal event propagation
+- Async iterators for GraphQL subscription interface
+- Clean separation between streaming infrastructure and GraphQL layer
 
-* Built using Node.js + TypeScript
-* Connects to Materialize using the Postgres wire protocol
-* Parses incoming row updates and applies them to the Central View Cache
+### Configuration-Driven
+- YAML schema files define GraphQL types and Materialize views
+- Environment variables for runtime configuration
+- Zero code changes needed for new views
 
-### Central View Cache
+## Component Architecture
 
-* Maintains the current state of a Materialize view in memory
-* Receives row updates from the Backend Service and applies diffs (insert/update/delete)
-* Notifies all active Client Stream Handlers of state changes
-* Provides current view data for new client connections
-* Lock-free implementation supporting low-latency concurrent reads
-* Never blocks incoming Materialize updates while serving client requests
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│                 │     │                 │     │                 │
+│   Materialize   │────▶│  tycostream     │────▶│  GraphQL        │
+│   Database      │     │                 │     │  Clients        │
+│                 │     │                 │     │                 │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        │                        │                        │
+        │                   ┌────┴────┐                   │
+        │                   │         │                   │
+    SUBSCRIBE           ┌───▼───┐ ┌──▼───┐          WebSocket
+    (COPY protocol)     │Database│ │GraphQL│         Subscriptions
+                        │ Layer  │ │ Layer │
+                        └───┬───┘ └──┬───┘
+                            │         │
+                        ┌───▼────────▼───┐
+                        │  Core Utilities │
+                        │  (config, log)  │
+                        └────────────────┘
+```
 
-### Client Stream Handler
+### Database Layer (`src/database/`)
+- **MaterializeStreamer**: Manages SUBSCRIBE connection and COPY protocol
+- **SimpleCache**: In-memory state storage with O(1) lookups
+- **DatabaseConnection**: Connection lifecycle and error handling
+- **Types**: Shared interfaces for streaming events
 
-* Created for each GraphQL client subscription
-* Subscribes to Central View Cache using single event stream
-* Receives current view state as individual events, then live updates
-* Uses p-queue library for robust async queue management
-* Manages lifecycle from connection to disconnection
-* Provides isolation between different client streams
+### GraphQL Layer (`src/graphql/`)
+- **GraphQLServer**: Main server orchestration
+- **Setup**: HTTP and WebSocket server configuration
+- **Resolvers**: Query and subscription resolver factories
 
-### GraphQL API Server
-
-* Serves a WebSocket endpoint for GraphQL subscriptions using GraphQL Yoga
-* Dynamically generates GraphQL schema from YAML configuration
-* Creates a new Client Stream Handler for each client subscription
-* Uses async iterators to stream data to clients
-
----
+### Core Utilities (`src/core/`)
+- **Config**: Environment and schema loading with validation
+- **Logger**: Structured logging with Pino
+- **Schema**: YAML to GraphQL schema transformation
+- **Shutdown**: Graceful shutdown coordination
 
 ## Data Flow
 
-1. **Startup**: Backend validates configuration and loads GraphQL schema from YAML
-2. **Connection**: Backend connects to Materialize using Postgres wire protocol
-3. **Streaming**: Issues `SUBSCRIBE` query against configured view
-4. **Cache Initialization**: Initial rows populate the Central View Cache with current state
-5. **Update Processing**: As row updates arrive:
-   - Backend Service parses the update
-   - Update is immediately applied to Central View Cache (non-blocking)
-   - Cache notifies all registered Client Stream Handlers
-6. **Client Connection**: GraphQL server receives subscription request via WebSocket
-7. **Subscription Setup**: New Client Stream Handler subscribes to cache
-8. **Unified Stream**: Client receives current state as individual events, then live updates
-9. **Consistent Ordering**: All events maintain strict Materialize stream ordering
+1. **Initial Connection**
+   - Client connects via GraphQL WebSocket subscription
+   - tycostream creates async iterator for the subscription
+   - MaterializeStreamer connects to database if not already connected
 
----
+2. **State Synchronization**
+   - SUBSCRIBE query captures current view state via COPY protocol
+   - Initial rows populate in-memory cache
+   - Client receives complete current state as individual events
 
-## Deployment Model
-* Single Node.js process containing all components
-* Materialize streaming logic and GraphQL server run in the same service
-* Modular codebase with clean separation between streaming and GraphQL layers
+3. **Live Updates**
+   - Materialize sends incremental updates (inserts/updates/deletes)
+   - Updates applied to cache and propagated to subscribers
+   - RxJS ReplaySubject ensures no updates lost during subscription handoff
+
+4. **Late Joiner Handling**
+   - New subscribers receive cached state immediately
+   - Timestamp-based filtering prevents duplicate events
+   - Seamless transition from historical to live data
+
+## Key Design Decisions
+
+### Why RxJS?
+- Natural fit for streaming data with operators for filtering and transformation
+- ReplaySubject pattern elegantly solves late-joiner race conditions
+- Well-tested library with excellent TypeScript support
+
+### Why Async Iterators?
+- GraphQL subscriptions expect AsyncIterator interface
+- Clean abstraction over underlying RxJS implementation
+- Allows future migration to different streaming primitives
+
+### Why Single Process?
+- Reduces operational complexity for initial versions
+- Materialize handles scaling at the database layer
+- Can evolve to multi-process when needed
+
+### Why In-Memory Cache?
+- Materialize views are typically bounded in size
+- Eliminates need for external state store
+- Provides sub-millisecond query response times
+
+## Future Evolution
+
+The architecture supports several evolution paths without major rewrites:
+
+- **Horizontal Scaling**: Add Redis for shared cache across processes
+- **Authentication**: JWT validation in GraphQL middleware
+- **Filtering**: Push-down filters to Materialize WHERE clauses
+- **Multiple Views**: Router pattern for view-specific handlers
+- **Monitoring**: OpenTelemetry instrumentation points
