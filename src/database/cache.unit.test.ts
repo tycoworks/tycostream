@@ -11,7 +11,7 @@ describe('SimpleCache', () => {
   describe('basic operations', () => {
     it('should store and retrieve items', () => {
       const row = { id: '1', name: 'Test Item', value: 42 };
-      const result = cache.set(row, BigInt(100));
+      const result = cache.set(row);
       
       expect(result).toBe(true);
       expect(cache.get('1')).toEqual(row);
@@ -22,7 +22,7 @@ describe('SimpleCache', () => {
     it('should handle different primary key fields', () => {
       const customCache = new SimpleCache('userId');
       const row = { userId: 'abc123', name: 'User' };
-      customCache.set(row, BigInt(100));
+      customCache.set(row);
       
       expect(customCache.get('abc123')).toEqual(row);
     });
@@ -31,8 +31,8 @@ describe('SimpleCache', () => {
       const row1 = { id: '1', name: 'Original' };
       const row2 = { id: '1', name: 'Updated' };
       
-      cache.set(row1, BigInt(100));
-      cache.set(row2, BigInt(200));
+      cache.set(row1);
+      cache.set(row2);
       
       expect(cache.get('1')).toEqual(row2);
       expect(cache.size).toBe(1);
@@ -40,7 +40,7 @@ describe('SimpleCache', () => {
 
     it('should delete items', () => {
       const row = { id: '1', name: 'Test' };
-      cache.set(row, BigInt(100));
+      cache.set(row);
       
       expect(cache.delete(row)).toBe(true);
       expect(cache.has('1')).toBe(false);
@@ -58,9 +58,9 @@ describe('SimpleCache', () => {
     });
 
     it('should clear all items', () => {
-      cache.set({ id: '1', name: 'Item 1' }, BigInt(100));
-      cache.set({ id: '2', name: 'Item 2' }, BigInt(200));
-      cache.set({ id: '3', name: 'Item 3' }, BigInt(300));
+      cache.set({ id: '1', name: 'Item 1' });
+      cache.set({ id: '2', name: 'Item 2' });
+      cache.set({ id: '3', name: 'Item 3' });
       
       expect(cache.size).toBe(3);
       cache.clear();
@@ -75,7 +75,7 @@ describe('SimpleCache', () => {
         { id: '3', name: 'Item 3' }
       ];
       
-      rows.forEach((row, i) => cache.set(row, BigInt(i * 100)));
+      rows.forEach(row => cache.set(row));
       
       const allRows = cache.getAllRows();
       expect(allRows).toHaveLength(3);
@@ -84,7 +84,7 @@ describe('SimpleCache', () => {
 
     it('should handle numeric primary keys', () => {
       const row = { id: 123, name: 'Numeric ID' };
-      cache.set(row, BigInt(100));
+      cache.set(row);
       
       expect(cache.get(123)).toEqual(row);
       expect(cache.get('123')).toBeUndefined(); // Map uses strict equality
@@ -95,34 +95,19 @@ describe('SimpleCache', () => {
     });
   });
 
-  describe('timestamp tracking', () => {
-    it('should track latest timestamp', () => {
-      expect(cache.timestamp).toBe(BigInt(0));
-      
-      cache.set({ id: '1', name: 'Test' }, BigInt(100));
-      expect(cache.timestamp).toBe(BigInt(100));
-      
-      cache.set({ id: '2', name: 'Test 2' }, BigInt(200));
-      expect(cache.timestamp).toBe(BigInt(200));
-      
-      // Even when updating existing item
-      cache.set({ id: '1', name: 'Updated' }, BigInt(150));
-      expect(cache.timestamp).toBe(BigInt(150));
-    });
-  });
 
   describe('edge cases', () => {
     it('should handle rows without primary key field', () => {
       const row = { name: 'No ID', value: 123 };
       
-      const result = cache.set(row, BigInt(100));
+      const result = cache.set(row);
       expect(result).toBe(false);
       expect(cache.size).toBe(0);
     });
 
     it('should handle null/undefined primary key values', () => {
-      expect(cache.set({ id: null, name: 'Null ID' }, BigInt(100))).toBe(false);
-      expect(cache.set({ id: undefined, name: 'Undefined ID' }, BigInt(100))).toBe(false);
+      expect(cache.set({ id: null, name: 'Null ID' })).toBe(false);
+      expect(cache.set({ id: undefined, name: 'Undefined ID' })).toBe(false);
       expect(cache.size).toBe(0);
     });
 
@@ -134,7 +119,7 @@ describe('SimpleCache', () => {
 
     it('should create independent copies when storing', () => {
       const row = { id: '1', name: 'Original' };
-      cache.set(row, BigInt(100));
+      cache.set(row);
       
       // Modify original
       row.name = 'Modified';

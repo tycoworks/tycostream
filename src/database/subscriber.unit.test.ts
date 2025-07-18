@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SourceSchema } from '../core/schema';
 import type { DatabaseConfig } from '../core/config';
 import { RowUpdateType } from './types';
@@ -33,7 +33,7 @@ vi.mock('./connection', () => ({
 
 // Mock pg-copy-streams
 const mockCopyStream = {
-  on: vi.fn(),
+  on: vi.fn().mockReturnThis(),
   destroy: vi.fn()
 };
 
@@ -149,6 +149,72 @@ describe('DatabaseSubscriber', () => {
       
       // Verify cleanup was called
       expect(mockConnection.disconnect).toHaveBeenCalledWith(mockClient);
+    });
+  });
+
+  describe('timestamp ordering', () => {
+    let exitSpy: any;
+
+    beforeEach(() => {
+      // Mock process.exit
+      exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+        throw new Error('process.exit called');
+      }) as any);
+    });
+
+    afterEach(() => {
+      exitSpy.mockRestore();
+    });
+
+    it('should exit process when receiving out-of-order timestamp', async () => {
+      await subscriber.start();
+      
+      // Access the private method directly for testing
+      const applyOperation = (subscriber as any).applyOperation.bind(subscriber);
+
+      // First update with timestamp 100
+      applyOperation({ id: '1', name: 'Test' }, BigInt(100), false);
+
+      // Second update with lower timestamp (should trigger exit)
+      expect(() => {
+        applyOperation({ id: '2', name: 'Test2' }, BigInt(50), false);
+      }).toThrow('process.exit called');
+      
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('should accept equal timestamps', async () => {
+      await subscriber.start();
+      
+      // Access the private method directly for testing
+      const applyOperation = (subscriber as any).applyOperation.bind(subscriber);
+
+      // First update with timestamp 100
+      applyOperation({ id: '1', name: 'Test' }, BigInt(100), false);
+
+      // Second update with same timestamp (should be ok)
+      expect(() => {
+        applyOperation({ id: '2', name: 'Test2' }, BigInt(100), false);
+      }).not.toThrow();
+      
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
+
+    it('should accept increasing timestamps', async () => {
+      await subscriber.start();
+      
+      // Access the private method directly for testing
+      const applyOperation = (subscriber as any).applyOperation.bind(subscriber);
+
+      // First update with timestamp 100
+      applyOperation({ id: '1', name: 'Test' }, BigInt(100), false);
+
+      // Second update with higher timestamp (should be ok)
+      expect(() => {
+        applyOperation({ id: '2', name: 'Test2' }, BigInt(150), false);
+      }).not.toThrow();
+      
+      expect(exitSpy).not.toHaveBeenCalled();
     });
   });
 });

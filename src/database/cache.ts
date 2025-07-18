@@ -4,7 +4,6 @@
  */
 export class SimpleCache {
   private cache = new Map<any, Record<string, any>>();
-  private latestTimestamp: bigint = BigInt(0);
 
   constructor(
     private primaryKeyField: string
@@ -13,14 +12,13 @@ export class SimpleCache {
   /**
    * Store a row in the cache
    */
-  set(row: Record<string, any>, timestamp: bigint): boolean {
+  set(row: Record<string, any>): boolean {
     const primaryKey = row[this.primaryKeyField];
     if (primaryKey === undefined || primaryKey === null) {
       return false;
     }
 
     this.cache.set(primaryKey, { ...row });
-    this.latestTimestamp = timestamp;
     return true;
   }
 
@@ -69,12 +67,5 @@ export class SimpleCache {
    */
   clear(): void {
     this.cache.clear();
-  }
-
-  /**
-   * Get the latest timestamp seen
-   */
-  get timestamp(): bigint {
-    return this.latestTimestamp;
   }
 }

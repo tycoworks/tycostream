@@ -24,6 +24,7 @@ export class DatabaseSubscriber {
   private cache: SimpleCache;
   private updates$ = new Subject<RowUpdateEvent & { timestamp: bigint }>();
   private _subscriberCount = 0;
+  private latestTimestamp: bigint = BigInt(0);
 
   constructor(
     private config: DatabaseConfig,
@@ -167,7 +168,7 @@ export class DatabaseSubscriber {
     
     // 3. Take snapshot and emit rows
     // Get timestamp first to avoid race condition
-    const latestSeenTimestamp = this.cache.timestamp;
+    const latestSeenTimestamp = this.latestTimestamp;
     const snapshot = this.cache.getAllRows();
     
     // Emit snapshot as insert events
@@ -256,6 +257,20 @@ export class DatabaseSubscriber {
    * Apply a data operation (upsert or delete)
    */
   private applyOperation(row: Record<string, any>, timestamp: bigint, isDelete: boolean): void {
+    // Critical invariant: timestamps must be monotonically increasing
+    if (timestamp < this.latestTimestamp) {
+      this.log.error('CRITICAL: Received out-of-order timestamp', {
+        sourceName: this.schema.sourceName,
+        receivedTimestamp: timestamp.toString(),
+        latestTimestamp: this.latestTimestamp.toString(),
+        difference: (this.latestTimestamp - timestamp).toString()
+      });
+      
+      // This is a critical error that indicates data corruption or a serious bug
+      // We cannot continue processing as it would corrupt our state
+      process.exit(1);
+    }
+    
     const primaryKey = row[this.schema.primaryKeyField];
     
     if (primaryKey === undefined || primaryKey === null) {
@@ -280,7 +295,7 @@ export class DatabaseSubscriber {
       // Upsert operation - determine if it's insert or update
       const isUpdate = this.cache.has(primaryKey);
       eventType = isUpdate ? RowUpdateType.Update : RowUpdateType.Insert;
-      const stored = this.cache.set(row, timestamp);
+      const stored = this.cache.set(row);
       if (!stored) {
         this.log.warn('Failed to store row in cache', {
           sourceName: this.schema.sourceName,
@@ -290,6 +305,9 @@ export class DatabaseSubscriber {
         return;
       }
     }
+    
+    // Update latest timestamp after successful operation
+    this.latestTimestamp = timestamp;
     
     // Log the operation
     const rowData = truncateForLog(row);
