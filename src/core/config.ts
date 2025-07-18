@@ -20,13 +20,13 @@ config();
 // Define environment schema with validation
 const envSchema = z.object({
   // Database config
-  SOURCE_HOST: z.string().min(1, 'SOURCE_HOST is required'),
-  SOURCE_PORT: z.string()
+  DATABASE_HOST: z.string().min(1, 'DATABASE_HOST is required'),
+  DATABASE_PORT: z.string()
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().int().min(1).max(65535)),
-  SOURCE_USER: z.string().min(1, 'SOURCE_USER is required'),
-  SOURCE_PASSWORD: z.string().min(1, 'SOURCE_PASSWORD is required'),
-  SOURCE_DB: z.string().min(1, 'SOURCE_DB is required'),
+  DATABASE_USER: z.string().min(1, 'DATABASE_USER is required'),
+  DATABASE_PASSWORD: z.string().min(1, 'DATABASE_PASSWORD is required'),
+  DATABASE_NAME: z.string().min(1, 'DATABASE_NAME is required'),
   
   // GraphQL config
   GRAPHQL_PORT: z.string()
@@ -93,11 +93,11 @@ export function loadDatabaseConfig(): DatabaseConfig {
   const env = getEnvConfig();
   
   return {
-    host: env.SOURCE_HOST,
-    port: env.SOURCE_PORT,
-    user: env.SOURCE_USER,
-    password: env.SOURCE_PASSWORD,
-    database: env.SOURCE_DB,
+    host: env.DATABASE_HOST,
+    port: env.DATABASE_PORT,
+    user: env.DATABASE_USER,
+    password: env.DATABASE_PASSWORD,
+    database: env.DATABASE_NAME,
   };
 }
 
@@ -153,11 +153,11 @@ export function loadGraphQLSchema(): GraphQLSchema {
 
 function getExampleValue(envVar: string): string {
   const examples: Record<string, string> = {
-    SOURCE_HOST: 'localhost',
-    SOURCE_PORT: '6875',
-    SOURCE_USER: 'materialize',
-    SOURCE_PASSWORD: 'materialize',
-    SOURCE_DB: 'materialize',
+    DATABASE_HOST: 'localhost',
+    DATABASE_PORT: '6875',
+    DATABASE_USER: 'materialize',
+    DATABASE_PASSWORD: 'materialize',
+    DATABASE_NAME: 'materialize',
     GRAPHQL_PORT: '4000',
     GRAPHQL_UI: 'true',
     LOG_LEVEL: 'info',

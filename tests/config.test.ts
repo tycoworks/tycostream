@@ -15,11 +15,11 @@ describe('loadDatabaseConfig', () => {
   });
 
   it('should load valid database configuration', () => {
-    process.env.SOURCE_HOST = 'localhost';
-    process.env.SOURCE_PORT = '6875';
-    process.env.SOURCE_USER = 'materialize';
-    process.env.SOURCE_PASSWORD = 'password';
-    process.env.SOURCE_DB = 'materialize';
+    process.env.DATABASE_HOST = 'localhost';
+    process.env.DATABASE_PORT = '6875';
+    process.env.DATABASE_USER = 'materialize';
+    process.env.DATABASE_PASSWORD = 'password';
+    process.env.DATABASE_NAME = 'materialize';
 
     const config = loadDatabaseConfig();
 
@@ -32,22 +32,22 @@ describe('loadDatabaseConfig', () => {
     });
   });
 
-  it('should throw ConfigError for missing SOURCE_HOST', () => {
-    delete process.env.SOURCE_HOST; // Explicitly remove SOURCE_HOST
-    process.env.SOURCE_PORT = '6875';
-    process.env.SOURCE_USER = 'materialize';
-    process.env.SOURCE_PASSWORD = 'password';
-    process.env.SOURCE_DB = 'materialize';
+  it('should throw ConfigError for missing DATABASE_HOST', () => {
+    delete process.env.DATABASE_HOST; // Explicitly remove DATABASE_HOST
+    process.env.DATABASE_PORT = '6875';
+    process.env.DATABASE_USER = 'materialize';
+    process.env.DATABASE_PASSWORD = 'password';
+    process.env.DATABASE_NAME = 'materialize';
 
     expect(() => loadDatabaseConfig()).toThrow('Configuration validation failed');
   });
 
   it('should throw ConfigError for invalid port', () => {
-    process.env.SOURCE_HOST = 'localhost';
-    process.env.SOURCE_PORT = 'invalid';
-    process.env.SOURCE_USER = 'materialize';
-    process.env.SOURCE_PASSWORD = 'password';
-    process.env.SOURCE_DB = 'materialize';
+    process.env.DATABASE_HOST = 'localhost';
+    process.env.DATABASE_PORT = 'invalid';
+    process.env.DATABASE_USER = 'materialize';
+    process.env.DATABASE_PASSWORD = 'password';
+    process.env.DATABASE_NAME = 'materialize';
 
     expect(() => loadDatabaseConfig()).toThrow('Configuration validation failed');
   });

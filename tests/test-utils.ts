@@ -91,7 +91,7 @@ export function mockTestEnvironment() {
   process.env.NODE_ENV = 'test';
   process.env.LOG_LEVEL = 'debug';
   process.env.GRAPHQL_PORT = '4000';
-  process.env.SOURCE_PORT = '6875';
+  process.env.DATABASE_PORT = '6875';
   
   return () => {
     // Restore original environment

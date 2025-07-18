@@ -1,6 +1,10 @@
 // Global test setup to prevent schema files from being created in real config directory
 import { rmSync } from 'fs';
 import { join } from 'path';
+import { config } from 'dotenv';
+
+// Load test environment variables
+config({ path: join(__dirname, '.env.test') });
 
 // Clean up any schema files that might have been created in the real config directory
 const realConfigDir = join(process.cwd(), 'config');

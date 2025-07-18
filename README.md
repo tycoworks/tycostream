@@ -48,11 +48,11 @@ cp .env.example .env
 ### 2. Edit `.env`:
 
 ```
-SOURCE_HOST=localhost
-SOURCE_PORT=6875
-SOURCE_USER=materialize
-SOURCE_PASSWORD=materialize
-SOURCE_DB=materialize
+DATABASE_HOST=localhost
+DATABASE_PORT=6875
+DATABASE_USER=materialize
+DATABASE_PASSWORD=materialize
+DATABASE_NAME=materialize
 
 GRAPHQL_PORT=4000
 GRAPHQL_UI=true
@@ -73,24 +73,21 @@ docker-compose up
 
 **Docker networking:** If Materialize runs on your host machine, update `.env`:
 ```
-SOURCE_HOST=host.docker.internal
+DATABASE_HOST=host.docker.internal
 ```
 
 ---
 
 ## Testing
 
-There are three ways to test tycostream:
-
-### 1. GraphQL Explorer UI
-Enable the built-in GraphQL explorer UI:
+Enable the built-in GraphQL Explorer UI:
 ```bash
 GRAPHQL_UI=true npm run dev
 ```
 Then visit http://localhost:4000/graphql to test queries and subscriptions interactively.
 
-### 2. Command Line Tools
-Use `curl` for queries or `npx` for subscriptions.
+---
 
-### 3. Demo Project
-See a complete example at https://github.com/tycoworks/tycostream-demo
+## Demo
+
+See a complete example implementation at https://github.com/tycoworks/tycostream-demo
