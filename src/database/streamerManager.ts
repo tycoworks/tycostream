@@ -1,6 +1,6 @@
 import type { DatabaseStreamer } from './types.js';
 import type { DatabaseConfig } from '../core/config.js';
-import type { LoadedSchema, ViewSchema } from '../core/schema.js';
+import type { LoadedSchema, SourceSchema } from '../core/schema.js';
 import { MaterializeStreamer } from './materialize.js';
 import { logger } from '../core/logger.js';
 
@@ -14,19 +14,19 @@ export class StreamerManager {
   ) {}
 
   async start(): Promise<void> {
-    this.log.info('Starting streamers', { viewCount: this.schema.views.size });
+    this.log.info('Starting streamers', { sourceCount: this.schema.sources.size });
     
-    for (const [viewName, viewSchema] of this.schema.views) {
-      this.log.debug('Creating streamer', { viewName });
-      const streamer = new MaterializeStreamer(this.dbConfig, viewSchema);
+    for (const [sourceName, sourceSchema] of this.schema.sources) {
+      this.log.debug('Creating streamer', { sourceName });
+      const streamer = new MaterializeStreamer(this.dbConfig, sourceSchema);
       await streamer.start();
-      this.streamers.set(viewName, streamer);
-      this.log.info('Streamer created and started', { viewName });
+      this.streamers.set(sourceName, streamer);
+      this.log.info('Streamer created and started', { sourceName });
     }
   }
 
-  getStreamer(viewName: string): DatabaseStreamer | undefined {
-    return this.streamers.get(viewName);
+  getStreamer(sourceName: string): DatabaseStreamer | undefined {
+    return this.streamers.get(sourceName);
   }
 
   getAllStreamers(): Map<string, DatabaseStreamer> {

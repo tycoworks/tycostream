@@ -2,7 +2,7 @@ import { Client } from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
 import { Subject, ReplaySubject, filter, Subscription } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
-import type { SchemaField, ViewSchema } from '../core/schema.js';
+import type { SchemaField, SourceSchema } from '../core/schema.js';
 import type { RowUpdateEvent, DatabaseStreamer } from './types.js';
 import { RowUpdateType } from './types.js';
 import type { DatabaseConfig } from '../core/config.js';
@@ -28,10 +28,10 @@ export class MaterializeStreamer implements DatabaseStreamer {
 
   constructor(
     private config: DatabaseConfig,
-    private schema: ViewSchema
+    private schema: SourceSchema
   ) {
     // Create internal simple cache
-    this.cache = new SimpleCache(schema.primaryKeyField, schema.databaseViewName);
+    this.cache = new SimpleCache(schema.primaryKeyField, schema.sourceName);
     
     // Initialize column names for COPY stream parsing
     // With ENVELOPE UPSERT, output format is: [mz_timestamp, mz_state, key_columns..., value_columns...]
@@ -81,7 +81,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
     }
     
     if (this.isStreaming) {
-      this.log.warn('Stream already active', { viewName: this.schema.databaseViewName });
+      this.log.warn('Stream already active', { sourceName: this.schema.sourceName });
       return;
     }
 
@@ -89,12 +89,12 @@ export class MaterializeStreamer implements DatabaseStreamer {
     this.isStreaming = true;
     
     try {
-      this.log.info('Starting stream subscription', { viewName: this.schema.databaseViewName });
+      this.log.info('Starting stream subscription', { sourceName: this.schema.sourceName });
 
       // Start streaming subscription with initial snapshot using COPY
       // Use ENVELOPE UPSERT to get clean upsert/delete events instead of -1/+1 retractions
       const keyColumn = this.schema.primaryKeyField;
-      const subscribeQuery = `COPY (SUBSCRIBE TO ${this.schema.databaseViewName} ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)) TO STDOUT`;
+      const subscribeQuery = `COPY (SUBSCRIBE TO ${this.schema.sourceName} ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)) TO STDOUT`;
       this.log.debug('Executing streaming SUBSCRIBE query', { query: subscribeQuery });
 
       // Use pg-copy-streams for proper COPY streaming
@@ -109,7 +109,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
       this.copyStream.on('end', () => {
         // Only warn about unexpected stream end
         if (!this.isShuttingDown) {
-          this.log.warn('COPY stream ended', { viewName: this.schema.databaseViewName });
+          this.log.warn('COPY stream ended', { sourceName: this.schema.sourceName });
         }
         this.isStreaming = false;
       });
@@ -117,17 +117,17 @@ export class MaterializeStreamer implements DatabaseStreamer {
       this.copyStream.on('error', (error: Error) => {
         // Don't log errors during intentional shutdown
         if (!this.isShuttingDown) {
-          this.log.error('COPY stream error', { viewName: this.schema.databaseViewName }, error);
+          this.log.error('COPY stream error', { sourceName: this.schema.sourceName }, error);
           this.isStreaming = false; // Reset on error
           throw error;
         }
       });
 
-      this.log.info('Stream subscription started', { viewName: this.schema.databaseViewName });
+      this.log.info('Stream subscription started', { sourceName: this.schema.sourceName });
 
     } catch (error) {
       this.isStreaming = false; // Reset on error
-      this.log.error('Failed to start streaming', { viewName: this.schema.databaseViewName }, error as Error);
+      this.log.error('Failed to start streaming', { sourceName: this.schema.sourceName }, error as Error);
       throw new Error(`Stream initialization failed: ${(error as Error).message}`);
     }
   }
@@ -207,7 +207,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
     }
     
     this.log.debug('Subscriber added', {
-      viewName: this.schema.viewName,
+      sourceName: this.schema.sourceName,
       currentStateSize: this.cache.size,
       subscriberCount: this._subscriberCount
     });
@@ -222,7 +222,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
       // Note: eachValueFrom handles its own subscription cleanup
       this._subscriberCount--;
       this.log.debug('Subscriber removed', {
-        viewName: this.schema.viewName,
+        sourceName: this.schema.sourceName,
         subscriberCount: this._subscriberCount
       });
     }
@@ -308,7 +308,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
     
     if (primaryKey === undefined || primaryKey === null) {
       this.log.warn('Data row missing required primary key field', {
-        viewName: this.schema.viewName,
+        sourceName: this.schema.sourceName,
         primaryKeyField: this.schema.primaryKeyField,
         rowKeys: Object.keys(row),
         operation: isDelete ? 'delete' : 'upsert',
@@ -334,7 +334,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
     // Log the operation
     const rowData = truncateForLog(row);
     this.log.debug(`Cache updated: ${eventType} - ${rowData}`, {
-      viewName: this.schema.viewName,
+      sourceName: this.schema.sourceName,
       primaryKey,
       cacheSize: this.cache.size
     });

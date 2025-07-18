@@ -65,9 +65,8 @@ describe('loadSchema', () => {
   });
 
   it('should load valid schema file', () => {
-    const schemaContent = `views:
+    const schemaContent = `sources:
   TestType:
-    view: test_view
     primary_key: id
     columns:
       id: integer
@@ -86,15 +85,15 @@ describe('loadSchema', () => {
 
     try {
       const schema = loadSchema();
-      const testView = schema.views.get('TestType')!;
+      const testSource = schema.sources.get('TestType')!;
       
       expect(schema.typeDefs).toContain('type TestType');
       expect(schema.typeDefs).toContain('type Subscription');
       expect(schema.typeDefs).toContain('type Query');
-      expect(testView.primaryKeyField).toBe('id');
-      expect(testView.viewName).toBe('TestType');
-      expect(testView.fields).toHaveLength(3);
-      expect(testView.fields[0]).toEqual({
+      expect(testSource.primaryKeyField).toBe('id');
+      expect(testSource.sourceName).toBe('TestType');
+      expect(testSource.fields).toHaveLength(3);
+      expect(testSource.fields[0]).toEqual({
         name: 'id',
         type: 'Int',
         nullable: false,
@@ -112,9 +111,8 @@ describe('loadSchema', () => {
   });
 
   it('should throw ConfigError for schema without primary key', () => {
-    const invalidSchema = `views:
+    const invalidSchema = `sources:
   TestType:
-    view: test_view
     columns:
       name: text
       value: double precision
@@ -131,51 +129,17 @@ describe('loadSchema', () => {
 
     try {
       expect(() => loadSchema()).toThrow(ConfigError);
-      expect(() => loadSchema()).toThrow('Schema must contain a primary_key attribute');
+      expect(() => loadSchema()).toThrow('must contain a primary_key attribute');
     } finally {
       // Restore original cwd
       process.cwd = originalCwd;
     }
   });
 
-  it('should throw ConfigError for schema with multiple views', () => {
-    const multiViewSchema = `views:
-  TestType1:
-    view: test_view1
-    primary_key: id
-    columns:
-      id: integer
-      name: text
-  TestType2:
-    view: test_view2
-    primary_key: id
-    columns:
-      id: integer
-      value: double precision
-`;
-
-    // Create schema file in test directory structure
-    const testConfigDir = join(testSchemaDir, 'config');
-    mkdirSync(testConfigDir, { recursive: true });
-    writeFileSync(join(testConfigDir, 'schema.yaml'), multiViewSchema);
-
-    // Temporarily override process.cwd() for this test
-    const originalCwd = process.cwd;
-    process.cwd = () => testSchemaDir;
-
-    try {
-      expect(() => loadSchema()).toThrow(ConfigError);
-      expect(() => loadSchema()).toThrow('Only one view definition is supported in the current version');
-    } finally {
-      // Restore original cwd
-      process.cwd = originalCwd;
-    }
-  });
 
   it('should throw ConfigError for invalid YAML syntax', () => {
-    const invalidYaml = `views:
+    const invalidYaml = `sources:
   TestType:
-    view: test_view
     primary_key: id
     columns:
       id: integer

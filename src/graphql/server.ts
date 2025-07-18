@@ -28,7 +28,7 @@ export class GraphQLServer {
 
   async start(): Promise<void> {
     try {
-      this.log.info('Starting GraphQL server', { port: this.port, viewCount: this.schema.views.size });
+      this.log.info('Starting GraphQL server', { port: this.port, sourceCount: this.schema.sources.size });
 
       // Create and start streamer manager
       this.streamerManager = new StreamerManager(this.dbConfig, this.schema);
@@ -84,9 +84,9 @@ export class GraphQLServer {
       Subscription: {} as Record<string, SubscriptionResolver>,
     };
 
-    // Create resolvers for each view (subscriptions only)
-    for (const [viewName, viewSchema] of this.schema.views) {
-      resolvers.Subscription[viewName] = this.createViewSubscriptionResolver(viewName);
+    // Create resolvers for each source
+    for (const [sourceName, sourceSchema] of this.schema.sources) {
+      resolvers.Subscription[sourceName] = this.createSourceSubscriptionResolver(sourceName);
     }
 
     return makeExecutableSchema({
@@ -95,19 +95,19 @@ export class GraphQLServer {
     });
   }
 
-  private createViewSubscriptionResolver(viewName: string) {
+  private createSourceSubscriptionResolver(sourceName: string) {
     return {
       subscribe: async function* (_parent: unknown, _args: unknown, context: { streamerManager: StreamerManager }) {
-        const stream = context.streamerManager.getStreamer(viewName);
+        const stream = context.streamerManager.getStreamer(sourceName);
         if (!stream) {
-          throw new Error(`No streamer found for view: ${viewName}`);
+          throw new Error(`No streamer found for source: ${sourceName}`);
         }
         
         for await (const event of stream.getUpdates()) {
-          const payload = { [viewName]: event.row };
+          const payload = { [sourceName]: event.row };
           logger.debug({
             component: 'graphql-subscription',
-            viewName,
+            sourceName,
             eventType: event.type,
             data: truncateForLog(event.row)
           }, 'Sending subscription update to client');
@@ -115,7 +115,7 @@ export class GraphQLServer {
         }
       },
       resolve: (payload: Record<string, unknown>) => {
-        return payload[viewName];
+        return payload[sourceName];
       },
     };
   }

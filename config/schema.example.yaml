@@ -1,6 +1,5 @@
-views:
+sources:
   live_pnl:
-    view: live_pnl
     primary_key: instrument_id
     columns:
       instrument_id: integer
@@ -12,7 +11,6 @@ views:
       theoretical_pnl: double precision
   
   trades:
-    view: trades
     primary_key: id
     columns:
       id: integer

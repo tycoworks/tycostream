@@ -11,30 +11,28 @@ export interface SchemaField {
   isPrimaryKey: boolean;
 }
 
-// Schema for a single view
-export interface ViewSchema {
+// Schema for a single source
+export interface SourceSchema {
   typeDefs: string;
   fields: SchemaField[];
   primaryKeyField: string;
-  viewName: string; // GraphQL type name
-  databaseViewName: string; // Database view name
+  sourceName: string; // Both database source name and GraphQL subscription name
 }
 
-// Schema for the entire application (may contain multiple views)
+// Schema for the entire application
 export interface LoadedSchema {
-  views: Map<string, ViewSchema>;
+  sources: Map<string, SourceSchema>;
   typeDefs: string;
 }
 
 // YAML schema configuration types
-export interface YamlViewConfig {
-  view: string;
+export interface YamlSourceConfig {
   primary_key: string;
   columns: Record<string, string>;
 }
 
 export interface YamlSchemaConfig {
-  views: Record<string, YamlViewConfig>;
+  sources: Record<string, YamlSourceConfig>;
 }
 import pgTypes from 'pg-types';
 // @ts-ignore - no type definitions available for pg-type-names
@@ -76,8 +74,8 @@ export function loadSchemaFromYaml(configDir: string): LoadedSchema {
       throw new Error('Invalid YAML schema format');
     }
     
-    if (!parsed.views || typeof parsed.views !== 'object') {
-      throw new Error('YAML schema must contain a "views" section');
+    if (!parsed.sources || typeof parsed.sources !== 'object') {
+      throw new Error('YAML schema must contain a "sources" section');
     }
     
     yamlConfig = parsed;
@@ -88,40 +86,39 @@ export function loadSchemaFromYaml(configDir: string): LoadedSchema {
     throw error;
   }
   
-  // Validate at least one view
-  const views = Object.entries(yamlConfig.views);
-  if (views.length === 0) {
-    throw new Error('YAML schema must contain at least one view definition');
+  // Validate at least one source
+  const sources = Object.entries(yamlConfig.sources);
+  if (sources.length === 0) {
+    throw new Error('YAML schema must contain at least one source definition');
   }
   
-  const loadedViews = new Map<string, ViewSchema>();
+  const loadedSources = new Map<string, SourceSchema>();
   const typeDefsList: string[] = [];
   
-  for (const [graphqlTypeName, viewConfig] of views) {
-    const databaseViewName = viewConfig.view;
+  for (const [sourceName, sourceConfig] of sources) {
   
     // Validate primary_key is present
-    if (!viewConfig.primary_key) {
-      throw new Error(`View '${graphqlTypeName}' must contain a primary_key attribute`);
+    if (!sourceConfig.primary_key) {
+      throw new Error(`Source '${sourceName}' must contain a primary_key attribute`);
     }
   
     // Extract fields and validate primary key
     const fields: SchemaField[] = [];
-    const primaryKeyField = viewConfig.primary_key;
+    const primaryKeyField = sourceConfig.primary_key;
   
     // Validate primary key exists in columns
-    if (!viewConfig.columns[primaryKeyField]) {
-      throw new Error(`Primary key field '${primaryKeyField}' not found in columns for view '${graphqlTypeName}'`);
+    if (!sourceConfig.columns[primaryKeyField]) {
+      throw new Error(`Primary key field '${primaryKeyField}' not found in columns for source '${sourceName}'`);
     }
   
     // Validate primary key type is supported
-    const primaryKeyType = viewConfig.columns[primaryKeyField];
+    const primaryKeyType = sourceConfig.columns[primaryKeyField];
     const supportedPrimaryKeyTypes = ['integer', 'bigint', 'text', 'varchar', 'uuid'];
     if (!supportedPrimaryKeyTypes.includes(primaryKeyType)) {
-      throw new Error(`Primary key type '${primaryKeyType}' is not supported for view '${graphqlTypeName}'. Supported types: ${supportedPrimaryKeyTypes.join(', ')}`);
+      throw new Error(`Primary key type '${primaryKeyType}' is not supported for source '${sourceName}'. Supported types: ${supportedPrimaryKeyTypes.join(', ')}`);
     }
   
-    for (const [fieldName, postgresType] of Object.entries(viewConfig.columns)) {
+    for (const [fieldName, postgresType] of Object.entries(sourceConfig.columns)) {
       const isPrimaryKey = fieldName === primaryKeyField;
       
       // Map Postgres type to GraphQL type
@@ -153,26 +150,24 @@ export function loadSchemaFromYaml(configDir: string): LoadedSchema {
       })
       .join('\n');
     
-    const typeDef = `type ${graphqlTypeName} {
+    const typeDef = `type ${sourceName} {
 ${typeFields}
 }`;
     
     typeDefsList.push(typeDef);
     
-    // Store loaded schema for this view
-    loadedViews.set(graphqlTypeName, {
+    // Store loaded schema for this source
+    loadedSources.set(sourceName, {
       typeDefs: typeDef,
       fields,
       primaryKeyField,
-      viewName: graphqlTypeName,
-      databaseViewName,
+      sourceName,
     });
     
     // Debug log the generated schema if debug level is enabled
     if (process.env.LOG_LEVEL === 'debug') {
       console.log('Generated GraphQL schema from YAML:', {
-        graphqlTypeName,
-        databaseViewName,
+        sourceName,
         primaryKeyField,
         fieldsCount: fields.length,
         typeDef: typeDef.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
@@ -181,8 +176,8 @@ ${typeFields}
   }
   
   // Generate combined Subscription type
-  const subscriptionFields = Array.from(loadedViews.entries())
-    .map(([typeName]) => `  ${typeName}: ${typeName}!`)
+  const subscriptionFields = Array.from(loadedSources.entries())
+    .map(([sourceName]) => `  ${sourceName}: ${sourceName}!`)
     .join('\n');
   
   const typeDefs = `${typeDefsList.join('\n\n')}
@@ -197,7 +192,7 @@ ${subscriptionFields}
 }`;
   
   return {
-    views: loadedViews,
+    sources: loadedSources,
     typeDefs,
   };
 }

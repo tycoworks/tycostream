@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { MaterializeStreamer } from '../src/database/materialize.js';
 import { GraphQLServer } from '../src/graphql/server.js';
-import type { LoadedSchema, ViewSchema } from '../src/core/schema.js';
+import type { LoadedSchema, SourceSchema } from '../src/core/schema.js';
 import type { RowUpdateEvent } from '../src/database/types.js';
 import { RowUpdateType } from '../src/database/types.js';
 import type { DatabaseConfig } from '../src/core/config.js';
@@ -54,7 +54,7 @@ describe('Integration Tests', () => {
   };
 
   // Use a hardcoded test schema (matches production YAML structure)
-  const testViewSchema: ViewSchema = {
+  const testSourceSchema: SourceSchema = {
     typeDefs: `type live_pnl {
   instrument_id: ID!
   symbol: String
@@ -74,12 +74,11 @@ describe('Integration Tests', () => {
       { name: 'theoretical_pnl', type: 'Float', nullable: true, isPrimaryKey: false },
     ],
     primaryKeyField: 'instrument_id',
-    viewName: 'live_pnl',
-    databaseViewName: 'live_pnl'
+    sourceName: 'live_pnl'
   };
   
   const testSchema: LoadedSchema = {
-    views: new Map([['live_pnl', testViewSchema]]),
+    sources: new Map([['live_pnl', testSourceSchema]]),
     typeDefs: `type live_pnl {
   instrument_id: ID!
   symbol: String
@@ -102,7 +101,7 @@ type Subscription {
 
   it('should integrate components together', async () => {
     // Create components following new architecture
-    const streamer = new MaterializeStreamer(testConfig, testViewSchema);
+    const streamer = new MaterializeStreamer(testConfig, testSourceSchema);
     
     // Test connection
     await streamer.start();
@@ -116,7 +115,7 @@ type Subscription {
   });
 
   it('should handle subscription and emit events', async () => {
-    const streamer = new MaterializeStreamer(testConfig, testViewSchema);
+    const streamer = new MaterializeStreamer(testConfig, testSourceSchema);
     await streamer.start(); // Need to start first
     
     const receivedEvents: RowUpdateEvent[] = [];
@@ -154,7 +153,7 @@ type Subscription {
   });
 
   it('should handle connection error scenarios gracefully', async () => {
-    const streamer = new MaterializeStreamer(testConfig, testViewSchema);
+    const streamer = new MaterializeStreamer(testConfig, testSourceSchema);
     
     // Mock connection failure
     mockClientInstance.connect.mockReset();
@@ -166,7 +165,7 @@ type Subscription {
   it('should test MaterializeStreamer construction', () => {
     // Test that MaterializeStreamer can be constructed with proper schema
     expect(() => {
-      new MaterializeStreamer(testConfig, testViewSchema);
+      new MaterializeStreamer(testConfig, testSourceSchema);
     }).not.toThrow();
   });
 });

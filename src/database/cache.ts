@@ -11,7 +11,7 @@ export class SimpleCache {
 
   constructor(
     private primaryKeyField: string,
-    private viewName: string
+    private sourceName: string
   ) {}
 
   /**
@@ -21,7 +21,7 @@ export class SimpleCache {
     const primaryKey = row[this.primaryKeyField];
     if (primaryKey === undefined || primaryKey === null) {
       this.log.warn('Row missing primary key field', {
-        viewName: this.viewName,
+        sourceName: this.sourceName,
         primaryKeyField: this.primaryKeyField,
         rowKeys: Object.keys(row)
       });
@@ -77,7 +77,7 @@ export class SimpleCache {
    */
   clear(): void {
     this.cache.clear();
-    this.log.debug('Cache cleared', { viewName: this.viewName });
+    this.log.debug('Cache cleared', { sourceName: this.sourceName });
   }
 
   /**

@@ -1,5 +1,5 @@
 /**
- * Test YAML schema loading and GraphQL/database view name separation
+ * Test YAML schema loading and GraphQL/database source name separation
  */
 
 import { describe, it, expect } from 'vitest';
@@ -9,7 +9,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 describe('YAML Schema Processing', () => {
-  it('should separate GraphQL type name from database view name', () => {
+  it('should separate GraphQL type name from database source name', () => {
 
     // Create temporary directory for test
     const testDir = join(tmpdir(), 'tycostream-yaml-test-' + Date.now());
@@ -17,9 +17,8 @@ describe('YAML Schema Processing', () => {
     mkdirSync(configDir, { recursive: true });
     
     // Write test YAML file
-    const yamlContent = `views:
+    const yamlContent = `sources:
   CustomTypeName:
-    view: actual_database_view
     primary_key: id
     columns:
       id: integer
@@ -28,20 +27,18 @@ describe('YAML Schema Processing', () => {
 
     // Load schema
     const schema = loadSchemaFromYaml(configDir);
-    const view = schema.views.get('CustomTypeName')!;
+    const source = schema.sources.get('CustomTypeName')!;
     
     // GraphQL type name should be the YAML key
-    expect(view.viewName).toBe('CustomTypeName');
+    expect(source.sourceName).toBe('CustomTypeName');
     
-    // Database view name should be the 'view' field value
-    expect(view.databaseViewName).toBe('actual_database_view');
     
     // Generated GraphQL schema should use the GraphQL type name
     expect(schema.typeDefs).toContain('type CustomTypeName');
-    expect(schema.typeDefs).toContain('CustomTypeName: [CustomTypeName!]!');
+    expect(schema.typeDefs).toContain('CustomTypeName: CustomTypeName!');
   });
 
-  it('should handle case where GraphQL type name matches database view name', () => {
+  it('should handle case where GraphQL type name matches database source name', () => {
 
     // Create temporary directory for test
     const testDir = join(tmpdir(), 'tycostream-yaml-test-same-' + Date.now());
@@ -49,9 +46,8 @@ describe('YAML Schema Processing', () => {
     mkdirSync(configDir, { recursive: true });
     
     // Write test YAML file
-    const yamlContent = `views:
+    const yamlContent = `sources:
   live_pnl:
-    view: live_pnl
     primary_key: id
     columns:
       id: integer
@@ -60,23 +56,21 @@ describe('YAML Schema Processing', () => {
 
     // Load schema
     const schema = loadSchemaFromYaml(configDir);
-    const view = schema.views.get('live_pnl')!;
+    const source = schema.sources.get('live_pnl')!;
     
-    // Both should be the same
-    expect(view.viewName).toBe('live_pnl');
-    expect(view.databaseViewName).toBe('live_pnl');
+    // Source name should be live_pnl
+    expect(source.sourceName).toBe('live_pnl');
   });
 
-  it('should validate that GraphQL and database view names are used correctly', () => {
+  it('should validate that GraphQL and database source names are used correctly', () => {
     // Create temporary directory for test
     const testDir = join(tmpdir(), 'tycostream-yaml-test-validation-' + Date.now());
     const configDir = join(testDir, 'config');
     mkdirSync(configDir, { recursive: true });
     
     // Write test YAML file
-    const yamlContent = `views:
+    const yamlContent = `sources:
   MyGraphQLType:
-    view: my_db_view
     primary_key: id
     columns:
       id: integer
@@ -85,19 +79,14 @@ describe('YAML Schema Processing', () => {
 
     // Load schema
     const schema = loadSchemaFromYaml(configDir);
-    const view = schema.views.get('MyGraphQLType')!;
+    const source = schema.sources.get('MyGraphQLType')!;
     
     // Should use GraphQL type name in schema
     expect(schema.typeDefs).toContain('type MyGraphQLType');
-    expect(schema.typeDefs).toContain('MyGraphQLType: [MyGraphQLType!]!');
     expect(schema.typeDefs).toContain('MyGraphQLType: MyGraphQLType!');
     
-    // Should NOT contain database view name in GraphQL schema
-    expect(schema.typeDefs).not.toContain('my_db_view');
-    
-    // But should have correct database view name in schema object
-    expect(view.databaseViewName).toBe('my_db_view');
-    expect(view.viewName).toBe('MyGraphQLType');
+    // Source name should be MyGraphQLType
+    expect(source.sourceName).toBe('MyGraphQLType');
   });
 
   it('should map PostgreSQL types to GraphQL types correctly', () => {
@@ -107,9 +96,8 @@ describe('YAML Schema Processing', () => {
     mkdirSync(configDir, { recursive: true });
     
     // Write test YAML file with various PostgreSQL types
-    const yamlContent = `views:
+    const yamlContent = `sources:
   TypeMappingTest:
-    view: type_test_view
     primary_key: id
     columns:
       id: integer
@@ -131,10 +119,10 @@ describe('YAML Schema Processing', () => {
 
     // Load schema
     const schema = loadSchemaFromYaml(configDir);
-    const view = schema.views.get('TypeMappingTest')!;
+    const source = schema.sources.get('TypeMappingTest')!;
     
     // Verify type mappings
-    const typeMap = new Map(view.fields.map(f => [f.name, f.type]));
+    const typeMap = new Map(source.fields.map(f => [f.name, f.type]));
     
     expect(typeMap.get('id')).toBe('Int');
     expect(typeMap.get('is_active')).toBe('Boolean');
@@ -153,13 +141,13 @@ describe('YAML Schema Processing', () => {
     expect(typeMap.get('settings')).toBe('String');
     
     // Verify primary key
-    expect(view.primaryKeyField).toBe('id');
-    const idField = view.fields.find(f => f.name === 'id');
+    expect(source.primaryKeyField).toBe('id');
+    const idField = source.fields.find(f => f.name === 'id');
     expect(idField?.isPrimaryKey).toBe(true);
     expect(idField?.nullable).toBe(false);
     
     // Verify other fields are nullable
-    const nameField = view.fields.find(f => f.name === 'name');
+    const nameField = source.fields.find(f => f.name === 'name');
     expect(nameField?.nullable).toBe(true);
   });
 
@@ -170,16 +158,15 @@ describe('YAML Schema Processing', () => {
     mkdirSync(configDir, { recursive: true });
     
     // Write test YAML file without primary_key
-    const yamlContent = `views:
+    const yamlContent = `sources:
   NoPrimaryKey:
-    view: no_pk_view
     columns:
       id: integer
       name: text`;
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Should throw error
-    expect(() => loadSchemaFromYaml(configDir)).toThrow('View \'NoPrimaryKey\' must contain a primary_key attribute');
+    expect(() => loadSchemaFromYaml(configDir)).toThrow('Source \'NoPrimaryKey\' must contain a primary_key attribute');
   });
 
   it('should validate primary key exists in columns', () => {
@@ -189,9 +176,8 @@ describe('YAML Schema Processing', () => {
     mkdirSync(configDir, { recursive: true });
     
     // Write test YAML file with non-existent primary key
-    const yamlContent = `views:
+    const yamlContent = `sources:
   InvalidPrimaryKey:
-    view: invalid_pk_view
     primary_key: nonexistent_field
     columns:
       id: integer
