@@ -10,7 +10,8 @@
     "start": "node dist/src/index.js",
     "test": "tsc --noEmit && vitest run",
     "test:watch": "vitest",
-    "test:typecheck": "tsc --noEmit"
+    "test:typecheck": "tsc --noEmit",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "graphql",
@@ -44,9 +45,10 @@
     "@types/pg": "^8.10.7",
     "@types/pg-copy-streams": "^1.2.5",
     "@types/ws": "^8.5.8",
+    "@vitest/coverage-v8": "^3.2.4",
     "tsx": "^3.14.0",
     "typescript": "^5.2.2",
-    "vitest": "^0.34.6"
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=18.0.0"

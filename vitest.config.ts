@@ -6,7 +6,22 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 10000,
     setupFiles: ['./tests/test-setup.ts'],
-    include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+    include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)', 'src/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      exclude: [
+        'node_modules/**',
+        'dist/**',
+        'tests/**',
+        '**/*.test.ts',
+        '**/*.spec.ts',
+        '**/*.d.ts',
+        'vitest.config.ts',
+        'src/types/**',
+        'src/index.ts'
+      ]
+    }
   },
   resolve: {
     alias: {
