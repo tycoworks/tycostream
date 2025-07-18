@@ -15,7 +15,7 @@ Developers can instantly expose secure, scalable streaming APIs using only confi
 ## Use Cases  
 - **Internal tools and dashboards** that need instant updates without polling  
 - **Trading and monitoring systems** where low-latency matters  
-- **AI agents** that act on live signals from SQL views  
+- **AI agents** that act on live signals from SQL sources  
 - **Data product APIs** for securely exposing real-time data to clients  
 - **Prototypes and internal apps** where speed > boilerplate  
 

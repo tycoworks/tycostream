@@ -2,7 +2,7 @@
 
 ## Overview
 
-tycostream is a real-time GraphQL API that streams updates from Materialize views to subscribed clients. It provides a simple, configuration-driven approach to exposing streaming SQL data through standard GraphQL subscriptions.
+tycostream is a real-time GraphQL API that streams updates from database sources (views, tables, or any SELECT-able object) to subscribed clients. It provides a simple, configuration-driven approach to exposing streaming SQL data through standard GraphQL subscriptions.
 
 ## Technology Stack
 
@@ -27,9 +27,9 @@ tycostream is a real-time GraphQL API that streams updates from Materialize view
 - Clean separation between streaming infrastructure and GraphQL layer
 
 ### Configuration-Driven
-- YAML schema files define GraphQL types and Materialize views
+- YAML schema files define GraphQL types and database sources
 - Environment variables for runtime configuration
-- Zero code changes needed for new views
+- Zero code changes needed for new sources
 
 ## Component Architecture
 
@@ -39,7 +39,7 @@ The system is organized into three logical layers:
 Handles all interaction with Materialize:
 - Manages SUBSCRIBE connections using Postgres wire protocol
 - Implements COPY protocol parsing for streaming data
-- Maintains in-memory cache of current view state
+- Maintains in-memory cache of current source state
 - Provides async iterators for consuming updates
 - Handles connection lifecycle and reconnection logic
 
@@ -66,7 +66,7 @@ Shared infrastructure:
    - MaterializeStreamer connects to database if not already connected
 
 2. **State Synchronization**
-   - SUBSCRIBE query captures current view state via COPY protocol
+   - SUBSCRIBE query captures current source state via COPY protocol
    - Initial rows populate in-memory cache
    - Client receives complete current state as individual events
 
@@ -98,7 +98,7 @@ Shared infrastructure:
 - Can evolve to multi-process when needed
 
 ### Why In-Memory Cache?
-- Materialize views are typically bounded in size
+- Materialize sources (views/tables) are typically bounded in size
 - Eliminates need for external state store
 - Provides sub-millisecond query response times
 
@@ -109,5 +109,5 @@ The architecture supports several evolution paths without major rewrites:
 - **Horizontal Scaling**: Add Redis for shared cache across processes
 - **Authentication**: JWT validation in GraphQL middleware
 - **Filtering**: Push-down filters to Materialize WHERE clauses
-- **Multiple Views**: Router pattern for view-specific handlers
+- **Multiple Sources**: Router pattern for source-specific handlers
 - **Monitoring**: OpenTelemetry instrumentation points

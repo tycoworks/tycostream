@@ -1,13 +1,13 @@
 # tycostream
 
-tycostream turns any [Materialize](https://materialize.com/) view into a real-time GraphQL API over WebSockets.
+tycostream turns your streaming database into a real-time GraphQL API.
 
 ---
 
 ## Features
 
+* Works with [Materialize](https://materialize.com/) views and tables
 * Streams live updates over GraphQL subscriptions (WebSockets)
-* Instant setup from Materialize views with minimal config
 * Works with standard GraphQL clients (e.g. Apollo)
 
 ---
@@ -16,19 +16,14 @@ tycostream turns any [Materialize](https://materialize.com/) view into a real-ti
 
 Getting data from streaming databases (like Materialize) to a frontend or agent normally involves:
 
-* Polling a view or materializing it to a static table — defeating the point of real-time
-* Setting up a Kafka sink and managing complex Kafka infrastructure
+* Polling a view or piping it to a static table — defeating the point of real-time
+* Setting up a Kafka sink and therefore managing complex infrastructure
 * Hacking together a WebSocket or SSE relay using `SUBSCRIBE`
 
-tycostream makes it easy to expose real-time data over GraphQL with minimal boilerplate.
-
----
-
-## Use Cases
-
+tycostream makes it easy to expose real-time data over GraphQL for:
 * Powering real-time UIs
 * Feeding AI or reactive agents with streaming data
-* Anywhere you want live view data without polling
+* Any use case where you need streaming data without polling
 
 ---
 
@@ -67,10 +62,8 @@ GRAPHQL_UI=true
 
 ```bash
 cp config/schema.example.yaml config/schema.yaml
-# Edit config/schema.yaml view name, primary_key, and PostgreSQL column types to match your Materialize view (run SHOW COLUMNS in your database)
+# Edit config/schema.yaml to match your database sources (run SHOW COLUMNS in your database)
 ```
-
-**Schema Requirements:** Your `config/schema.yaml` file must contain exactly one view definition.
 
 ### 4. Start the server:
 

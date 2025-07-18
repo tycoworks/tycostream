@@ -1,6 +1,6 @@
 ## **Milestone 1 — Stream Real-Time Data via GraphQL with Minimal Setup**
 
-> Developers can stream updates from streaming SQL views into GraphQL clients using a simple YAML schema and local setup.
+> Developers can stream updates from streaming SQL sources (views, tables, or any SELECT-able object) into GraphQL clients using a simple YAML schema and local setup.
 > 
 
 ### ⚙️ Core Streaming Infrastructure
@@ -12,17 +12,17 @@
 
 ### 📝 Schema & Configuration
 
-- Simple YAML config defining views and schema
+- Simple YAML config defining sources and schema
 - GraphQL schema auto-generated from YAML
 - Hasura-style filters (e.g., `where user_id = 123`)
 - Nested queries based on relational joins
-- Multiple views per project
+- Multiple sources per project
 - Multiple concurrent clients supported
 
 ### 🚀 Dev Experience
 
 - Spin up with `docker-compose up`
-- Subscribe to any configured view in seconds
+- Subscribe to any configured source in seconds
 
 ---
 
@@ -48,7 +48,7 @@
 - Automatic reconnect with exponential backoff
 - Circuit breaker for failed subscriptions
 - Stream health monitoring and self-healing
-- Runtime view existence validation
+- Runtime source existence validation
 
 ### 🧠 Server Resilience
 
@@ -102,7 +102,7 @@
 
 - Fully managed, SLA-backed tycostream service
 - Token-based access authentication
-- Admin UI for view config and schema management
+- Admin UI for source config and schema management
 
 ### 🔌 Ecosystem Integration
 
