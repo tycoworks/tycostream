@@ -2,7 +2,7 @@ import { Client } from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
 import { Subject, ReplaySubject, filter, Subscription } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
-import type { SchemaField, SourceSchema } from '../core/schema.js';
+import type { SourceSchema } from '../core/schema.js';
 import type { RowUpdateEvent, DatabaseStreamer } from './types.js';
 import { RowUpdateType } from './types.js';
 import type { DatabaseConfig } from '../core/config.js';
@@ -31,7 +31,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
     private schema: SourceSchema
   ) {
     // Create internal simple cache
-    this.cache = new SimpleCache(schema.primaryKeyField, schema.sourceName);
+    this.cache = new SimpleCache(schema.primaryKeyField);
     
     // Initialize column names for COPY stream parsing
     // With ENVELOPE UPSERT, output format is: [mz_timestamp, mz_state, key_columns..., value_columns...]
@@ -328,7 +328,15 @@ export class MaterializeStreamer implements DatabaseStreamer {
       // Upsert operation - determine if it's insert or update
       const isUpdate = this.cache.has(primaryKey);
       eventType = isUpdate ? RowUpdateType.Update : RowUpdateType.Insert;
-      this.cache.set(row, timestamp);
+      const stored = this.cache.set(row, timestamp);
+      if (!stored) {
+        this.log.warn('Failed to store row in cache', {
+          sourceName: this.schema.sourceName,
+          primaryKeyField: this.schema.primaryKeyField,
+          rowKeys: Object.keys(row)
+        });
+        return;
+      }
     }
     
     // Log the operation

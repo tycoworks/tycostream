@@ -37,10 +37,9 @@ const TEST_DELAY_LONG = 100;    // Integration test coordination
  * Create a standard test SimpleCache instance
  */
 export function createTestCache(
-  primaryKeyField: string = TEST_CONSTANTS.PRIMARY_KEY_FIELD,
-  viewName: string = TEST_CONSTANTS.VIEW_NAME
+  primaryKeyField: string = TEST_CONSTANTS.PRIMARY_KEY_FIELD
 ): SimpleCache {
-  return new SimpleCache(primaryKeyField, viewName);
+  return new SimpleCache(primaryKeyField);
 }
 
 /**

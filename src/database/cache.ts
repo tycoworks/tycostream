@@ -1,35 +1,27 @@
-import { logger } from '../core/logger.js';
-
 /**
  * Simple cache for storing row data by primary key
  * Pure data storage with no event emission or business logic
  */
 export class SimpleCache {
   private cache = new Map<any, Record<string, any>>();
-  private log = logger.child({ component: 'cache' });
   private latestTimestamp: bigint = BigInt(0);
 
   constructor(
-    private primaryKeyField: string,
-    private sourceName: string
+    private primaryKeyField: string
   ) {}
 
   /**
    * Store a row in the cache
    */
-  set(row: Record<string, any>, timestamp: bigint): void {
+  set(row: Record<string, any>, timestamp: bigint): boolean {
     const primaryKey = row[this.primaryKeyField];
     if (primaryKey === undefined || primaryKey === null) {
-      this.log.warn('Row missing primary key field', {
-        sourceName: this.sourceName,
-        primaryKeyField: this.primaryKeyField,
-        rowKeys: Object.keys(row)
-      });
-      return;
+      return false;
     }
 
     this.cache.set(primaryKey, { ...row });
     this.latestTimestamp = timestamp;
+    return true;
   }
 
   /**
@@ -77,7 +69,6 @@ export class SimpleCache {
    */
   clear(): void {
     this.cache.clear();
-    this.log.debug('Cache cleared', { sourceName: this.sourceName });
   }
 
   /**

@@ -5,10 +5,9 @@ import { createTestCache, TestData } from './test-utils.js';
 describe('SimpleCache', () => {
   let cache: SimpleCache;
   const primaryKeyField = 'id';
-  const viewName = 'test_view';
 
   beforeEach(() => {
-    cache = createTestCache(primaryKeyField, viewName);
+    cache = createTestCache(primaryKeyField);
   });
 
   it('should initialize empty cache', () => {
@@ -100,16 +99,19 @@ describe('SimpleCache', () => {
   it('should handle rows with missing primary key', () => {
     // Row without primary key should not be added
     const rowWithoutKey = { name: 'test', value: 42 };
-    cache.set(rowWithoutKey, BigInt(1000));
+    const result = cache.set(rowWithoutKey, BigInt(1000));
     
+    expect(result).toBe(false);
     expect(cache.size).toBe(0);
   });
 
   it('should handle null/undefined primary key', () => {
     // Rows with null/undefined primary key should not be added
-    cache.set({ id: null, name: 'test' }, BigInt(1000));
-    cache.set({ id: undefined, name: 'test2' }, BigInt(2000));
+    const result1 = cache.set({ id: null, name: 'test' }, BigInt(1000));
+    const result2 = cache.set({ id: undefined, name: 'test2' }, BigInt(2000));
     
+    expect(result1).toBe(false);
+    expect(result2).toBe(false);
     expect(cache.size).toBe(0);
   });
 

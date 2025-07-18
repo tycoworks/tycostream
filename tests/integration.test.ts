@@ -1,14 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MaterializeStreamer } from '../src/database/materialize.js';
-import { GraphQLServer } from '../src/graphql/server.js';
 import type { LoadedSchema, SourceSchema } from '../src/core/schema.js';
 import type { RowUpdateEvent } from '../src/database/types.js';
 import { RowUpdateType } from '../src/database/types.js';
 import type { DatabaseConfig } from '../src/core/config.js';
 import { Client } from 'pg';
-import { writeFileSync, mkdirSync, rmSync } from 'fs';
-import { join } from 'path';
-import { createTestCache, simulateMaterializeEvent } from './test-utils.js';
+import { simulateMaterializeEvent } from './test-utils.js';
 
 // Create a mock client instance that can be accessed in tests
 const mockClientInstance = {

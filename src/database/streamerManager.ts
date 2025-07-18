@@ -1,6 +1,6 @@
 import type { DatabaseStreamer } from './types.js';
 import type { DatabaseConfig } from '../core/config.js';
-import type { LoadedSchema, SourceSchema } from '../core/schema.js';
+import type { LoadedSchema } from '../core/schema.js';
 import { MaterializeStreamer } from './materialize.js';
 import { logger } from '../core/logger.js';
 
