@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DatabaseSubscriberManager } from './manager';
-import { MaterializeDatabaseSubscriber } from './materialize';
+import { DatabaseSubscriber } from './subscriber';
+import { MaterializeProtocolHandler } from './materialize';
 import type { GraphQLSchema, SourceSchema } from '../core/schema';
 import type { DatabaseConfig } from '../core/config';
 
@@ -16,7 +17,8 @@ vi.mock('../core/logger', () => ({
   }
 }));
 
-// Mock the MaterializeDatabaseSubscriber
+// Mock the DatabaseSubscriber and MaterializeProtocolHandler
+vi.mock('./subscriber');
 vi.mock('./materialize');
 
 describe('DatabaseSubscriberManager', () => {
@@ -27,8 +29,14 @@ describe('DatabaseSubscriberManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     
-    // Set up the mock implementation for MaterializeDatabaseSubscriber
-    vi.mocked(MaterializeDatabaseSubscriber).mockImplementation(() => ({
+    // Set up the mock implementation for MaterializeProtocolHandler
+    vi.mocked(MaterializeProtocolHandler).mockImplementation(() => ({
+      createSubscribeQuery: vi.fn().mockReturnValue('SUBSCRIBE TO test'),
+      parseLine: vi.fn()
+    } as any));
+    
+    // Set up the mock implementation for DatabaseSubscriber
+    vi.mocked(DatabaseSubscriber).mockImplementation(() => ({
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
       getSnapshot: vi.fn().mockResolvedValue([]),
@@ -81,25 +89,36 @@ describe('DatabaseSubscriberManager', () => {
     it('should create and start a subscriber for each source', async () => {
       await manager.start();
 
-      // Should create two subscribers
-      expect(MaterializeDatabaseSubscriber).toHaveBeenCalledTimes(2);
+      // Should create two protocol handlers and subscribers
+      expect(MaterializeProtocolHandler).toHaveBeenCalledTimes(2);
+      expect(DatabaseSubscriber).toHaveBeenCalledTimes(2);
       
-      // Check first subscriber
-      expect(MaterializeDatabaseSubscriber).toHaveBeenNthCalledWith(
+      // Check first protocol handler and subscriber
+      expect(MaterializeProtocolHandler).toHaveBeenNthCalledWith(
         1,
-        mockDbConfig,
         mockSchema.sources.get('source1')
       );
+      expect(DatabaseSubscriber).toHaveBeenNthCalledWith(
+        1,
+        mockDbConfig,
+        mockSchema.sources.get('source1'),
+        expect.any(Object) // protocol handler instance
+      );
       
-      // Check second subscriber
-      expect(MaterializeDatabaseSubscriber).toHaveBeenNthCalledWith(
+      // Check second protocol handler and subscriber
+      expect(MaterializeProtocolHandler).toHaveBeenNthCalledWith(
+        2,
+        mockSchema.sources.get('source2')
+      );
+      expect(DatabaseSubscriber).toHaveBeenNthCalledWith(
         2,
         mockDbConfig,
-        mockSchema.sources.get('source2')
+        mockSchema.sources.get('source2'),
+        expect.any(Object) // protocol handler instance
       );
 
       // Verify start was called on each subscriber
-      const mockInstances = (MaterializeDatabaseSubscriber as any).mock.results;
+      const mockInstances = (DatabaseSubscriber as any).mock.results;
       expect(mockInstances[0].value.start).toHaveBeenCalled();
       expect(mockInstances[1].value.start).toHaveBeenCalled();
     });
@@ -111,7 +130,7 @@ describe('DatabaseSubscriberManager', () => {
         stop: vi.fn()
       };
       
-      (MaterializeDatabaseSubscriber as any).mockImplementationOnce(() => failingSubscriber);
+      (DatabaseSubscriber as any).mockImplementationOnce(() => failingSubscriber);
 
       await expect(manager.start()).rejects.toThrow('Connection failed');
     });
@@ -122,7 +141,7 @@ describe('DatabaseSubscriberManager', () => {
       await manager.start();
       await manager.stop();
 
-      const mockInstances = (MaterializeDatabaseSubscriber as any).mock.results;
+      const mockInstances = (DatabaseSubscriber as any).mock.results;
       expect(mockInstances[0].value.stop).toHaveBeenCalled();
       expect(mockInstances[1].value.stop).toHaveBeenCalled();
     });
@@ -168,7 +187,8 @@ describe('DatabaseSubscriberManager', () => {
       const emptyManager = new DatabaseSubscriberManager(mockDbConfig, emptySchema);
       await emptyManager.start();
       
-      expect(MaterializeDatabaseSubscriber).not.toHaveBeenCalled();
+      expect(MaterializeProtocolHandler).not.toHaveBeenCalled();
+      expect(DatabaseSubscriber).not.toHaveBeenCalled();
     });
 
     it('should handle concurrent start calls', async () => {
@@ -183,7 +203,8 @@ describe('DatabaseSubscriberManager', () => {
       
       // Currently the manager doesn't prevent duplicate starts
       // Each call to start() creates new subscribers
-      expect(MaterializeDatabaseSubscriber).toHaveBeenCalledTimes(6); // 3 calls * 2 sources
+      expect(MaterializeProtocolHandler).toHaveBeenCalledTimes(6); // 3 calls * 2 sources
+      expect(DatabaseSubscriber).toHaveBeenCalledTimes(6); // 3 calls * 2 sources
     });
   });
 });

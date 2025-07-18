@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { MaterializeDatabaseSubscriber } from '../src/database/materialize.js';
+import { DatabaseSubscriber } from '../src/database/subscriber.js';
+import { MaterializeProtocolHandler } from '../src/database/materialize.js';
 import type { GraphQLSchema, SourceSchema } from '../src/core/schema.js';
 import type { RowUpdateEvent } from '../src/database/types.js';
 import { RowUpdateType } from '../src/database/types.js';
@@ -98,7 +99,8 @@ type Subscription {
 
   it('should integrate components together', async () => {
     // Create components following new architecture
-    const streamer = new MaterializeDatabaseSubscriber(testConfig, testSourceSchema);
+    const protocol = new MaterializeProtocolHandler(testSourceSchema);
+    const streamer = new DatabaseSubscriber(testConfig, testSourceSchema, protocol);
     
     // Test connection
     await streamer.start();
@@ -112,7 +114,8 @@ type Subscription {
   });
 
   it('should handle subscription and emit events', async () => {
-    const streamer = new MaterializeDatabaseSubscriber(testConfig, testSourceSchema);
+    const protocol = new MaterializeProtocolHandler(testSourceSchema);
+    const streamer = new DatabaseSubscriber(testConfig, testSourceSchema, protocol);
     await streamer.start(); // Need to start first
     
     const receivedEvents: RowUpdateEvent[] = [];
@@ -150,7 +153,8 @@ type Subscription {
   });
 
   it('should handle connection error scenarios gracefully', async () => {
-    const streamer = new MaterializeDatabaseSubscriber(testConfig, testSourceSchema);
+    const protocol = new MaterializeProtocolHandler(testSourceSchema);
+    const streamer = new DatabaseSubscriber(testConfig, testSourceSchema, protocol);
     
     // Mock connection failure
     mockClientInstance.connect.mockReset();
@@ -159,10 +163,11 @@ type Subscription {
     await expect(streamer.start()).rejects.toThrow('Database connection failed');
   });
 
-  it('should test MaterializeDatabaseSubscriber construction', () => {
-    // Test that MaterializeDatabaseSubscriber can be constructed with proper schema
+  it('should test DatabaseSubscriber construction', () => {
+    // Test that DatabaseSubscriber can be constructed with proper schema
     expect(() => {
-      new MaterializeDatabaseSubscriber(testConfig, testSourceSchema);
+      const protocol = new MaterializeProtocolHandler(testSourceSchema);
+      new DatabaseSubscriber(testConfig, testSourceSchema, protocol);
     }).not.toThrow();
   });
 });

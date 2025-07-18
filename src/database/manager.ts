@@ -1,7 +1,7 @@
-import type { DatabaseSubscriber } from './types.js';
 import type { DatabaseConfig } from '../core/config.js';
 import type { GraphQLSchema } from '../core/schema.js';
-import { MaterializeDatabaseSubscriber } from './materialize.js';
+import { DatabaseSubscriber } from './subscriber.js';
+import { MaterializeProtocolHandler } from './materialize.js';
 import { logger } from '../core/logger.js';
 
 export class DatabaseSubscriberManager {
@@ -18,7 +18,8 @@ export class DatabaseSubscriberManager {
     
     for (const [sourceName, sourceSchema] of this.schema.sources) {
       this.log.debug('Creating subscriber', { sourceName });
-      const subscriber = new MaterializeDatabaseSubscriber(this.dbConfig, sourceSchema);
+      const protocol = new MaterializeProtocolHandler(sourceSchema);
+      const subscriber = new DatabaseSubscriber(this.dbConfig, sourceSchema, protocol);
       await subscriber.start();
       this.subscribers.set(sourceName, subscriber);
       this.log.info('Subscriber created and started', { sourceName });

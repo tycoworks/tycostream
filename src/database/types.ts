@@ -9,20 +9,17 @@ export interface RowUpdateEvent {
   row: Record<string, any>;
 }
 
-export interface DatabaseSubscriber {
-  // Lifecycle management
-  start(): Promise<void>;
-  stop(): Promise<void>;
-  
-  // Data access
-  getAllRows(): Record<string, any>[];
-  getRow(primaryKey: string | number): Record<string, any> | undefined;
-  
-  // Async iteration for streaming updates
-  getUpdates(): AsyncIterableIterator<RowUpdateEvent>;
-  
-  // Status
-  get streaming(): boolean;
-  get subscriberCount(): number;
+export interface ProtocolHandler {
+  /**
+   * Create the streaming query for this database protocol
+   */
+  createSubscribeQuery(): string;
+
+  /**
+   * Parse a line from the COPY stream
+   * Returns null if the line should be skipped
+   */
+  parseLine(line: string): { row: Record<string, any>; timestamp: bigint; isDelete: boolean } | null;
 }
+
 

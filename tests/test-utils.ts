@@ -165,7 +165,7 @@ export class EventCollector<T = any> {
  * Uses the internal applyOperation method
  */
 export function simulateMaterializeEvent(
-  subscriber: any, // MaterializeDatabaseSubscriber - using any since we're accessing private method
+  subscriber: any, // DatabaseSubscriber - using any since we're accessing private method
   event: RowUpdateEvent
 ): void {
   // Access the private applyOperation method to simulate events
