@@ -9,7 +9,7 @@ export interface RowUpdateEvent {
   row: Record<string, any>;
 }
 
-export interface DatabaseStreamer {
+export interface DatabaseSubscriber {
   // Lifecycle management
   start(): Promise<void>;
   stop(): Promise<void>;

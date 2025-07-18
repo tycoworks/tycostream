@@ -1,4 +1,4 @@
-import { loadDatabaseConfig, loadSchema, ConfigError, getGraphQLPort } from './core/config.js';
+import { loadDatabaseConfig, loadGraphQLSchema, ConfigError, getGraphQLPort } from './core/config.js';
 import { GraphQLServer } from './graphql/server.js';
 import { logger } from './core/logger.js';
 import { shutdownManager } from './core/shutdown.js';
@@ -20,7 +20,7 @@ async function main(): Promise<void> {
 
     // Phase 2: Load and validate schema
     log.info('Loading schema');
-    const schema = loadSchema();
+    const schema = loadGraphQLSchema();
     log.info('Schema loaded', {
       sourceCount: schema.sources.size,
       sources: Array.from(schema.sources.keys())

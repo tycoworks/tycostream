@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { createServer } from 'http';
 
 describe('Fail-Fast Startup Scenarios', () => {
-  let blocker: any;
+  let blocker: ReturnType<typeof createServer> | null = null;
 
   afterEach(() => {
     if (blocker) {
@@ -18,14 +18,14 @@ describe('Fail-Fast Startup Scenarios', () => {
       // Create a server to block the port
       blocker = createServer();
       await new Promise<void>((resolve) => {
-        blocker.listen(port, () => resolve());
+        blocker!.listen(port, () => resolve());
       });
 
       // Try to create another server on same port
       const testServer = createServer();
       
       await expect(new Promise<void>((resolve, reject) => {
-        testServer.on('error', (err: any) => {
+        testServer.on('error', (err: NodeJS.ErrnoException) => {
           if (err.code === 'EADDRINUSE') {
             reject(new Error(`Port ${port} is already in use. Please ensure no other process is using this port or change GRAPHQL_PORT in your .env file.`));
           } else {

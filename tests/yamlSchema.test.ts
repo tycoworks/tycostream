@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { loadSchemaFromYaml } from '../src/core/schema.js';
+import { loadGraphQLSchemaFromYaml } from '../src/core/schema.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -26,7 +26,7 @@ describe('YAML Schema Processing', () => {
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Load schema
-    const schema = loadSchemaFromYaml(configDir);
+    const schema = loadGraphQLSchemaFromYaml(configDir);
     const source = schema.sources.get('CustomTypeName')!;
     
     // GraphQL type name should be the YAML key
@@ -55,7 +55,7 @@ describe('YAML Schema Processing', () => {
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Load schema
-    const schema = loadSchemaFromYaml(configDir);
+    const schema = loadGraphQLSchemaFromYaml(configDir);
     const source = schema.sources.get('live_pnl')!;
     
     // Source name should be live_pnl
@@ -78,7 +78,7 @@ describe('YAML Schema Processing', () => {
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Load schema
-    const schema = loadSchemaFromYaml(configDir);
+    const schema = loadGraphQLSchemaFromYaml(configDir);
     const source = schema.sources.get('MyGraphQLType')!;
     
     // Should use GraphQL type name in schema
@@ -118,7 +118,7 @@ describe('YAML Schema Processing', () => {
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Load schema
-    const schema = loadSchemaFromYaml(configDir);
+    const schema = loadGraphQLSchemaFromYaml(configDir);
     const source = schema.sources.get('TypeMappingTest')!;
     
     // Verify type mappings
@@ -166,7 +166,7 @@ describe('YAML Schema Processing', () => {
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Should throw error
-    expect(() => loadSchemaFromYaml(configDir)).toThrow('Source \'NoPrimaryKey\' must contain a primary_key attribute');
+    expect(() => loadGraphQLSchemaFromYaml(configDir)).toThrow('Source \'NoPrimaryKey\' must contain a primary_key attribute');
   });
 
   it('should validate primary key exists in columns', () => {
@@ -185,6 +185,6 @@ describe('YAML Schema Processing', () => {
     writeFileSync(join(configDir, 'schema.yaml'), yamlContent);
 
     // Should throw error
-    expect(() => loadSchemaFromYaml(configDir)).toThrow("Primary key field 'nonexistent_field' not found in columns");
+    expect(() => loadGraphQLSchemaFromYaml(configDir)).toThrow("Primary key field 'nonexistent_field' not found in columns");
   });
 });

@@ -19,8 +19,8 @@ export interface SourceSchema {
   sourceName: string; // Both database source name and GraphQL subscription name
 }
 
-// Schema for the entire application
-export interface LoadedSchema {
+// GraphQL schema for the entire application
+export interface GraphQLSchema {
   sources: Map<string, SourceSchema>;
   typeDefs: string;
 }
@@ -61,7 +61,7 @@ const TYPE_MAP = {
 /**
  * Load complete schema from YAML configuration
  */
-export function loadSchemaFromYaml(configDir: string): LoadedSchema {
+export function loadGraphQLSchemaFromYaml(configDir: string): GraphQLSchema {
   const schemaPath = join(configDir, 'schema.yaml');
   
   // Load and parse YAML file

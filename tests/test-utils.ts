@@ -3,7 +3,7 @@
  * Provides common test data, setup helpers, and timing utilities
  */
 
-import type { DatabaseStreamer, RowUpdateEvent } from '../src/database/types.js';
+import type { RowUpdateEvent } from '../src/database/types.js';
 import { RowUpdateType } from '../src/database/types.js';
 import { SimpleCache } from '../src/database/cache.js';
 
@@ -165,11 +165,11 @@ export class EventCollector<T = any> {
  * Uses the internal applyOperation method
  */
 export function simulateMaterializeEvent(
-  streamer: any, // MaterializeStreamer
+  subscriber: any, // MaterializeDatabaseSubscriber - using any since we're accessing private method
   event: RowUpdateEvent
 ): void {
   // Access the private applyOperation method to simulate events
   const timestamp = BigInt(Date.now());
   const isDelete = event.type === RowUpdateType.Delete;
-  streamer['applyOperation'](event.row, timestamp, isDelete);
+  subscriber['applyOperation'](event.row, timestamp, isDelete);
 }

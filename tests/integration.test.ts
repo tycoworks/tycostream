@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { MaterializeStreamer } from '../src/database/materialize.js';
-import type { LoadedSchema, SourceSchema } from '../src/core/schema.js';
+import { MaterializeDatabaseSubscriber } from '../src/database/materialize.js';
+import type { GraphQLSchema, SourceSchema } from '../src/core/schema.js';
 import type { RowUpdateEvent } from '../src/database/types.js';
 import { RowUpdateType } from '../src/database/types.js';
 import type { DatabaseConfig } from '../src/core/config.js';
@@ -74,7 +74,7 @@ describe('Integration Tests', () => {
     sourceName: 'live_pnl'
   };
   
-  const testSchema: LoadedSchema = {
+  const testSchema: GraphQLSchema = {
     sources: new Map([['live_pnl', testSourceSchema]]),
     typeDefs: `type live_pnl {
   instrument_id: ID!
@@ -98,7 +98,7 @@ type Subscription {
 
   it('should integrate components together', async () => {
     // Create components following new architecture
-    const streamer = new MaterializeStreamer(testConfig, testSourceSchema);
+    const streamer = new MaterializeDatabaseSubscriber(testConfig, testSourceSchema);
     
     // Test connection
     await streamer.start();
@@ -112,7 +112,7 @@ type Subscription {
   });
 
   it('should handle subscription and emit events', async () => {
-    const streamer = new MaterializeStreamer(testConfig, testSourceSchema);
+    const streamer = new MaterializeDatabaseSubscriber(testConfig, testSourceSchema);
     await streamer.start(); // Need to start first
     
     const receivedEvents: RowUpdateEvent[] = [];
@@ -150,7 +150,7 @@ type Subscription {
   });
 
   it('should handle connection error scenarios gracefully', async () => {
-    const streamer = new MaterializeStreamer(testConfig, testSourceSchema);
+    const streamer = new MaterializeDatabaseSubscriber(testConfig, testSourceSchema);
     
     // Mock connection failure
     mockClientInstance.connect.mockReset();
@@ -159,10 +159,10 @@ type Subscription {
     await expect(streamer.start()).rejects.toThrow('Database connection failed');
   });
 
-  it('should test MaterializeStreamer construction', () => {
-    // Test that MaterializeStreamer can be constructed with proper schema
+  it('should test MaterializeDatabaseSubscriber construction', () => {
+    // Test that MaterializeDatabaseSubscriber can be constructed with proper schema
     expect(() => {
-      new MaterializeStreamer(testConfig, testSourceSchema);
+      new MaterializeDatabaseSubscriber(testConfig, testSourceSchema);
     }).not.toThrow();
   });
 });

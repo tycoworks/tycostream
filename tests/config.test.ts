@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadDatabaseConfig, loadSchema, ConfigError } from '../src/core/config.js';
+import { loadDatabaseConfig, loadGraphQLSchema, ConfigError } from '../src/core/config.js';
 import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 
@@ -53,7 +53,7 @@ describe('loadDatabaseConfig', () => {
   });
 });
 
-describe('loadSchema', () => {
+describe('loadGraphQLSchema', () => {
   const testSchemaDir = join(process.cwd(), 'test-schemas');
 
   beforeEach(() => {
@@ -84,7 +84,7 @@ describe('loadSchema', () => {
     process.cwd = () => testSchemaDir;
 
     try {
-      const schema = loadSchema();
+      const schema = loadGraphQLSchema();
       const testSource = schema.sources.get('TestType')!;
       
       expect(schema.typeDefs).toContain('type TestType');
@@ -106,8 +106,8 @@ describe('loadSchema', () => {
   });
 
   it('should throw ConfigError for missing schema file', () => {
-    expect(() => loadSchema()).toThrow(ConfigError);
-    expect(() => loadSchema()).toThrow('Schema file not found');
+    expect(() => loadGraphQLSchema()).toThrow(ConfigError);
+    expect(() => loadGraphQLSchema()).toThrow('Schema file not found');
   });
 
   it('should throw ConfigError for schema without primary key', () => {
@@ -128,8 +128,8 @@ describe('loadSchema', () => {
     process.cwd = () => testSchemaDir;
 
     try {
-      expect(() => loadSchema()).toThrow(ConfigError);
-      expect(() => loadSchema()).toThrow('must contain a primary_key attribute');
+      expect(() => loadGraphQLSchema()).toThrow(ConfigError);
+      expect(() => loadGraphQLSchema()).toThrow('must contain a primary_key attribute');
     } finally {
       // Restore original cwd
       process.cwd = originalCwd;
@@ -154,7 +154,7 @@ describe('loadSchema', () => {
     process.cwd = () => testSchemaDir;
 
     try {
-      expect(() => loadSchema()).toThrow(ConfigError);
+      expect(() => loadGraphQLSchema()).toThrow(ConfigError);
     } finally {
       process.cwd = originalCwd;
     }
@@ -171,8 +171,8 @@ describe('loadSchema', () => {
     process.cwd = () => testSchemaDir;
 
     try {
-      expect(() => loadSchema()).toThrow(ConfigError);
-      expect(() => loadSchema()).toThrow('Invalid YAML schema format');
+      expect(() => loadGraphQLSchema()).toThrow(ConfigError);
+      expect(() => loadGraphQLSchema()).toThrow('Invalid YAML schema format');
     } finally {
       process.cwd = originalCwd;
     }

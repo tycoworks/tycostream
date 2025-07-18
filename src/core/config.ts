@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { config } from 'dotenv';
 import type { LogLevel } from './logger.js';
-import { loadSchemaFromYaml, type LoadedSchema } from './schema.js';
+import { loadGraphQLSchemaFromYaml, type GraphQLSchema } from './schema.js';
 
 // Database configuration
 export interface DatabaseConfig {
@@ -132,11 +132,11 @@ function findConfigRoot(): string {
   return configPath;
 }
 
-export function loadSchema(): LoadedSchema {
+export function loadGraphQLSchema(): GraphQLSchema {
   const configDir = findConfigRoot();
   
   try {
-    return loadSchemaFromYaml(configDir);
+    return loadGraphQLSchemaFromYaml(configDir);
   } catch (error) {
     if (error instanceof Error) {
       throw new ConfigError(

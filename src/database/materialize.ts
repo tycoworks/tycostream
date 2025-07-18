@@ -1,9 +1,9 @@
 import { Client } from 'pg';
-import { to as copyTo } from 'pg-copy-streams';
-import { Subject, ReplaySubject, filter, Subscription } from 'rxjs';
+import { to as copyTo, type CopyToStreamQuery } from 'pg-copy-streams';
+import { Subject, ReplaySubject, filter } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
 import type { SourceSchema } from '../core/schema.js';
-import type { RowUpdateEvent, DatabaseStreamer } from './types.js';
+import type { RowUpdateEvent, DatabaseSubscriber } from './types.js';
 import { RowUpdateType } from './types.js';
 import type { DatabaseConfig } from '../core/config.js';
 import { logger, truncateForLog } from '../core/logger.js';
@@ -14,10 +14,10 @@ import { DatabaseConnection } from './connection.js';
  * Materialize streaming database adapter
  * Handles connection management, Materialize-specific streaming protocol, subscription management, and data caching
  */
-export class MaterializeStreamer implements DatabaseStreamer {
+export class MaterializeDatabaseSubscriber implements DatabaseSubscriber {
   private log = logger.child({ component: 'materialize' });
   private isStreaming = false;
-  private copyStream: any = null;
+  private copyStream: CopyToStreamQuery | null = null;
   private dbConnection = new DatabaseConnection();
   private client: Client | null = null;
   private isShuttingDown = false;
@@ -40,7 +40,7 @@ export class MaterializeStreamer implements DatabaseStreamer {
     const nonKeyFields = schema.fields.filter(f => f.name !== schema.primaryKeyField);
     this.columnNames = ['mz_timestamp', 'mz_state', ...keyFields.map(f => f.name), ...nonKeyFields.map(f => f.name)];
     
-    this.log.debug('MaterializeStreamer initialized', { 
+    this.log.debug('MaterializeDatabaseSubscriber initialized', { 
       columnCount: this.columnNames.length,
       columns: this.columnNames,
       primaryKeyField: schema.primaryKeyField

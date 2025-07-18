@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { SimpleCache } from '../src/database/cache.js';
 import { createTestCache, TestData } from './test-utils.js';
 

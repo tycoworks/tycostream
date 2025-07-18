@@ -2,9 +2,9 @@ import { createYoga } from 'graphql-yoga';
 import { createServer } from 'http';
 import { useServer } from 'graphql-ws/lib/use/ws';
 import { WebSocketServer } from 'ws';
-import type { GraphQLSchema } from 'graphql';
+import type { GraphQLSchema, DocumentNode } from 'graphql';
 import { logger } from '../core/logger.js';
-import type { StreamerManager } from '../database/streamerManager.js';
+import type { DatabaseSubscriberManager } from '../database/manager.js';
 
 
 export interface GraphQLServers {
@@ -14,12 +14,12 @@ export interface GraphQLServers {
 
 export function createGraphQLServers(
   schema: GraphQLSchema,
-  streamerManager: StreamerManager,
+  subscriberManager: DatabaseSubscriberManager,
   options: { graphiqlEnabled: boolean }
 ): GraphQLServers {
-  const yoga = createYogaServer(schema, streamerManager, options);
+  const yoga = createYogaServer(schema, subscriberManager, options);
   const httpServer = createServer(yoga);
-  const wsServer = setupWebSocketServer(httpServer, schema, streamerManager, yoga.graphqlEndpoint);
+  const wsServer = setupWebSocketServer(httpServer, schema, subscriberManager, yoga.graphqlEndpoint);
   
   return { 
     start: async (port: number) => {
@@ -34,7 +34,7 @@ export function createGraphQLServers(
   };
 }
 
-function createYogaServer(schema: GraphQLSchema, streamerManager: StreamerManager, options: { graphiqlEnabled: boolean }) {
+function createYogaServer(schema: GraphQLSchema, subscriberManager: DatabaseSubscriberManager, options: { graphiqlEnabled: boolean }) {
   const log = logger.child({ component: 'graphql-yoga' });
   
   return createYoga({
@@ -42,7 +42,7 @@ function createYogaServer(schema: GraphQLSchema, streamerManager: StreamerManage
     graphiql: options.graphiqlEnabled ? {
       subscriptionsProtocol: 'WS',
     } : false,
-    context: () => ({ streamerManager }),
+    context: () => ({ subscriberManager }),
     maskedErrors: false,
     plugins: [
       {
@@ -53,9 +53,9 @@ function createYogaServer(schema: GraphQLSchema, streamerManager: StreamerManage
             userAgent: request.headers.get('user-agent')?.substring(0, 50) || 'unknown'
           });
         },
-        onExecute: ({ args }: any) => {
+        onExecute: ({ args }: { args: { operationName?: string; document: DocumentNode; variableValues?: Record<string, any> } }) => {
           const operationName = args.operationName || 'Anonymous';
-          const operation = args.document.definitions.find((def: any) => 
+          const operation = args.document.definitions.find((def) => 
             def.kind === 'OperationDefinition'
           );
           const operationType = operation?.operation || 'unknown';
@@ -67,7 +67,7 @@ function createYogaServer(schema: GraphQLSchema, streamerManager: StreamerManage
             hasVariables
           }, 'GraphQL Operation');
         },
-        onResultProcess: ({ result, request }: any) => {
+        onResultProcess: ({ result, request }: { result: { data?: any; errors?: any[] }; request: { operationName?: string } }) => {
           if (result.data) {
             log.debug('GraphQL Result', {
               operationType: request.operationName || 'unnamed',
@@ -84,7 +84,7 @@ function createYogaServer(schema: GraphQLSchema, streamerManager: StreamerManage
 function setupWebSocketServer(
   httpServer: ReturnType<typeof createServer>,
   schema: GraphQLSchema,
-  streamerManager: StreamerManager,
+  subscriberManager: DatabaseSubscriberManager,
   graphqlEndpoint: string
 ): WebSocketServer {
   const log = logger.child({ component: 'websocket' });
@@ -97,7 +97,7 @@ function setupWebSocketServer(
   useServer(
     {
       schema,
-      context: () => ({ streamerManager }),
+      context: () => ({ subscriberManager }),
       onConnect: (ctx) => {
         log.debug('GraphQL WebSocket client connected', { 
           connectionParams: ctx.connectionParams 
