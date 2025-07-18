@@ -20,5 +20,8 @@ config/schema.yaml
 # Logs
 *.log
 
+# Test coverage
+coverage/
+
 # Docker
 *.local
