@@ -9,6 +9,7 @@ import type { DatabaseConfig } from '../core/config.js';
 import { logger, truncateForLog } from '../core/logger.js';
 import { SimpleCache } from './cache.js';
 import { DatabaseConnection } from './connection.js';
+import { MaterializeProtocolHandler } from './materializeProtocol.js';
 
 /**
  * Materialize streaming database adapter
@@ -22,7 +23,7 @@ export class MaterializeDatabaseSubscriber implements DatabaseSubscriber {
   private client: Client | null = null;
   private isShuttingDown = false;
   private cache: SimpleCache;
-  private columnNames: string[];
+  private protocol: MaterializeProtocolHandler;
   private updates$ = new Subject<RowUpdateEvent & { timestamp: bigint }>();
   private _subscriberCount = 0;
 
@@ -33,18 +34,8 @@ export class MaterializeDatabaseSubscriber implements DatabaseSubscriber {
     // Create internal simple cache
     this.cache = new SimpleCache(schema.primaryKeyField);
     
-    // Initialize column names for COPY stream parsing
-    // With ENVELOPE UPSERT, output format is: [mz_timestamp, mz_state, key_columns..., value_columns...]
-    // Since key columns come first after mz_state, we need to reorder our fields
-    const keyFields = schema.fields.filter(f => f.name === schema.primaryKeyField);
-    const nonKeyFields = schema.fields.filter(f => f.name !== schema.primaryKeyField);
-    this.columnNames = ['mz_timestamp', 'mz_state', ...keyFields.map(f => f.name), ...nonKeyFields.map(f => f.name)];
-    
-    this.log.debug('MaterializeDatabaseSubscriber initialized', { 
-      columnCount: this.columnNames.length,
-      columns: this.columnNames,
-      primaryKeyField: schema.primaryKeyField
-    });
+    // Create protocol handler for Materialize-specific logic
+    this.protocol = new MaterializeProtocolHandler(schema);
   }
 
   /**
@@ -92,9 +83,7 @@ export class MaterializeDatabaseSubscriber implements DatabaseSubscriber {
       this.log.info('Starting stream subscription', { sourceName: this.schema.sourceName });
 
       // Start streaming subscription with initial snapshot using COPY
-      // Use ENVELOPE UPSERT to get clean upsert/delete events instead of -1/+1 retractions
-      const keyColumn = this.schema.primaryKeyField;
-      const subscribeQuery = `COPY (SUBSCRIBE TO ${this.schema.sourceName} ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)) TO STDOUT`;
+      const subscribeQuery = `COPY (${this.protocol.createSubscribeQuery()}) TO STDOUT`;
       this.log.debug('Executing streaming SUBSCRIBE query', { query: subscribeQuery });
 
       // Use pg-copy-streams for proper COPY streaming
@@ -256,47 +245,14 @@ export class MaterializeDatabaseSubscriber implements DatabaseSubscriber {
     try {
       const lines = chunk.toString('utf8').split('\n');
       for (const line of lines) {
-        this.processRow(line);
+        const parsed = this.protocol.parseLine(line);
+        if (!parsed) continue;
+
+        const { row, timestamp, isDelete } = parsed;
+        this.applyOperation(row, timestamp, isDelete);
       }
     } catch (error) {
       this.log.error('Error processing COPY chunk', {}, error as Error);
-    }
-  }
-
-  /**
-   * Process a single line of COPY output
-   */
-  private processRow(line: string): void {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-
-    const fields = trimmed.split('\t');
-    if (fields.length < 2) return;
-
-    // Parse timestamp (first field)
-    const timestampField = fields[0];
-    if (!timestampField) return;
-    const timestamp = BigInt(timestampField);
-
-    // Parse mz_state (second field) - either 'upsert' or 'delete'
-    const mzState = fields[1];
-    if (!mzState) return;
-
-    // Map remaining fields to row data (skip mz_timestamp and mz_state)
-    const row: Record<string, any> = {};
-    for (let i = 2; i < fields.length && i < this.columnNames.length; i++) {
-      const columnName = this.columnNames[i];
-      const field = fields[i];
-      if (columnName && field !== undefined) {
-        row[columnName] = field === '\\N' ? null : field;
-      }
-    }
-
-    // Apply the appropriate operation based on mz_state
-    if (mzState === 'upsert') {
-      this.applyOperation(row, timestamp, false); // insert or update
-    } else if (mzState === 'delete') {
-      this.applyOperation(row, timestamp, true);  // delete
     }
   }
 
