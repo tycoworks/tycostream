@@ -179,9 +179,9 @@ describe('GraphQL Setup', () => {
     it('should configure logging plugins', async () => {
       const { createYoga } = vi.mocked(await import('graphql-yoga'));
 
-      let capturedPlugins: any[];
+      let capturedPlugins: any[] = [];
       vi.mocked(createYoga).mockImplementation((config) => {
-        capturedPlugins = config.plugins;
+        capturedPlugins = config.plugins || [];
         return {
           graphqlEndpoint: '/graphql',
           handle: vi.fn()
@@ -209,9 +209,9 @@ describe('GraphQL Setup', () => {
       const { createYoga } = vi.mocked(await import('graphql-yoga'));
       const { logger } = vi.mocked(await import('../core/logger'));
 
-      let capturedPlugins: any[];
+      let capturedPlugins: any[] = [];
       vi.mocked(createYoga).mockImplementation((config) => {
-        capturedPlugins = config.plugins;
+        capturedPlugins = config.plugins || [];
         return {
           graphqlEndpoint: '/graphql',
           handle: vi.fn()
@@ -253,9 +253,9 @@ describe('GraphQL Setup', () => {
       const { createYoga } = vi.mocked(await import('graphql-yoga'));
       const { logger } = vi.mocked(await import('../core/logger'));
 
-      let capturedPlugins: any[];
+      let capturedPlugins: any[] = [];
       vi.mocked(createYoga).mockImplementation((config) => {
-        capturedPlugins = config.plugins;
+        capturedPlugins = config.plugins || [];
         return {
           graphqlEndpoint: '/graphql',
           handle: vi.fn()
