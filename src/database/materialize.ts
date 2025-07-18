@@ -47,7 +47,13 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     // Parse timestamp (first field)
     const timestampField = fields[0];
     if (!timestampField) return null;
-    const timestamp = BigInt(timestampField);
+    
+    let timestamp: bigint;
+    try {
+      timestamp = BigInt(timestampField);
+    } catch {
+      return null; // Invalid timestamp
+    }
 
     // Parse mz_state (second field) - either 'upsert' or 'delete'
     const mzState = fields[1];
