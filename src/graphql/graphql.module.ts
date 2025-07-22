@@ -1,13 +1,19 @@
 import { Module } from '@nestjs/common';
+import { GraphQLModule } from '@nestjs/graphql';
+import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { AppResolver } from './app.resolver';
 
 @Module({
   imports: [
-    // TODO: Import DatabaseModule for streaming service
-    // TODO: Import SchemaModule for schema definitions
-    // TODO: Configure GraphQLModule.forRoot()
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      autoSchemaFile: true,
+      playground: true, // Enable for development
+      introspection: true,
+    }),
   ],
   providers: [
-    // TODO: SubscriptionResolver
+    AppResolver,
   ],
 })
 export class GraphqlModule {}
