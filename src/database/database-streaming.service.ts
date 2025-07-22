@@ -7,6 +7,7 @@ import type { SourceDefinition } from '../config/source-definition.types';
 import { RowUpdateType, type RowUpdateEvent } from './types';
 import type { Cache } from './cache.types';
 import { SimpleCache } from './cache';
+import { truncateForLog } from '../common/logging.utils';
 
 /**
  * Database streaming service for a single source
@@ -202,8 +203,10 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     // Update cache based on event type
     if (eventType === RowUpdateType.Delete) {
       this.cache.delete(row);
+      this.logger.debug(`Removed from cache - source: ${this.sourceName}, primaryKey: ${row[this.sourceDef.primaryKeyField]}, data: ${truncateForLog(row)}`);
     } else {
       this.cache.set(row);
+      this.logger.debug(`${eventType === RowUpdateType.Insert ? 'Added to' : 'Updated in'} cache - source: ${this.sourceName}, primaryKey: ${row[this.sourceDef.primaryKeyField]}, cacheSize: ${this.cache.size}, data: ${truncateForLog(row)}`);
     }
 
     // Emit to internal subject

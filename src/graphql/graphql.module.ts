@@ -24,12 +24,7 @@ import { DatabaseStreamingManagerService } from '../database/database-streaming-
         const typeDefs = generateSchema(sources);
         
         // Log the generated SDL
-        logger.log('Generated GraphQL SDL:');
-        typeDefs.split('\n').forEach(line => {
-          if (line.trim()) {
-            logger.log(`  ${line}`);
-          }
-        });
+        logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
         
         // Build subscription resolvers
         const subscriptionResolvers = buildSubscriptionResolvers(sources, streamingManager);
