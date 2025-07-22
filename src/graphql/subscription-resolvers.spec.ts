@@ -1,0 +1,103 @@
+import { of } from 'rxjs';
+import { buildSubscriptionResolvers } from './subscription-resolvers';
+import { DatabaseStreamingManagerService } from '../database/database-streaming-manager.service';
+import type { SourceDefinition } from '../config/source-definition.types';
+import { RowUpdateType } from '../database/types';
+
+describe('buildSubscriptionResolvers', () => {
+  let mockStreamingManager: jest.Mocked<DatabaseStreamingManagerService>;
+
+  beforeEach(() => {
+    mockStreamingManager = {
+      getUpdates: jest.fn(),
+    } as any;
+  });
+
+  it('should create resolvers for each source', () => {
+    const sources = new Map<string, SourceDefinition>([
+      ['trades', {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [],
+      }],
+      ['orders', {
+        name: 'orders',
+        primaryKeyField: 'id',
+        fields: [],
+      }],
+    ]);
+
+    const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
+
+    expect(resolvers).toHaveProperty('trades');
+    expect(resolvers).toHaveProperty('orders');
+    expect(resolvers.trades).toHaveProperty('subscribe');
+    expect(typeof resolvers.trades.subscribe).toBe('function');
+  });
+
+  it('should map RowUpdateType enum to GraphQL operation strings', async () => {
+    const sources = new Map<string, SourceDefinition>([
+      ['trades', {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [],
+      }],
+    ]);
+
+    const mockEvent = {
+      type: RowUpdateType.Insert,
+      row: { id: 1, symbol: 'AAPL', price: 150 },
+      timestamp: BigInt(1234567890000),
+    };
+
+    mockStreamingManager.getUpdates.mockReturnValue(of(mockEvent));
+
+    const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
+    const subscription = await resolvers.trades.subscribe();
+    
+    return new Promise<void>((resolve) => {
+      subscription.subscribe((result: any) => {
+        expect(result.trades.operation).toBe('INSERT');
+        expect(result.trades.data).toEqual(mockEvent.row);
+        expect(result.trades.timestamp).toBe(1234567890000);
+        resolve();
+      });
+    });
+  });
+
+  it('should handle all RowUpdateType values', async () => {
+    const sources = new Map<string, SourceDefinition>([
+      ['trades', {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [],
+      }],
+    ]);
+
+    const testCases = [
+      { type: RowUpdateType.Insert, expected: 'INSERT' },
+      { type: RowUpdateType.Update, expected: 'UPDATE' },
+      { type: RowUpdateType.Delete, expected: 'DELETE' },
+    ];
+
+    for (const testCase of testCases) {
+      const mockEvent = {
+        type: testCase.type,
+        row: { id: 1 },
+        timestamp: BigInt(1234567890000),
+      };
+
+      mockStreamingManager.getUpdates.mockReturnValue(of(mockEvent));
+      
+      const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
+      const subscription = await resolvers.trades.subscribe();
+      
+      await new Promise<void>((resolve) => {
+        subscription.subscribe((result: any) => {
+          expect(result.trades.operation).toBe(testCase.expected);
+          resolve();
+        });
+      });
+    }
+  });
+});

@@ -30,20 +30,20 @@ describe('generateSchema', () => {
     
     const schema = generateSchema(sources);
     
-    // Check Trade type
-    expect(schema).toContain('type Trade {');
+    // Check trades type
+    expect(schema).toContain('type trades {');
     expect(schema).toContain('id: Int!'); // Primary key is non-nullable
     expect(schema).toContain('symbol: String');
     expect(schema).toContain('price: Float');
     
-    // Check TradeUpdate type
-    expect(schema).toContain('type TradeUpdate {');
+    // Check tradesUpdate type
+    expect(schema).toContain('type tradesUpdate {');
     expect(schema).toContain('operation: RowOperation!');
-    expect(schema).toContain('trade: Trade');
-    expect(schema).toContain('timestamp: String!');
+    expect(schema).toContain('data: trades');
+    expect(schema).toContain('timestamp: Float!');
     
     // Check subscription
-    expect(schema).toContain('trades: TradeUpdate!');
+    expect(schema).toContain('trades: tradesUpdate!');
   });
 
   it('should handle PostgreSQL type mappings correctly', () => {
@@ -84,11 +84,11 @@ describe('generateSchema', () => {
     
     const schema = generateSchema(sources);
     
-    // Should convert live_pnl to LivePnl
-    expect(schema).toContain('type LivePnl {');
-    expect(schema).toContain('type LivePnlUpdate {');
-    expect(schema).toContain('livePnl: LivePnl');
-    expect(schema).toContain('live_pnl: LivePnlUpdate!');
+    // Should use source name as-is
+    expect(schema).toContain('type live_pnl {');
+    expect(schema).toContain('type live_pnlUpdate {');
+    expect(schema).toContain('data: live_pnl');
+    expect(schema).toContain('live_pnl: live_pnlUpdate!');
   });
 
   it('should only include JSON scalar when needed', () => {

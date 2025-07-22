@@ -1,7 +1,7 @@
 export enum RowUpdateType {
-  Insert = 'insert',
-  Update = 'update',
-  Delete = 'delete'
+  Insert,
+  Update,
+  Delete
 }
 
 export interface RowUpdateEvent {

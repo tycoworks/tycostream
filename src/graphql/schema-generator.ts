@@ -93,16 +93,6 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
 
   // Generate types and subscriptions for each source
   for (const [sourceName, sourceDefinition] of sources) {
-    // Convert source name to proper GraphQL type name (singular, PascalCase)
-    // 'trades' -> 'Trade', 'live_pnl' -> 'LivePnl'
-    const typeName = sourceName
-      .split('_')
-      .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join('')
-      .replace(/s$/, ''); // Remove trailing 's' for singular
-    
-    const fieldName = typeName.charAt(0).toLowerCase() + typeName.slice(1);
-    
     // Build fields string
     const fields = sourceDefinition.fields
       .map(field => {
@@ -115,20 +105,20 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
     // Add all type definitions for this source
     sdl += `
 
-    # ${typeName} type
-    type ${typeName} {
+    # ${sourceName} type
+    type ${sourceName} {
 ${fields}
     }
 
-    # ${typeName} update event
-    type ${typeName}Update {
+    # ${sourceName} update event
+    type ${sourceName}Update {
       operation: RowOperation!
-      ${fieldName}: ${typeName}
-      timestamp: String!
+      data: ${sourceName}
+      timestamp: Float!
     }
 
     extend type Subscription {
-      ${sourceName}: ${typeName}Update!
+      ${sourceName}: ${sourceName}Update!
     }`;
   }
 
