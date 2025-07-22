@@ -4,7 +4,7 @@ import { DatabaseConnectionService } from './database-connection.service';
 import { DatabaseSubscriber } from './database-subscriber';
 import type { ProtocolHandler } from './types';
 import type { SourceDefinition } from '../config/source-definition.types';
-import { RowUpdateType, type RowUpdateEvent, type RowUpdateEventWithTimestamp } from './types';
+import { RowUpdateType, type RowUpdateEvent } from './types';
 import type { Cache } from './cache.types';
 import { SimpleCache } from './cache';
 
@@ -17,7 +17,7 @@ import { SimpleCache } from './cache';
 export class DatabaseStreamingService implements OnModuleDestroy {
   private readonly logger = new Logger(DatabaseStreamingService.name);
   private readonly cache: Cache;
-  private readonly internalUpdates$ = new Subject<RowUpdateEventWithTimestamp>();
+  private readonly internalUpdates$ = new Subject<RowUpdateEvent>();
   private readonly databaseSubscriber: DatabaseSubscriber;
   private latestTimestamp = BigInt(0);
   private _consumerCount = 0;
@@ -69,7 +69,8 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     for (const row of snapshot) {
       consumerStream$.next({
         type: RowUpdateType.Insert,
-        row: { ...row }
+        row: { ...row },
+        timestamp: snapshotTimestamp
       });
       snapshotCount++;
     }
@@ -82,16 +83,13 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     
     // Subscribe to future updates with timestamp filter
     const subscription = this.internalUpdates$.pipe(
-      filter((event: RowUpdateEventWithTimestamp) => {
+      filter((event: RowUpdateEvent) => {
         // Only emit events newer than snapshot timestamp
         return event.timestamp > snapshotTimestamp;
       })
     ).subscribe(event => {
-      // Strip timestamp before emitting to consumer
-      consumerStream$.next({
-        type: event.type,
-        row: event.row
-      });
+      // Forward the complete event to consumer
+      consumerStream$.next(event);
     });
     
     this.logger.debug('Consumer connected', {

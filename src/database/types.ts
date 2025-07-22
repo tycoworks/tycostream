@@ -7,9 +7,6 @@ export enum RowUpdateType {
 export interface RowUpdateEvent {
   type: RowUpdateType;
   row: Record<string, any>;
-}
-
-export interface RowUpdateEventWithTimestamp extends RowUpdateEvent {
   timestamp: bigint;
 }
 
