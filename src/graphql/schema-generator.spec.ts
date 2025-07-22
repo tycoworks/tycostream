@@ -8,7 +8,7 @@ describe('generateSchema', () => {
     
     expect(schema).toContain('type Query');
     expect(schema).toContain('ping: String');
-    expect(schema).toContain('type Subscription');
+    expect(schema).toContain('type Subscription {');
     expect(schema).toContain('enum RowOperation');
     expect(schema).toContain('INSERT');
     expect(schema).toContain('UPDATE');

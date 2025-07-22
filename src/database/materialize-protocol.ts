@@ -19,11 +19,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     const nonKeyFields = sourceDefinition.fields.filter(f => f.name !== sourceDefinition.primaryKeyField);
     this.columnNames = ['mz_timestamp', 'mz_state', ...keyFields.map(f => f.name), ...nonKeyFields.map(f => f.name)];
     
-    this.logger.debug(`MaterializeProtocolHandler initialized for ${sourceName}`, { 
-      columnCount: this.columnNames.length,
-      columns: this.columnNames,
-      primaryKeyField: sourceDefinition.primaryKeyField
-    });
+    this.logger.debug(`MaterializeProtocolHandler initialized for ${sourceName} - columns: ${this.columnNames.length} [${this.columnNames.join(', ')}], primaryKey: ${sourceDefinition.primaryKeyField}`);
   }
 
   /**

@@ -1,4 +1,5 @@
 import { map } from 'rxjs';
+import { eachValueFrom } from 'rxjs-for-await';
 import { DatabaseStreamingManagerService } from '../database/database-streaming-manager.service';
 import type { SourceDefinition } from '../config/source-definition.types';
 import type { RowUpdateEvent } from '../database/types';
@@ -22,17 +23,19 @@ function createSourceSubscriptionResolver(
 ) {
   return {
     subscribe: () => {
-      return streamingManager.getUpdates(sourceName).pipe(
+      const observable = streamingManager.getUpdates(sourceName).pipe(
         map((event: RowUpdateEvent) => {
           return {
             [sourceName]: {
               operation: ROW_UPDATE_TYPE_MAP[event.type],
-              data: event.row,
+              data: event.type === RowUpdateType.Delete ? null : event.row,
               timestamp: Number(event.timestamp),
             }
           };
         })
       );
+      
+      return eachValueFrom(observable);
     }
   };
 }

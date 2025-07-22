@@ -6,13 +6,10 @@ import { DatabaseStreamingManagerService } from './database-streaming-manager.se
 @Module({
   providers: [
     DatabaseConnectionService, 
-    DatabaseStreamingService, 
     DatabaseStreamingManagerService
   ],
   exports: [
-    // Main public interface - this is what GraphQL will use
     DatabaseStreamingManagerService
-    // DatabaseConnectionService and DatabaseStreamingService are internal helpers
   ],
 })
 export class DatabaseModule {}

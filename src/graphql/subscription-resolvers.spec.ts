@@ -4,6 +4,23 @@ import { DatabaseStreamingManagerService } from '../database/database-streaming-
 import type { SourceDefinition } from '../config/source-definition.types';
 import { RowUpdateType } from '../database/types';
 
+// Mock rxjs-for-await
+jest.mock('rxjs-for-await', () => ({
+  eachValueFrom: jest.fn((observable) => {
+    // Convert observable to async iterator for tests
+    const values: any[] = [];
+    observable.subscribe((value: any) => values.push(value));
+    
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        for (const value of values) {
+          yield value;
+        }
+      }
+    };
+  })
+}));
+
 describe('buildSubscriptionResolvers', () => {
   let mockStreamingManager: jest.Mocked<DatabaseStreamingManagerService>;
 
@@ -53,16 +70,14 @@ describe('buildSubscriptionResolvers', () => {
     mockStreamingManager.getUpdates.mockReturnValue(of(mockEvent));
 
     const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
-    const subscription = await resolvers.trades.subscribe();
+    const asyncIterator = await resolvers.trades.subscribe();
     
-    return new Promise<void>((resolve) => {
-      subscription.subscribe((result: any) => {
-        expect(result.trades.operation).toBe('INSERT');
-        expect(result.trades.data).toEqual(mockEvent.row);
-        expect(result.trades.timestamp).toBe(1234567890000);
-        resolve();
-      });
-    });
+    // Get first value from async iterator
+    const { value } = await asyncIterator[Symbol.asyncIterator]().next();
+    
+    expect(value.trades.operation).toBe('INSERT');
+    expect(value.trades.data).toEqual(mockEvent.row);
+    expect(value.trades.timestamp).toBe(1234567890000);
   });
 
   it('should handle all RowUpdateType values', async () => {
@@ -90,14 +105,12 @@ describe('buildSubscriptionResolvers', () => {
       mockStreamingManager.getUpdates.mockReturnValue(of(mockEvent));
       
       const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
-      const subscription = await resolvers.trades.subscribe();
+      const asyncIterator = await resolvers.trades.subscribe();
       
-      await new Promise<void>((resolve) => {
-        subscription.subscribe((result: any) => {
-          expect(result.trades.operation).toBe(testCase.expected);
-          resolve();
-        });
-      });
+      // Get first value from async iterator
+      const { value } = await asyncIterator[Symbol.asyncIterator]().next();
+      
+      expect(value.trades.operation).toBe(testCase.expected);
     }
   });
 });

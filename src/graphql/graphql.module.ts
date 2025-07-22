@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -15,11 +15,21 @@ import { DatabaseStreamingManagerService } from '../database/database-streaming-
       driver: ApolloDriver,
       imports: [ConfigModule, DatabaseModule],
       useFactory: async (configService: ConfigService, streamingManager: DatabaseStreamingManagerService) => {
+        const logger = new Logger('GraphQLModule');
+        
         // Get source definitions from config
         const sources = configService.get<Map<string, SourceDefinition>>('sources') || new Map();
         
         // Generate SDL from source definitions
         const typeDefs = generateSchema(sources);
+        
+        // Log the generated SDL
+        logger.log('Generated GraphQL SDL:');
+        typeDefs.split('\n').forEach(line => {
+          if (line.trim()) {
+            logger.log(`  ${line}`);
+          }
+        });
         
         // Build subscription resolvers
         const subscriptionResolvers = buildSubscriptionResolvers(sources, streamingManager);
@@ -28,6 +38,10 @@ import { DatabaseStreamingManagerService } from '../database/database-streaming-
           typeDefs,
           playground: true,
           introspection: true,
+          subscriptions: {
+            'graphql-ws': true,
+            'subscriptions-transport-ws': true,
+          },
           resolvers: {
             Query: {
               ping: () => 'pong',

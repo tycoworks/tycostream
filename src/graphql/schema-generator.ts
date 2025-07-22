@@ -69,11 +69,6 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
       ping: String
     }
     
-    # Base subscription type
-    type Subscription {
-      _empty: String
-    }
-    
     # Row operation types
     enum RowOperation {
       INSERT
@@ -89,9 +84,21 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
     scalar JSON`;
   }
   
-  sdl += '\n  ';
+  // Add base subscription type
+  sdl += `
+    
+    type Subscription {`;
+  
+  // Add all subscription fields first
+  for (const [sourceName] of sources) {
+    sdl += `
+      ${sourceName}: ${sourceName}Update!`;
+  }
+  
+  sdl += `
+    }`;
 
-  // Generate types and subscriptions for each source
+  // Generate types for each source
   for (const [sourceName, sourceDefinition] of sources) {
     // Build fields string
     const fields = sourceDefinition.fields
@@ -102,7 +109,7 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
       })
       .join('\n');
     
-    // Add all type definitions for this source
+    // Add type definitions for this source
     sdl += `
 
     # ${sourceName} type
@@ -115,10 +122,6 @@ ${fields}
       operation: RowOperation!
       data: ${sourceName}
       timestamp: Float!
-    }
-
-    extend type Subscription {
-      ${sourceName}: ${sourceName}Update!
     }`;
   }
 

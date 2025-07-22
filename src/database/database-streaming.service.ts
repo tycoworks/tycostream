@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable, Subject, ReplaySubject, filter } from 'rxjs';
 import { DatabaseConnectionService } from './database-connection.service';
 import { DatabaseSubscriber } from './database-subscriber';
@@ -13,7 +13,6 @@ import { SimpleCache } from './cache';
  * Handles Observable-based streaming with late joiner support
  * Uses DatabaseProtocolHandler for database connection management
  */
-@Injectable()
 export class DatabaseStreamingService implements OnModuleDestroy {
   private readonly logger = new Logger(DatabaseStreamingService.name);
   private readonly cache: Cache;
@@ -75,11 +74,7 @@ export class DatabaseStreamingService implements OnModuleDestroy {
       snapshotCount++;
     }
     
-    this.logger.debug('Sending cached data to consumer', {
-      sourceName: this.sourceName,
-      cachedRowCount: snapshotCount,
-      activeConsumers: this._consumerCount
-    });
+    this.logger.debug(`Sending cached data to consumer - source: ${this.sourceName}, cachedRows: ${snapshotCount}, activeConsumers: ${this._consumerCount}`);
     
     // Subscribe to future updates with timestamp filter
     const subscription = this.internalUpdates$.pipe(
@@ -92,11 +87,7 @@ export class DatabaseStreamingService implements OnModuleDestroy {
       consumerStream$.next(event);
     });
     
-    this.logger.debug('Consumer connected', {
-      sourceName: this.sourceName,
-      cacheSize: this.cache.size,
-      activeConsumers: this._consumerCount
-    });
+    this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}, activeConsumers: ${this._consumerCount}`);
 
     // Return observable that handles cleanup on unsubscribe
     return new Observable<RowUpdateEvent>(subscriber => {
@@ -107,10 +98,7 @@ export class DatabaseStreamingService implements OnModuleDestroy {
         // Decrement consumer count
         this._consumerCount--;
         
-        this.logger.debug('Consumer disconnected', {
-          sourceName: this.sourceName,
-          remainingConsumers: this._consumerCount
-        });
+        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}, remainingConsumers: ${this._consumerCount}`);
         
         // Clean up subscriptions
         subscription.unsubscribe();
