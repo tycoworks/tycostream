@@ -4,6 +4,7 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { generateSchema } from './schema-generator';
 import type { SourceDefinition } from '../config/source-definition.types';
+import { QueryResolver } from './query.resolver';
 
 @Module({
   imports: [
@@ -21,17 +22,11 @@ import type { SourceDefinition } from '../config/source-definition.types';
           typeDefs,
           playground: true,
           introspection: true,
-          resolvers: {
-            // We'll add resolvers here later
-            Query: {
-              ping: () => 'pong',
-            },
-          },
         };
       },
       inject: [ConfigService],
     }),
   ],
-  providers: [],
+  providers: [QueryResolver],
 })
 export class GraphqlModule {}
