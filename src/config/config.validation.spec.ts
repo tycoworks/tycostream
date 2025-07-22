@@ -14,10 +14,7 @@ describe('ConfigValidation', () => {
         port: 4000,
         playground: true,
       },
-      app: {
-        logLevel: 'info',
-        schemaPath: './config/schema.yaml',
-      },
+      app: {},
     };
 
     expect(() => validateConfig(validConfig)).not.toThrow();
@@ -36,10 +33,7 @@ describe('ConfigValidation', () => {
         port: 4000,
         playground: true,
       },
-      app: {
-        logLevel: 'info',
-        schemaPath: './config/schema.yaml',
-      },
+      app: {},
     };
 
     expect(() => validateConfig(invalidConfig)).toThrow(/port/);

@@ -152,7 +152,7 @@ npm install -D @types/js-yaml
 
 ### Files to Create:
 
-**src/config/sourcedefinition.types.ts**:
+**src/config/source-definition.types.ts**:
 ```typescript
 export interface SourceDefinition {
   name: string;

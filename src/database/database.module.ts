@@ -1,15 +1,8 @@
 import { Module } from '@nestjs/common';
+import { DatabaseConnectionService } from './database-connection.service';
 
 @Module({
-  providers: [
-    // TODO: DatabaseConnectionService
-    // TODO: DatabaseStreamingService
-    // TODO: StreamBufferService (from buffer.ts)
-    // TODO: CacheService (from cache.ts)
-    // TODO: MaterializeProtocolHandler (from materialize.ts)
-  ],
-  exports: [
-    // TODO: Export DatabaseStreamingService for GraphQL module
-  ],
+  providers: [DatabaseConnectionService],
+  exports: [DatabaseConnectionService],
 })
 export class DatabaseModule {}

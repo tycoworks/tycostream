@@ -2,7 +2,7 @@ import { registerAs } from '@nestjs/config';
 import { readFileSync } from 'fs';
 import { load } from 'js-yaml';
 import { Logger } from '@nestjs/common';
-import type { YamlSourcesFile, SourceDefinition, SourceField } from './sourcedefinition.types';
+import type { YamlSourcesFile, SourceDefinition, SourceField } from './source-definition.types';
 
 const logger = new Logger('SourcesConfig');
 
