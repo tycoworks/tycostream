@@ -9,6 +9,10 @@ export interface RowUpdateEvent {
   row: Record<string, any>;
 }
 
+export interface RowUpdateEventWithTimestamp extends RowUpdateEvent {
+  timestamp: bigint;
+}
+
 export interface ProtocolHandler {
   /**
    * Create the streaming query for this database protocol

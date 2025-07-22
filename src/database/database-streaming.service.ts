@@ -1,32 +1,27 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { Observable, Subject } from 'rxjs';
-import { to as copyTo } from 'pg-copy-streams';
-import type { Client } from 'pg';
+import { Observable, Subject, ReplaySubject, filter } from 'rxjs';
 import { DatabaseConnectionService } from './database-connection.service';
-import { StreamBuffer } from './stream-buffer';
-import { SimpleCache } from './cache';
-import type { Cache } from './cache.types';
+import { DatabaseSubscriber } from './database-subscriber';
 import type { ProtocolHandler } from './types';
 import type { SourceDefinition } from '../config/source-definition.types';
-import { RowUpdateType, type RowUpdateEvent } from './types';
+import { RowUpdateType, type RowUpdateEvent, type RowUpdateEventWithTimestamp } from './types';
+import type { Cache } from './cache.types';
+import { SimpleCache } from './cache';
 
 /**
  * Database streaming service for a single source
- * Handles streaming subscription from a Materialize view
- * 
- * TODO: This is currently a basic implementation for Phase 3.
- * Phase 4 will enhance this with proper Observable-based streaming and late joiner support.
+ * Handles Observable-based streaming with late joiner support
+ * Uses DatabaseProtocolHandler for database connection management
  */
 @Injectable()
 export class DatabaseStreamingService implements OnModuleDestroy {
   private readonly logger = new Logger(DatabaseStreamingService.name);
   private readonly cache: Cache;
-  private readonly buffer = new StreamBuffer();
-  private readonly updates$ = new Subject<RowUpdateEvent>();
-  private client: Client | null = null;
-  private isShuttingDown = false;
-  private isStreaming = false;
+  private readonly internalUpdates$ = new Subject<RowUpdateEventWithTimestamp>();
+  private readonly databaseSubscriber: DatabaseSubscriber;
   private latestTimestamp = BigInt(0);
+  private _consumerCount = 0;
+  private isShuttingDown = false;
 
   constructor(
     private connectionService: DatabaseConnectionService,
@@ -34,47 +29,103 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     private readonly sourceName: string,
     private readonly protocolHandler: ProtocolHandler
   ) {
-    // Create internal simple cache
     this.cache = new SimpleCache(sourceDef.primaryKeyField);
+    this.databaseSubscriber = new DatabaseSubscriber(
+      connectionService,
+      sourceName,
+      protocolHandler
+    );
   }
 
   /**
-   * Get a stream of updates
+   * Get a stream of updates with late joiner support
    * This is the main interface that will be used by GraphQL subscriptions
-   * 
-   * TODO: Phase 4 will implement late joiner support by replaying cache state
    */
   getUpdates(): Observable<RowUpdateEvent> {
-    if (!this.isStreaming && !this.isShuttingDown) {
-      // Start streaming in background
+    if (this.isShuttingDown) {
+      throw new Error('Database subscriber is shutting down, cannot accept new subscriptions');
+    }
+
+    // Start streaming if not already started
+    if (!this.databaseSubscriber.streaming && !this.isShuttingDown) {
       this.startStreaming().catch(error => {
         this.logger.error(`Failed to start streaming for ${this.sourceName}`, error);
-        this.updates$.error(error);
+        // Error will be propagated through Observable error handling
       });
     }
 
-    // TODO: Phase 4 will implement proper multicasting with late joiner support
-    return this.updates$.asObservable();
+    // Increment consumer count
+    this._consumerCount++;
+
+    // Create a replayable stream for this consumer
+    const consumerStream$ = new ReplaySubject<RowUpdateEvent>();
+    
+    // Take snapshot before subscribing to avoid race condition
+    const snapshotTimestamp = this.latestTimestamp;
+    const snapshot = this.cache.getAllRows();
+    
+    // Emit snapshot as insert events
+    let snapshotCount = 0;
+    for (const row of snapshot) {
+      consumerStream$.next({
+        type: RowUpdateType.Insert,
+        row: { ...row }
+      });
+      snapshotCount++;
+    }
+    
+    this.logger.debug('Sending cached data to consumer', {
+      sourceName: this.sourceName,
+      cachedRowCount: snapshotCount,
+      activeConsumers: this._consumerCount
+    });
+    
+    // Subscribe to future updates with timestamp filter
+    const subscription = this.internalUpdates$.pipe(
+      filter((event: RowUpdateEventWithTimestamp) => {
+        // Only emit events newer than snapshot timestamp
+        return event.timestamp > snapshotTimestamp;
+      })
+    ).subscribe(event => {
+      // Strip timestamp before emitting to consumer
+      consumerStream$.next({
+        type: event.type,
+        row: event.row
+      });
+    });
+    
+    this.logger.debug('Consumer connected', {
+      sourceName: this.sourceName,
+      cacheSize: this.cache.size,
+      activeConsumers: this._consumerCount
+    });
+
+    // Return observable that handles cleanup on unsubscribe
+    return new Observable<RowUpdateEvent>(subscriber => {
+      const proxySubscription = consumerStream$.subscribe(subscriber);
+      
+      // Return teardown logic
+      return () => {
+        // Decrement consumer count
+        this._consumerCount--;
+        
+        this.logger.debug('Consumer disconnected', {
+          sourceName: this.sourceName,
+          remainingConsumers: this._consumerCount
+        });
+        
+        // Clean up subscriptions
+        subscription.unsubscribe();
+        proxySubscription.unsubscribe();
+        consumerStream$.complete();
+      };
+    });
   }
 
   /**
-   * Get current state snapshot
+   * Get row count
    */
-  getAllRows(): Record<string, any>[] {
-    return this.cache.getAllRows();
-  }
-
-  /**
-   * Get a specific row by primary key
-   */
-  getRow(primaryKey: string | number): Record<string, any> | undefined {
-    return this.cache.get(primaryKey);
-  }
-
-  /**
-   * Get cache size
-   */
-  getCacheSize(): number {
+  getRowCount(): number {
     return this.cache.size;
   }
 
@@ -82,7 +133,32 @@ export class DatabaseStreamingService implements OnModuleDestroy {
    * Check if streaming is active
    */
   get streaming(): boolean {
-    return this.isStreaming;
+    return this.databaseSubscriber.streaming;
+  }
+
+  /**
+   * Get consumer count for monitoring
+   */
+  get consumerCount(): number {
+    return this._consumerCount;
+  }
+
+  /**
+   * Get latest timestamp
+   */
+  get currentTimestamp(): bigint {
+    return this.latestTimestamp;
+  }
+
+  // Internal methods for testing only
+  /** @internal */
+  _getAllRows(): Record<string, any>[] {
+    return this.cache.getAllRows();
+  }
+
+  /** @internal */
+  _getRow(primaryKey: string | number): Record<string, any> | undefined {
+    return this.cache.get(primaryKey);
   }
 
   /**
@@ -92,90 +168,64 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     this.logger.log('Shutting down stream...');
     this.isShuttingDown = true;
     
-    if (this.isStreaming && this.client) {
-      try {
-        await this.connectionService.disconnect(this.client);
-      } catch (error) {
-        this.logger.error('Error disconnecting client', error);
-      }
-    }
+    // Clean up database subscriber
+    await this.databaseSubscriber.onModuleDestroy();
     
-    this.updates$.complete();
+    // Complete internal streams
+    this.internalUpdates$.complete();
   }
 
   /**
    * Internal method to start streaming
    */
   private async startStreaming(): Promise<void> {
-    if (this.isStreaming) {
-      this.logger.warn('Stream already active');
-      return;
-    }
-
-    this.isStreaming = true;
-    this.logger.log(`Starting stream for source: ${this.sourceName}`);
-
-    // Connect to database
-    this.client = await this.connectionService.connect();
-
     try {
-      // Create COPY query that wraps the SUBSCRIBE
-      const subscribeQuery = this.protocolHandler.createSubscribeQuery();
-      const copyQuery = `COPY (${subscribeQuery}) TO STDOUT`;
-      
-      this.logger.log(`Executing query: ${copyQuery}`);
-
-      // Start streaming
-      const copyStream = this.client.query(copyTo(copyQuery));
-
-      copyStream.on('data', (chunk: Buffer) => {
-        if (this.isShuttingDown) return;
-
-        const lines = this.buffer.processChunk(chunk);
-        
-        for (const line of lines) {
-          const parsed = this.protocolHandler.parseLine(line);
-          
-          if (parsed) {
-            this.latestTimestamp = parsed.timestamp;
-            
-            if (parsed.isDelete) {
-              this.cache.delete(parsed.row);
-              this.updates$.next({
-                type: RowUpdateType.Delete,
-                row: parsed.row
-              });
-            } else {
-              const isUpdate = this.cache.has(parsed.row[this.sourceDef.primaryKeyField]);
-              this.cache.set(parsed.row);
-              this.updates$.next({
-                type: isUpdate ? RowUpdateType.Update : RowUpdateType.Insert,
-                row: parsed.row
-              });
-            }
-          }
+      // Start database streaming with callback for updates and errors
+      await this.databaseSubscriber.startStreaming(
+        (row: Record<string, any>, timestamp: bigint, isDelete: boolean) => {
+          this.processUpdate(row, timestamp, isDelete);
+        },
+        (error: Error) => {
+          // Propagate runtime database errors to all subscribers
+          this.internalUpdates$.error(error);
         }
-      });
-
-      copyStream.on('error', (error) => {
-        this.logger.error('Stream error:', error);
-        this.isStreaming = false;
-        this.updates$.error(error);
-      });
-
-      copyStream.on('end', () => {
-        // Only warn about unexpected stream end
-        if (!this.isShuttingDown) {
-          this.logger.warn('COPY stream ended', { sourceName: this.sourceName });
-        }
-        this.isStreaming = false;
-      });
+      );
     } catch (error) {
-      this.isStreaming = false;
-      if (this.client) {
-        await this.connectionService.disconnect(this.client);
-      }
+      // Propagate startup database errors to all subscribers
+      this.internalUpdates$.error(error);
       throw error;
     }
+  }
+
+  /**
+   * Process an incoming update from the database stream
+   */
+  private processUpdate(row: Record<string, any>, timestamp: bigint, isDelete: boolean): void {
+    // Update timestamp tracking
+    this.latestTimestamp = timestamp;
+
+    // Determine correct event type based on cache state and delete flag
+    let eventType: RowUpdateType;
+    if (isDelete) {
+      eventType = RowUpdateType.Delete;
+    } else {
+      // Check if row exists in cache to determine insert vs update
+      const exists = this.cache.get(row[this.sourceDef.primaryKeyField]) !== undefined;
+      eventType = exists ? RowUpdateType.Update : RowUpdateType.Insert;
+    }
+
+    // Update cache based on event type
+    if (eventType === RowUpdateType.Delete) {
+      this.cache.delete(row);
+    } else {
+      this.cache.set(row);
+    }
+
+    // Emit to internal subject
+    this.internalUpdates$.next({
+      type: eventType,
+      row,
+      timestamp
+    });
   }
 }
