@@ -29,7 +29,6 @@ function createSourceSubscriptionResolver(
             [sourceName]: {
               operation: ROW_UPDATE_TYPE_MAP[event.type],
               data: event.type === RowUpdateType.Delete ? null : event.row,
-              timestamp: Number(event.timestamp),
             }
           };
         })

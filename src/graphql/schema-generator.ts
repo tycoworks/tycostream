@@ -121,7 +121,6 @@ ${fields}
     type ${sourceName}Update {
       operation: RowOperation!
       data: ${sourceName}
-      timestamp: Float!
     }`;
   }
 

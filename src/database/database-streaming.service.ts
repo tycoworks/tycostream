@@ -16,7 +16,7 @@ import { SimpleCache } from './cache';
 export class DatabaseStreamingService implements OnModuleDestroy {
   private readonly logger = new Logger(DatabaseStreamingService.name);
   private readonly cache: Cache;
-  private readonly internalUpdates$ = new Subject<RowUpdateEvent>();
+  private readonly internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
   private readonly databaseSubscriber: DatabaseSubscriber;
   private latestTimestamp = BigInt(0);
   private _consumerCount = 0;
@@ -68,8 +68,7 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     for (const row of snapshot) {
       consumerStream$.next({
         type: RowUpdateType.Insert,
-        row: { ...row },
-        timestamp: snapshotTimestamp
+        row: { ...row }
       });
       snapshotCount++;
     }
@@ -78,12 +77,12 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     
     // Subscribe to future updates with timestamp filter
     const subscription = this.internalUpdates$.pipe(
-      filter((event: RowUpdateEvent) => {
+      filter(([event, timestamp]) => {
         // Only emit events newer than snapshot timestamp
-        return event.timestamp > snapshotTimestamp;
+        return timestamp > snapshotTimestamp;
       })
-    ).subscribe(event => {
-      // Forward the complete event to consumer
+    ).subscribe(([event]) => {
+      // Forward the event to consumer
       consumerStream$.next(event);
     });
     
@@ -208,10 +207,12 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     }
 
     // Emit to internal subject
-    this.internalUpdates$.next({
-      type: eventType,
-      row,
+    this.internalUpdates$.next([
+      {
+        type: eventType,
+        row
+      },
       timestamp
-    });
+    ]);
   }
 }

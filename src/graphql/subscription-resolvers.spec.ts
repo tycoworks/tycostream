@@ -77,7 +77,6 @@ describe('buildSubscriptionResolvers', () => {
     
     expect(value.trades.operation).toBe('INSERT');
     expect(value.trades.data).toEqual(mockEvent.row);
-    expect(value.trades.timestamp).toBe(1234567890000);
   });
 
   it('should handle all RowUpdateType values', async () => {
