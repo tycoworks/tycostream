@@ -1,19 +1,37 @@
 import { Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
-import { AppResolver } from './app.resolver';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { generateSchema } from './schema-generator';
+import type { SourceDefinition } from '../config/source-definition.types';
 
 @Module({
   imports: [
-    GraphQLModule.forRoot<ApolloDriverConfig>({
+    GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: true,
-      playground: true, // Enable for development
-      introspection: true,
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => {
+        // Get source definitions from config
+        const sources = configService.get<Map<string, SourceDefinition>>('sources') || new Map();
+        
+        // Generate SDL from source definitions
+        const typeDefs = generateSchema(sources);
+        
+        return {
+          typeDefs,
+          playground: true,
+          introspection: true,
+          resolvers: {
+            // We'll add resolvers here later
+            Query: {
+              ping: () => 'pong',
+            },
+          },
+        };
+      },
+      inject: [ConfigService],
     }),
   ],
-  providers: [
-    AppResolver,
-  ],
+  providers: [],
 })
 export class GraphqlModule {}
