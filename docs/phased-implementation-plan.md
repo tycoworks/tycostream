@@ -136,7 +136,54 @@ npm test
 
 ---
 
-## Phase 2: Database Connection + Basic Streaming (No Cache)
+## Phase 2a: Source Definitions Loading
+
+**Goal**: Load source definitions from YAML as part of the configuration system.
+
+### Steps:
+```bash
+# 1. Copy schema example to project root
+cp ../tycostream-archive/config/schema.example.yaml ./schema.yaml
+
+# 2. Install js-yaml
+npm install js-yaml
+npm install -D @types/js-yaml
+```
+
+### Files to Create:
+
+**src/config/sourcedefinition.types.ts**:
+```typescript
+export interface SourceDefinition {
+  name: string;
+  primaryKeyField: string;
+  fields: SourceField[];
+}
+```
+
+**src/config/sources.config.ts**:
+```typescript
+export default registerAs('sources', (): Map<string, SourceDefinition> => {
+  // Load YAML file from SCHEMA_PATH env var or ./schema.yaml
+  // Parse and validate source definitions
+  // Return as a Map
+});
+```
+
+### Key Changes:
+- Source definitions are part of ConfigModule, not a separate module
+- YAML file at project root (configurable via SCHEMA_PATH env var)
+- Simpler types focused on just source structure, not GraphQL
+
+### Verification:
+```bash
+npm run start:dev
+# Should see: "Loaded 2 source definitions"
+```
+
+---
+
+## Phase 2b: Database Connection + Basic Streaming (No Cache)
 
 **Goal**: Connect to database and stream raw data to console. Copy over connection.ts and buffer.ts.
 

@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import type { SourceDefinition } from './config/sourcedefinition.types';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -10,7 +11,7 @@ async function bootstrap() {
     const app = await NestFactory.create(AppModule);
     const configService = app.get(ConfigService);
 
-    // Phase 1: Just log that configuration loaded successfully
+    // Phase 1: Configuration
     logger.log('=== Tycostream Starting ===');
     
     const dbConfig = configService.get('database');
@@ -19,15 +20,25 @@ async function bootstrap() {
     const graphqlConfig = configService.get('graphql');
     logger.log(`GraphQL port: ${graphqlConfig.port}, Playground: ${graphqlConfig.playground ? 'enabled' : 'disabled'}`);
     
-    const appConfig = configService.get('app');
-    logger.log(`Schema path: ${appConfig.schemaPath}`);
+    // Phase 2a: Source Definitions
+    const sources = configService.get<Map<string, SourceDefinition>>('sources');
+    if (sources && sources.size > 0) {
+      logger.log(`Loaded ${sources.size} source definitions`);
+      
+      // Log source details
+      for (const [name, source] of sources) {
+        logger.log(`  - ${name}: ${source.fields.length} fields, primary key: ${source.primaryKeyField}`);
+      }
+    } else {
+      logger.warn('No source definitions loaded');
+    }
 
-    logger.log('Phase 1 complete - Configuration loaded successfully');
+    logger.log('Phase 2a complete - Configuration and sources loaded');
 
-    // TODO: Phase 2 - Database connection
-    // TODO: Phase 3 - Schema loading
+    // TODO: Phase 2b - Database connection
+    // TODO: Phase 3 - Streaming with cache
     // TODO: Phase 4 - GraphQL setup
-    // TODO: Phase 5 - Start streaming
+    // TODO: Phase 5 - Full integration
 
     // Don't actually start the HTTP server yet
     // await app.listen(graphqlConfig.port);

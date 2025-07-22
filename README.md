@@ -61,8 +61,9 @@ GRAPHQL_UI=true
 ### 3. Configure your schema:
 
 ```bash
-cp config/schema.example.yaml config/schema.yaml
-# Edit config/schema.yaml to match your database sources (run SHOW COLUMNS in your database)
+cp schema.example.yaml schema.yaml
+# Edit schema.yaml to match your database sources (run SHOW COLUMNS in your database)
+# Or specify a custom path with SCHEMA_PATH environment variable
 ```
 
 ### 4. Start the server:

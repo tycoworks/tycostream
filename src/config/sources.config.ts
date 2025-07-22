@@ -1,0 +1,65 @@
+import { registerAs } from '@nestjs/config';
+import { readFileSync } from 'fs';
+import { load } from 'js-yaml';
+import { Logger } from '@nestjs/common';
+import type { YamlSourcesFile, SourceDefinition, SourceField } from './sourcedefinition.types';
+
+const logger = new Logger('SourcesConfig');
+
+export default registerAs('sources', (): Map<string, SourceDefinition> => {
+  const sources = new Map<string, SourceDefinition>();
+  
+  // Get schema file path from environment or use default
+  const schemaPath = process.env.SCHEMA_PATH || './schema.yaml';
+  
+  try {
+    logger.log(`Loading source definitions from: ${schemaPath}`);
+    
+    const yamlContent = readFileSync(schemaPath, 'utf-8');
+    const yamlData = load(yamlContent) as YamlSourcesFile;
+    
+    if (!yamlData?.sources) {
+      throw new Error('Invalid schema file: must contain a "sources" section');
+    }
+    
+    // Parse each source
+    for (const [sourceName, sourceConfig] of Object.entries(yamlData.sources)) {
+      if (!sourceConfig.primary_key) {
+        throw new Error(`Source '${sourceName}' missing required 'primary_key' field`);
+      }
+      
+      if (!sourceConfig.columns || Object.keys(sourceConfig.columns).length === 0) {
+        throw new Error(`Source '${sourceName}' must have at least one column defined`);
+      }
+      
+      // Verify primary key exists in columns
+      if (!sourceConfig.columns[sourceConfig.primary_key]) {
+        throw new Error(`Primary key '${sourceConfig.primary_key}' not found in columns for source '${sourceName}'`);
+      }
+      
+      // Build field list
+      const fields: SourceField[] = Object.entries(sourceConfig.columns).map(([name, type]) => ({
+        name,
+        type
+      }));
+      
+      sources.set(sourceName, {
+        name: sourceName,
+        primaryKeyField: sourceConfig.primary_key,
+        fields
+      });
+    }
+    
+    logger.log(`Loaded ${sources.size} source definitions: ${Array.from(sources.keys()).join(', ')}`);
+    
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      logger.warn(`Schema file not found at ${schemaPath}. No sources loaded.`);
+    } else {
+      logger.error('Failed to load source definitions', error);
+      throw error;
+    }
+  }
+  
+  return sources;
+});

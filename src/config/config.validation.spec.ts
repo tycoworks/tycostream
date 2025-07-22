@@ -61,6 +61,6 @@ describe('ConfigValidation', () => {
       },
     };
 
-    expect(() => validateConfig(invalidConfig)).toThrow(/Configuration validation failed/);
+    expect(() => validateConfig(invalidConfig)).toThrow(/configuration validation failed/);
   });
 });
