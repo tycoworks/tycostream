@@ -3,14 +3,18 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import type { SourceDefinition } from './config/source-definition.types';
+import { getLogLevels } from './common/logging.utils';
 
 async function bootstrap() {
   const logger = new Logger('tycostream');
   
   try {
-    const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create(AppModule, {
+      logger: getLogLevels(process.env.LOG_LEVEL),
+    });
+    
     const configService = app.get(ConfigService);
-
+    
     logger.log('=== tycostream starting ===');
     
     const dbConfig = configService.get('database');

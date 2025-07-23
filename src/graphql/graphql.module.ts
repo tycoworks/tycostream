@@ -2,6 +2,8 @@ import { Module, Logger } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
+import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import { generateSchema } from './schema-generator';
 import type { SourceDefinition } from '../config/source-definition.types';
 import { buildSubscriptionResolvers } from './subscription-resolvers';
@@ -29,10 +31,22 @@ import { DatabaseStreamingManagerService } from '../database/database-streaming-
         // Build subscription resolvers
         const subscriptionResolvers = buildSubscriptionResolvers(sources, streamingManager);
         
+        const graphqlConfig = configService.get('graphql');
+        
+        // Configure landing page plugin based on GRAPHQL_UI environment variable
+        const landingPagePlugin = graphqlConfig.playground
+          ? ApolloServerPluginLandingPageLocalDefault({
+              embed: true,
+              includeCookies: true,
+            })
+          : ApolloServerPluginLandingPageDisabled();
+        
         return {
           typeDefs,
-          playground: true,
-          introspection: true,
+          playground: false, // Deprecated in Apollo Server 4, using plugins instead
+          introspection: true, // Always enable introspection for API discovery
+          csrfPrevention: graphqlConfig.playground ? false : true, // Disable CSRF when playground is enabled
+          plugins: [landingPagePlugin],
           subscriptions: {
             'graphql-ws': true,
             'subscriptions-transport-ws': true,
@@ -43,6 +57,13 @@ import { DatabaseStreamingManagerService } from '../database/database-streaming-
             },
             Subscription: subscriptionResolvers,
           },
+          // CORS configuration for development when playground is enabled
+          ...(graphqlConfig.playground && {
+            cors: {
+              origin: true,
+              credentials: true,
+            },
+          }),
         };
       },
       inject: [ConfigService, DatabaseStreamingManagerService],

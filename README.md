@@ -56,6 +56,9 @@ DATABASE_NAME=materialize
 
 GRAPHQL_PORT=4000
 GRAPHQL_UI=true
+
+SCHEMA_PATH=./schema.yaml
+LOG_LEVEL=debug
 ```
 
 ### 3. Configure your schema:
@@ -70,31 +73,12 @@ cp schema.example.yaml schema.yaml
 
 ```bash
 npm install
-npm run build
-npm run start:prod
+npm run start:dev
 ```
 
 **Docker networking:** If Materialize runs on your host machine, update `.env`:
 ```
 DATABASE_HOST=host.docker.internal
-```
-
----
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Run in development mode with hot reload
-npm run start:dev
-
-# Run tests
-npm test
-
-# Build for production
-npm run build
 ```
 
 ---

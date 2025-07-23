@@ -1,6 +1,7 @@
 import { registerAs } from '@nestjs/config';
 import { IsInt, IsNotEmpty, IsString, Max, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { validateConfig } from './config-validation';
 
 export class DatabaseConfig {
   @IsString()
@@ -26,10 +27,14 @@ export class DatabaseConfig {
   database: string;
 }
 
-export default registerAs('database', (): DatabaseConfig => ({
-  host: process.env.DATABASE_HOST || 'localhost',
-  port: parseInt(process.env.DATABASE_PORT || '6875', 10),
-  user: process.env.DATABASE_USER || 'materialize',
-  password: process.env.DATABASE_PASSWORD || 'materialize',
-  database: process.env.DATABASE_NAME || 'materialize',
-}));
+export default registerAs('database', (): DatabaseConfig => {
+  const rawConfig = {
+    host: process.env.DATABASE_HOST || 'localhost',
+    port: parseInt(process.env.DATABASE_PORT || '6875', 10),
+    user: process.env.DATABASE_USER || 'materialize',
+    password: process.env.DATABASE_PASSWORD || 'materialize',
+    database: process.env.DATABASE_NAME || 'materialize',
+  };
+  
+  return validateConfig(rawConfig, 'database', DatabaseConfig);
+});

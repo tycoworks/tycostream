@@ -1,6 +1,7 @@
 import { registerAs } from '@nestjs/config';
-import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsInt, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { validateConfig } from './config-validation';
 
 export class GraphQLConfig {
   @Type(() => Number)
@@ -9,12 +10,15 @@ export class GraphQLConfig {
   @Max(65535)
   port: number;
 
-  @Transform(({ value }) => value === 'true')
   @IsBoolean()
   playground: boolean;
 }
 
-export default registerAs('graphql', (): GraphQLConfig => ({
-  port: parseInt(process.env.GRAPHQL_PORT || '4000', 10),
-  playground: process.env.GRAPHQL_UI === 'true',
-}));
+export default registerAs('graphql', (): GraphQLConfig => {
+  const rawConfig = {
+    port: parseInt(process.env.GRAPHQL_PORT || '4000', 10),
+    playground: process.env.GRAPHQL_UI === 'true',
+  };
+  
+  return validateConfig(rawConfig, 'graphql', GraphQLConfig);
+});
