@@ -26,7 +26,7 @@
 - ✅ Start with `npm run start:dev` for development
 - ✅ Hot reload with NestJS development mode
 - ✅ Environment-based configuration with validation
-- 🔄 Docker support (in progress)
+- ✅ Docker support with docker-compose for development
 - ✅ Subscribe to any configured source in seconds
 
 ---
