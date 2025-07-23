@@ -41,7 +41,9 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     if (!trimmed) return null;
 
     const fields = trimmed.split('\t');
-    if (fields.length < 2) return null;
+    // Materialize COPY protocol requires at least timestamp and diff fields
+    const MATERIALIZE_MINIMUM_FIELDS = 2;
+    if (fields.length < MATERIALIZE_MINIMUM_FIELDS) return null;
 
     // Parse timestamp (first field)
     const timestampField = fields[0];

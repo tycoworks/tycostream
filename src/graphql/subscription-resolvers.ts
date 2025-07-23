@@ -7,6 +7,17 @@ import type { RowUpdateEvent } from '../database/types';
 import { RowUpdateType } from '../database/types';
 import { truncateForLog } from '../common/logging.utils';
 
+interface GraphQLUpdatePayload {
+  [sourceName: string]: {
+    operation: 'INSERT' | 'UPDATE' | 'DELETE';
+    data: Record<string, any> | null;
+  };
+}
+
+type SubscriptionResolver = {
+  subscribe: () => AsyncIterableIterator<GraphQLUpdatePayload>;
+};
+
 /**
  * Maps RowUpdateType enum values to GraphQL operation strings
  */
@@ -54,8 +65,8 @@ function createSourceSubscriptionResolver(
 export function buildSubscriptionResolvers(
   sources: Map<string, SourceDefinition>,
   streamingManager: DatabaseStreamingManagerService
-): Record<string, any> {
-  const resolvers: Record<string, any> = {};
+): Record<string, SubscriptionResolver> {
+  const resolvers: Record<string, SubscriptionResolver> = {};
   
   sources.forEach((_, sourceName) => {
     resolvers[sourceName] = createSourceSubscriptionResolver(sourceName, streamingManager);

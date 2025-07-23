@@ -3,7 +3,9 @@
  */
 import { LogLevel } from '@nestjs/common';
 
-export function truncateForLog(data: any, maxLength = 100): string {
+const DEFAULT_TRUNCATE_LENGTH = 100;
+
+export function truncateForLog(data: unknown, maxLength: number = DEFAULT_TRUNCATE_LENGTH): string {
   const str = JSON.stringify(data);
   if (str.length <= maxLength) {
     return str;

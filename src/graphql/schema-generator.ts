@@ -1,12 +1,11 @@
 import type { SourceDefinition } from '../config/source-definition.types';
 import { GraphQLBoolean, GraphQLFloat, GraphQLInt, GraphQLString, GraphQLID } from 'graphql';
 import * as pgTypes from 'pg-types';
-// @ts-ignore - no type definitions available for pg-type-names
-import pgTypeNamesModule from 'pg-type-names';
 
-// Handle both ESM and CommonJS exports  
-const pgTypeNames = (pgTypeNamesModule as any)?.default || pgTypeNamesModule;
-const typeOids = pgTypeNames.oids;
+// pg-type-names doesn't have type definitions, but we only use the oids property
+const pgTypeNamesModule = require('pg-type-names');
+const pgTypeNames = pgTypeNamesModule.default || pgTypeNamesModule;
+const typeOids = pgTypeNames.oids as Record<string, number>;
 
 /**
  * Maps PostgreSQL OIDs to GraphQL scalar types

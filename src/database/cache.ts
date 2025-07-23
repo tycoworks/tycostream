@@ -5,7 +5,7 @@ import type { Cache } from './cache.types';
  * Pure data storage with no event emission or business logic
  */
 export class SimpleCache implements Cache {
-  private cache = new Map<any, Record<string, any>>();
+  private cache = new Map<string | number, Record<string, any>>();
 
   constructor(
     private primaryKeyField: string
