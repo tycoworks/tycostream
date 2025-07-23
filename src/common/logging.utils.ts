@@ -7,8 +7,8 @@ const DEFAULT_TRUNCATE_LENGTH = 100;
 
 export function truncateForLog(data: unknown, maxLength: number = DEFAULT_TRUNCATE_LENGTH): string {
   const str = JSON.stringify(data);
-  if (str.length <= maxLength) {
-    return str;
+  if (!str || str.length <= maxLength) {
+    return str || 'undefined';
   }
   return str.substring(0, maxLength) + '...';
 }

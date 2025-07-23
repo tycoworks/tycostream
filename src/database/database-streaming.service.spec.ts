@@ -45,6 +45,9 @@ describe('DatabaseStreamingService', () => {
       'test_source',
       mockProtocolHandler
     );
+    
+    // Mock the startStreaming method to prevent actual database connection
+    jest.spyOn(service as any, 'startStreaming').mockResolvedValue(undefined);
   });
 
   afterEach(() => {
