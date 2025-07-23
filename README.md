@@ -71,15 +71,20 @@ cp schema.example.yaml schema.yaml
 
 ### 4. Start the server:
 
+**Option A: Using npm**
 ```bash
 npm install
 npm run start:dev
 ```
 
-**Docker networking:** If Materialize runs on your host machine, update `.env`:
+**Option B: Using Docker**
+```bash
+docker-compose up --build
 ```
-DATABASE_HOST=host.docker.internal
-```
+
+If Materialize runs on your host machine, update `.env`:
+- macOS/Windows: `DATABASE_HOST=host.docker.internal`
+- Linux: `DATABASE_HOST=172.17.0.1`
 
 ---
 

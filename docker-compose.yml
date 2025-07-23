@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  tycostream:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tycostream
+    ports:
+      - "${GRAPHQL_PORT:-4000}:4000"
+    environment:
+      - DATABASE_HOST=${DATABASE_HOST:-localhost}
+      - DATABASE_PORT=${DATABASE_PORT:-6875}
+      - DATABASE_USER=${DATABASE_USER:-materialize}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-materialize}
+      - DATABASE_NAME=${DATABASE_NAME:-materialize}
+      - GRAPHQL_PORT=${GRAPHQL_PORT:-4000}
+      - GRAPHQL_UI=${GRAPHQL_UI:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SCHEMA_PATH=${SCHEMA_PATH:-./schema.yaml}
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${GRAPHQL_PORT:-4000}/graphql?query={__typename}"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

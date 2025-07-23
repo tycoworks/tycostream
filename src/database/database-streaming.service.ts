@@ -50,7 +50,8 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     if (!this.databaseSubscriber.streaming && !this.isShuttingDown) {
       this.startStreaming().catch(error => {
         this.logger.error(`Failed to start streaming for ${this.sourceName}`, error);
-        // Error will be propagated through Observable error handling
+        // Database connection errors are unrecoverable - trigger application shutdown
+        this.handleFatalError(error);
       });
     }
 
