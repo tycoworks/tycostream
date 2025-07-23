@@ -224,4 +224,57 @@ describe('DatabaseSubscriber', () => {
       expect(mockUpdateCallback).not.toHaveBeenCalled();
     });
   });
+
+  describe('error propagation', () => {
+    it('should call error callback on stream error', async () => {
+      const mockUpdateCallback = jest.fn();
+      const mockErrorCallback = jest.fn();
+      
+      let errorCallback: (error: Error) => void;
+      const mockStream = {
+        on: jest.fn((event, callback) => {
+          if (event === 'error') {
+            errorCallback = callback;
+          }
+        })
+      };
+      mockClient.query.mockReturnValue(mockStream);
+
+      await subscriber.startStreaming(mockUpdateCallback, mockErrorCallback);
+
+      // Simulate stream error
+      const error = new Error('Database connection lost');
+      errorCallback!(error);
+      
+      expect(mockErrorCallback).toHaveBeenCalledWith(error);
+      expect(subscriber.streaming).toBe(false);
+    });
+
+    it('should call error callback on unexpected stream end', async () => {
+      const mockUpdateCallback = jest.fn();
+      const mockErrorCallback = jest.fn();
+      
+      let endCallback: () => void;
+      const mockStream = {
+        on: jest.fn((event, callback) => {
+          if (event === 'end') {
+            endCallback = callback;
+          }
+        })
+      };
+      mockClient.query.mockReturnValue(mockStream);
+
+      await subscriber.startStreaming(mockUpdateCallback, mockErrorCallback);
+
+      // Simulate unexpected stream end
+      endCallback!();
+      
+      expect(mockErrorCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Database stream ended unexpectedly')
+        })
+      );
+      expect(subscriber.streaming).toBe(false);
+    });
+  });
 });

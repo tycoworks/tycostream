@@ -173,7 +173,14 @@ export class DatabaseStreamingService implements OnModuleDestroy {
         },
         (error: Error) => {
           // Propagate runtime database errors to all subscribers
-          this.internalUpdates$.error(error);
+          this.logger.error(`Database stream error for ${this.sourceName}:`, error);
+          
+          // If we're shutting down, don't trigger fail-fast
+          if (!this.isShuttingDown) {
+            this.internalUpdates$.error(error);
+            // Database connection errors are unrecoverable - trigger application shutdown
+            this.handleFatalError(error);
+          }
         }
       );
     } catch (error) {
@@ -217,5 +224,18 @@ export class DatabaseStreamingService implements OnModuleDestroy {
       },
       timestamp
     ]);
+  }
+
+
+  /**
+   * Handle fatal errors by triggering graceful shutdown
+   */
+  private handleFatalError(error: Error): void {
+    this.logger.error(`Fatal error in database streaming service: ${error.message}`);
+    // In NestJS, we should throw an unhandled error to trigger shutdown
+    // The error will bubble up and cause the application to exit
+    setTimeout(() => {
+      throw new Error(`Fatal database error for source ${this.sourceName}: ${error.message}`);
+    }, 0);
   }
 }

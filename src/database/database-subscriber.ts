@@ -68,6 +68,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
       copyStream.on('error', (error) => {
         this.logger.error('Stream error:', error);
         this.isStreaming = false;
+        
         // Notify parent of runtime error
         if (this.errorCallback) {
           this.errorCallback(error);
@@ -75,11 +76,17 @@ export class DatabaseSubscriber implements OnModuleDestroy {
       });
 
       copyStream.on('end', () => {
+        this.isStreaming = false;
+        
         // Only warn about unexpected stream end
         if (!this.isShuttingDown) {
-          this.logger.warn('COPY stream ended', { sourceName: this.sourceName });
+          this.logger.warn('COPY stream ended unexpectedly', { sourceName: this.sourceName });
+          // Stream end without error usually means database closed connection
+          const error = new Error(`Database stream ended unexpectedly for source ${this.sourceName}`);
+          if (this.errorCallback) {
+            this.errorCallback(error);
+          }
         }
-        this.isStreaming = false;
       });
     } catch (error) {
       this.isStreaming = false;
