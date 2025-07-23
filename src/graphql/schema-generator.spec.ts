@@ -62,7 +62,7 @@ describe('generateSchema', () => {
     
     const schema = generateSchema(sources);
     
-    expect(schema).toContain('id: Float!'); // bigint -> Float (not Int)
+    expect(schema).toContain('id: String!'); // bigint -> String to preserve precision
     expect(schema).toContain('active: Boolean');
     expect(schema).toContain('count: Int');
     expect(schema).toContain('amount: Float');
@@ -90,21 +90,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('live_pnl: live_pnlUpdate!');
   });
 
-  it('should only include JSON scalar when needed', () => {
-    const sourcesWithoutJson = new Map<string, SourceDefinition>([
-      ['trades', {
-        name: 'trades',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', type: 'integer' },
-          { name: 'symbol', type: 'text' },
-        ],
-      }],
-    ]);
-    
-    const schemaWithoutJson = generateSchema(sourcesWithoutJson);
-    expect(schemaWithoutJson).not.toContain('scalar JSON');
-    
+  it('should treat JSON/JSONB fields as String', () => {
     const sourcesWithJson = new Map<string, SourceDefinition>([
       ['events', {
         name: 'events',
@@ -116,9 +102,9 @@ describe('generateSchema', () => {
       }],
     ]);
     
-    const schemaWithJson = generateSchema(sourcesWithJson);
-    expect(schemaWithJson).toContain('scalar JSON');
-    expect(schemaWithJson).toContain('data: JSON');
+    const schema = generateSchema(sourcesWithJson);
+    expect(schema).not.toContain('scalar JSON');
+    expect(schema).toContain('data: String'); // JSON is treated as String
   });
 
   it('should handle unknown PostgreSQL types', () => {

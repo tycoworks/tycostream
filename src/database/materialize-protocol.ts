@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
 import type { SourceDefinition } from '../config/source-definition.types';
 import type { ProtocolHandler } from './types';
+import { getPostgresType } from '../common/type-map';
+import * as pgTypes from 'pg-types';
 
 /**
  * Handles Materialize-specific protocol details: query generation and data parsing
@@ -8,16 +10,23 @@ import type { ProtocolHandler } from './types';
 export class MaterializeProtocolHandler implements ProtocolHandler {
   private readonly logger = new Logger(MaterializeProtocolHandler.name);
   private columnNames: string[];
+  private columnTypes: Map<string, string>;
 
   constructor(
     private sourceDefinition: SourceDefinition,
     private sourceName: string
   ) {
     // Initialize column names for COPY stream parsing
-    // With ENVELOPE UPSERT, output format is: [mz_timestamp, mz_state, key_columns..., value_columns...]
+    // With ENVELOPE UPSERT, Materialize reorders output: [mz_timestamp, mz_state, key_columns, value_columns]
     const keyFields = sourceDefinition.fields.filter(f => f.name === sourceDefinition.primaryKeyField);
     const nonKeyFields = sourceDefinition.fields.filter(f => f.name !== sourceDefinition.primaryKeyField);
     this.columnNames = ['mz_timestamp', 'mz_state', ...keyFields.map(f => f.name), ...nonKeyFields.map(f => f.name)];
+    
+    // Build column type map
+    this.columnTypes = new Map();
+    sourceDefinition.fields.forEach(field => {
+      this.columnTypes.set(field.name, field.type);
+    });
     
     this.logger.debug(`MaterializeProtocolHandler initialized for ${sourceName} - columns: ${this.columnNames.length} [${this.columnNames.join(', ')}], primaryKey: ${sourceDefinition.primaryKeyField}`);
   }
@@ -66,11 +75,59 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
       const columnName = this.columnNames[i];
       const field = fields[i];
       if (columnName && field !== undefined) {
-        row[columnName] = field === '\\N' ? null : field;
+        const typeName = this.columnTypes.get(columnName);
+        row[columnName] = typeName 
+          ? this.parseValue(field, typeName)
+          : field;
       }
     }
 
     const isDelete = mzState === 'delete';
     return { row, timestamp, isDelete };
+  }
+
+  /**
+   * Parse a COPY text format value based on PostgreSQL type
+   */
+  private parseValue(value: string, typeName: string): any {
+    // Handle COPY format NULL
+    if (value === '\\N') return null;
+    
+    // Get PostgreSQL type OID
+    const pgType = getPostgresType(typeName);
+    
+    // Parse based on PostgreSQL type
+    switch (pgType) {
+      case pgTypes.builtins.BOOL:
+        return value === 't' || value === 'true';
+      
+      case pgTypes.builtins.INT2:
+      case pgTypes.builtins.INT4:
+        return parseInt(value, 10);
+      
+      case pgTypes.builtins.INT8:
+        // Keep as string to preserve precision
+        return value;
+      
+      case pgTypes.builtins.FLOAT4:
+      case pgTypes.builtins.FLOAT8:
+      case pgTypes.builtins.NUMERIC:
+        return parseFloat(value);
+      
+      // All string-based types
+      case pgTypes.builtins.TEXT:
+      case pgTypes.builtins.VARCHAR:
+      case pgTypes.builtins.UUID:
+      case pgTypes.builtins.TIMESTAMP:
+      case pgTypes.builtins.TIMESTAMPTZ:
+      case pgTypes.builtins.DATE:
+      case pgTypes.builtins.TIME:
+      case pgTypes.builtins.JSON:
+      case pgTypes.builtins.JSONB:
+        return value;
+      
+      default:
+        return value; // Unknown type, keep as string
+    }
   }
 }

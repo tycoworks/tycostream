@@ -30,7 +30,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row).toEqual({
         id: '123',
         name: 'test',
-        value: '42'
+        value: 42  // Should be parsed as integer
       });
     });
 
@@ -85,7 +85,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row).toEqual({
         id: '123',
         name: 'test name',
-        value: '42'
+        value: 42
       });
     });
 
@@ -99,7 +99,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row).toEqual({
         id: '123',
         name: 'test name',
-        value: '42'
+        value: 42
       });
     });
 
@@ -162,7 +162,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row).toEqual({
         id: '123',
         name: 'test',
-        value: '42'
+        value: 42
       });
     });
 
@@ -173,9 +173,10 @@ describe('MaterializeProtocolHandler', () => {
 
       // This will actually parse incorrectly due to the tab
       // The parser will see "name with" as the name and "tab" as the value
+      // Since value is an integer field, parsing "tab" will result in NaN
       expect(result).toBeDefined();
       expect(result?.row.name).toBe('name with');
-      expect(result?.row.value).toBe('tab');
+      expect(result?.row.value).toBeNaN();
     });
   });
 });
