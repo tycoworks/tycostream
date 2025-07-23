@@ -52,9 +52,15 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
     
     logger.log(`Loaded ${sources.size} source definitions: ${Array.from(sources.keys()).join(', ')}`);
     
+    // Fail if no sources were loaded
+    if (sources.size === 0) {
+      throw new Error('No source definitions found in schema file. At least one source must be defined.');
+    }
+    
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      logger.warn(`Schema file not found at ${schemaPath}. No sources loaded.`);
+      logger.error(`Schema file not found at ${schemaPath}`);
+      throw new Error(`Schema file not found: ${schemaPath}. Please ensure the file exists or set SCHEMA_PATH environment variable.`);
     } else {
       logger.error('Failed to load source definitions', error);
       throw error;

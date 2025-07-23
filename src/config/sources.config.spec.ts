@@ -65,17 +65,23 @@ sources:
     expect(trades?.fields).toHaveLength(5);
   });
 
-  it('should handle missing schema file gracefully', () => {
+  it('should throw error when schema file is missing', () => {
     const error = new Error('ENOENT') as NodeJS.ErrnoException;
     error.code = 'ENOENT';
     (fs.readFileSync as jest.Mock).mockImplementation(() => {
       throw error;
     });
 
-    const sources = sourcesConfig();
-    
-    expect(sources).toBeInstanceOf(Map);
-    expect(sources.size).toBe(0);
+    expect(() => sourcesConfig()).toThrow('Schema file not found');
+  });
+
+  it('should throw error when no sources are defined', () => {
+    (fs.readFileSync as jest.Mock).mockReturnValue('sources: {}');
+    (yaml.load as jest.Mock).mockReturnValue({
+      sources: {}
+    });
+
+    expect(() => sourcesConfig()).toThrow('No source definitions found in schema file');
   });
 
   it('should throw on invalid primary key', () => {
