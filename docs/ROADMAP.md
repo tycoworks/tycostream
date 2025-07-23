@@ -63,7 +63,10 @@
 
 ### 🧪 Test Infrastructure
 
-- Integration test suite using Materialize emulator with real streaming data
+- ✅ Integration test suite using testcontainers with real Materialize instance
+- ✅ Comprehensive E2E tests covering all CRUD operations, data types, and concurrent connections
+- 🔄 Resilience test suite for failure scenarios and fail-fast behavior validation
+- 🔄 Performance/stress test suite for high throughput and concurrent connection scenarios
 
 ---
 

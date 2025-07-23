@@ -1,0 +1,41 @@
+sources:
+  # First source - covers string, boolean, time, and json types
+  users:
+    primary_key: user_id
+    columns:
+      user_id: integer
+      name: text
+      email: varchar
+      active: boolean
+      created_at: timestamp
+      updated_at: timestamptz
+      metadata: json
+  
+  # Comprehensive test table with ALL PostgreSQL types
+  all_types:
+    primary_key: id
+    columns:
+      id: integer
+      # Boolean
+      bool_val: boolean
+      # Numeric types
+      smallint_val: smallint
+      int_val: integer
+      bigint_val: bigint
+      decimal_val: decimal
+      numeric_val: numeric
+      real_val: real
+      double_val: double precision
+      # String types
+      char_val: char
+      varchar_val: varchar
+      text_val: text
+      uuid_val: uuid
+      # Date/Time types
+      date_val: date
+      time_val: time
+      timestamp_val: timestamp
+      timestamptz_val: timestamptz
+      # JSON types
+      json_val: json
+      jsonb_val: jsonb
