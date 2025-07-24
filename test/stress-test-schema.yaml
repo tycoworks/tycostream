@@ -1,0 +1,6 @@
+sources:
+  stress_test:
+    primary_key: id
+    columns:
+      id: integer
+      value: numeric
