@@ -19,22 +19,34 @@ export const TYPE_MAP: Record<number, GraphQLScalarType> = {
   [pgTypes.builtins.NUMERIC]: GraphQLFloat,
   [pgTypes.builtins.TEXT]: GraphQLString,
   [pgTypes.builtins.VARCHAR]: GraphQLString,
+  [pgTypes.builtins.CHAR]: GraphQLString,
+  [pgTypes.builtins.BPCHAR]: GraphQLString, // "blank padded char" - PostgreSQL's internal name for CHAR
   [pgTypes.builtins.UUID]: GraphQLID,
   [pgTypes.builtins.TIMESTAMP]: GraphQLString,
   [pgTypes.builtins.TIMESTAMPTZ]: GraphQLString,
   [pgTypes.builtins.DATE]: GraphQLString,
   [pgTypes.builtins.TIME]: GraphQLString,
+  [pgTypes.builtins.TIMETZ]: GraphQLString, // Time with timezone
   [pgTypes.builtins.JSON]: GraphQLString,
   [pgTypes.builtins.JSONB]: GraphQLString,
 } as const;
 
 /**
  * Get PostgreSQL type OID from type name
- * Returns TEXT OID for unknown types
+ * Throws error for unsupported types
  */
 export function getPostgresType(typeName: string): number {
   const oid = pgTypeNames.oids[typeName];
-  return oid || pgTypes.builtins.TEXT; // Default to TEXT for unknown types
+  if (!oid) {
+    throw new Error(`Unsupported PostgreSQL type: ${typeName}`);
+  }
+  
+  // Check if we have a GraphQL mapping for this OID
+  if (!TYPE_MAP[oid]) {
+    throw new Error(`PostgreSQL type '${typeName}' is not supported by tycostream`);
+  }
+  
+  return oid;
 }
 
 /**

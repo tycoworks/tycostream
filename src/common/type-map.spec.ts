@@ -13,15 +13,32 @@ describe('type-map', () => {
       expect(getPostgresType('jsonb')).toBe(pgTypes.builtins.JSONB);
     });
 
-    it('should return TEXT OID for unknown types', () => {
-      expect(getPostgresType('unknown_type')).toBe(pgTypes.builtins.TEXT);
-      expect(getPostgresType('custom_type')).toBe(pgTypes.builtins.TEXT);
+    it('should throw error for unknown type names', () => {
+      expect(() => getPostgresType('unknown_type')).toThrow();
+      expect(() => getPostgresType('custom_type')).toThrow();
     });
 
-    it('should be case-sensitive', () => {
-      // These should return TEXT OID since they don't match exactly
-      expect(getPostgresType('BOOLEAN')).toBe(pgTypes.builtins.TEXT);
-      expect(getPostgresType('Integer')).toBe(pgTypes.builtins.TEXT);
+    it('should throw error for unsupported PostgreSQL types', () => {
+      // Types that exist in PostgreSQL but we don't support
+      expect(() => getPostgresType('point')).toThrow();
+      expect(() => getPostgresType('polygon')).toThrow();
+      expect(() => getPostgresType('inet')).toThrow();
+      expect(() => getPostgresType('cidr')).toThrow();
+      expect(() => getPostgresType('money')).toThrow();
+      expect(() => getPostgresType('bytea')).toThrow();
+      expect(() => getPostgresType('xml')).toThrow();
+      expect(() => getPostgresType('tsvector')).toThrow();
+      
+      // Array types - common but not yet supported
+      expect(() => getPostgresType('integer[]')).toThrow();
+      expect(() => getPostgresType('text[]')).toThrow();
+      expect(() => getPostgresType('uuid[]')).toThrow();
+    });
+
+    it('should be case-sensitive and throw for incorrect case', () => {
+      // These should throw since they don't match exactly
+      expect(() => getPostgresType('BOOLEAN')).toThrow();
+      expect(() => getPostgresType('Integer')).toThrow();
     });
   });
 
@@ -37,9 +54,14 @@ describe('type-map', () => {
       expect(getGraphQLType('jsonb')).toBe('String');
     });
 
-    it('should return String for unknown types', () => {
-      expect(getGraphQLType('unknown_type')).toBe('String');
-      expect(getGraphQLType('custom_type')).toBe('String');
+    it('should throw error for unknown types', () => {
+      expect(() => getGraphQLType('unknown_type')).toThrow();
+      expect(() => getGraphQLType('custom_type')).toThrow();
+    });
+    
+    it('should throw error for unsupported types that exist in PostgreSQL', () => {
+      expect(() => getGraphQLType('point')).toThrow();
+      expect(() => getGraphQLType('money')).toThrow();
     });
   });
 
