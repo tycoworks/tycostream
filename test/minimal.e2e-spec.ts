@@ -15,7 +15,7 @@ describe('Minimal E2E Test', () => {
     process.env.DATABASE_NAME = 'materialize';
     process.env.GRAPHQL_PORT = '4003';
     process.env.GRAPHQL_UI = 'false';
-    process.env.SCHEMA_PATH = 'test/test-schema.yaml';
+    process.env.SCHEMA_PATH = 'test/graphql-subscriptions-schema.yaml';
     process.env.LOG_LEVEL = 'error';
 
     const moduleFixture: TestingModule = await Test.createTestingModule({

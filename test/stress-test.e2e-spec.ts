@@ -1,16 +1,12 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { AppModule } from '../src/app.module';
-import { GenericContainer, StartedTestContainer } from 'testcontainers';
-import { Client } from 'pg';
-import { createClient, Client as WSClient } from 'graphql-ws';
-import * as WebSocket from 'ws';
 import * as path from 'path';
-import appConfig from '../src/config/app.config';
-import databaseConfig from '../src/config/database.config';
-import graphqlConfig from '../src/config/graphql.config';
-import sourcesConfig from '../src/config/sources.config';
+import { Client as WSClient } from 'graphql-ws';
+import {
+  TestContext,
+  bootstrapTestEnvironment,
+  cleanupTestEnvironment,
+  createWebSocketClient,
+  executeAndWait
+} from './e2e-test-utils';
 
 interface StressTestData {
   id: number;
@@ -29,9 +25,7 @@ interface SubscriptionResponse {
 }
 
 describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
-  let app: INestApplication;
-  let materializeContainer: StartedTestContainer;
-  let pgClient: Client;
+  let testContext: TestContext;
   const appPort = 4100; // Different port to avoid conflicts
 
   // Test configuration
@@ -44,118 +38,30 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
 
   beforeAll(async () => {
     console.log(`Starting stress test with ${NUM_ROWS} rows and ${NUM_CLIENTS} concurrent clients`);
-    console.log('Starting Materialize container...');
     
-    materializeContainer = await new GenericContainer('materialize/materialized:v0.124.0')
-      .withExposedPorts(6875)
-      .withEnvironment({
-        MZ_WORKERS: '4'  // More workers for stress test
-      })
-      .withStartupTimeout(120000) // 2 minute timeout
-      .start();
-
-    console.log('Materialize container started');
-
-    const materializePort = materializeContainer.getMappedPort(6875);
-    console.log(`Materialize mapped port: ${materializePort}`);
-
-    // Connect to Materialize
-    pgClient = new Client({
-      host: 'localhost',
-      port: materializePort,
-      user: 'materialize',
-      database: 'materialize'
+    // Bootstrap test environment with more workers for stress test
+    testContext = await bootstrapTestEnvironment({
+      appPort,
+      schemaPath: path.join(__dirname, 'stress-test-schema.yaml'),
+      materializeWorkers: '4' // More workers for stress test
     });
-
-    await pgClient.connect();
-    console.log('Connected to Materialize');
-
+    
     // Create test table with single numeric column
-    await pgClient.query(`
+    await testContext.pgClient.query(`
       CREATE TABLE IF NOT EXISTS stress_test (
         id INTEGER NOT NULL,
         value NUMERIC NOT NULL
       )
     `);
-
-    // Set up environment variables like the working test
-    process.env.DATABASE_HOST = 'localhost';
-    process.env.DATABASE_PORT = materializePort.toString();
-    process.env.DATABASE_USER = 'materialize';
-    process.env.DATABASE_PASSWORD = 'materialize';
-    process.env.DATABASE_NAME = 'materialize';
-    process.env.GRAPHQL_PORT = appPort.toString();
-    process.env.GRAPHQL_UI = 'false';
-    process.env.SCHEMA_PATH = path.join(__dirname, 'stress-test-schema.yaml');
-    process.env.LOG_LEVEL = 'log'; // Increase logging to debug
-
-    // Start the application with test configuration (matching working test)
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    })
-    .overrideModule(ConfigModule)
-    .useModule(
-      ConfigModule.forRoot({
-        isGlobal: true,
-        cache: false, // Disable cache to pick up env changes
-        load: [appConfig, databaseConfig, graphqlConfig, sourcesConfig],
-      })
-    )
-    .compile();
-
-    app = moduleFixture.createNestApplication();
-    
-    // Configure server for high concurrency
-    const expressApp = app.getHttpAdapter().getInstance();
-    expressApp.set('backlog', 1024);
-    
-    await app.listen(appPort);
-    console.log(`Application listening on port ${appPort}`);
-
-    // Wait a bit for server to stabilize (matching working test)
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    console.log('Server ready, creating initial test client...');
-    // Test that server is actually ready by creating a test client
-    try {
-      const testClient = createClient({
-        url: `ws://localhost:${appPort}/graphql`,
-        webSocketImpl: WebSocket as any,
-      });
-      // Give it a moment to connect
-      await new Promise(resolve => setTimeout(resolve, 500));
-      testClient.dispose();
-      console.log('Test client connected successfully');
-    } catch (error) {
-      console.error('Test client failed to connect:', error);
-    }
   }, 180000);
 
   afterAll(async () => {
-    console.log('Cleaning up...');
-    
-    // Close app first and wait for cleanup
-    if (app) {
-      await app.close();
-      // Wait a bit for all connections to close
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-    
-    // End pg client connection
-    if (pgClient) {
-      await pgClient.end();
-    }
-    
-    // Stop the container last to avoid triggering fail-fast
-    // The table will be cleaned up when the container is stopped
-    if (materializeContainer) {
-      await materializeContainer.stop();
-    }
+    await cleanupTestEnvironment(testContext);
   });
 
   it('should handle concurrent clients with mixed operations', async () => {
     // Clear any existing data first
-    await pgClient.query('DELETE FROM stress_test');
+    await testContext.pgClient.query('DELETE FROM stress_test');
     await new Promise(resolve => setTimeout(resolve, 500));
     
     const clients: WSClient[] = [];
@@ -170,10 +76,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       for (let attempt = 1; attempt <= RECONNECT_ATTEMPTS; attempt++) {
         try {
           // Use simple configuration like the working test
-          const client = createClient({
-            url: `ws://localhost:${appPort}/graphql`,
-            webSocketImpl: WebSocket as any,
-          });
+          const client = createWebSocketClient(appPort);
           
           // Mark as connected after successful creation
           clientConnected[clientId] = true;
@@ -280,7 +183,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         operationLog.push(`INSERT id=${i} value=${insertValue}`);
         operationCount++;
         
-        await pgClient.query('INSERT INTO stress_test (id, value) VALUES ($1, $2)', [i, insertValue]);
+        await testContext.pgClient.query('INSERT INTO stress_test (id, value) VALUES ($1, $2)', [i, insertValue]);
         await new Promise(resolve => setTimeout(resolve, INSERT_DELAY_MS));
         
         // UPDATE (only update existing rows)
@@ -293,7 +196,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
             operationLog.push(`UPDATE id=${updateId} value=${updateValue}`);
             operationCount++;
             
-            await pgClient.query('UPDATE stress_test SET value = $1 WHERE id = $2', [updateValue, updateId]);
+            await testContext.pgClient.query('UPDATE stress_test SET value = $1 WHERE id = $2', [updateValue, updateId]);
             await new Promise(resolve => setTimeout(resolve, INSERT_DELAY_MS));
           }
         }
@@ -306,7 +209,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
             operationLog.push(`DELETE id=${deleteId}`);
             operationCount++;
             
-            await pgClient.query('DELETE FROM stress_test WHERE id = $1', [deleteId]);
+            await testContext.pgClient.query('DELETE FROM stress_test WHERE id = $1', [deleteId]);
             await new Promise(resolve => setTimeout(resolve, INSERT_DELAY_MS));
           }
         }
@@ -366,7 +269,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     console.log('\nSample expected data:', sampleExpected);
     
     // Verify database has the correct data
-    const finalResult = await pgClient.query('SELECT id, value FROM stress_test ORDER BY id');
+    const finalResult = await testContext.pgClient.query('SELECT id, value FROM stress_test ORDER BY id');
     const dbData = new Map<number, number>();
     finalResult.rows.forEach(row => {
       dbData.set(Number(row.id), Number(row.value));

@@ -5,10 +5,10 @@ sources:
     columns:
       user_id: integer
       name: text
-      email: varchar
+      email: character varying
       active: boolean
-      created_at: timestamp
-      updated_at: timestamptz
+      created_at: timestamp without time zone
+      updated_at: timestamp with time zone
       metadata: json
   
   # Comprehensive test table with ALL PostgreSQL types
@@ -22,20 +22,20 @@ sources:
       smallint_val: smallint
       int_val: integer
       bigint_val: bigint
-      decimal_val: decimal
+      decimal_val: numeric
       numeric_val: numeric
       real_val: real
       double_val: double precision
       # String types
-      char_val: char
-      varchar_val: varchar
+      char_val: character
+      varchar_val: character varying
       text_val: text
       uuid_val: uuid
       # Date/Time types
       date_val: date
-      time_val: time
-      timestamp_val: timestamp
-      timestamptz_val: timestamptz
+      time_val: time without time zone
+      timestamp_val: timestamp without time zone
+      timestamptz_val: timestamp with time zone
       # JSON types
       json_val: json
       jsonb_val: jsonb

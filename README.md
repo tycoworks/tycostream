@@ -65,8 +65,9 @@ LOG_LEVEL=debug
 
 ```bash
 cp schema.example.yaml schema.yaml
-# Edit schema.yaml to match your database sources (run SHOW COLUMNS in your database)
-# Or specify a custom path with SCHEMA_PATH environment variable
+# Edit schema.yaml to match your database sources
+# Use PostgreSQL wire protocol type names (e.g., 'character varying' not 'varchar')
+# Get exact type names: SHOW COLUMNS FROM your_view
 ```
 
 ### 4. Start the server:

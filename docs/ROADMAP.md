@@ -60,6 +60,7 @@
 - Graceful error handling for GraphQL server failures
 - WebSocket reconnection support
 - Stale client cleanup and connection lifecycle management
+- Standardized error codes for all failure modes
 
 ### 🧪 Test Infrastructure
 
