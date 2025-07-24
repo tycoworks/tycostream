@@ -521,7 +521,9 @@ describe('GraphQL Subscriptions E2E', () => {
       // Should have received the delete
       const deleteEvents = results.filter(r => r.data.all_types.operation === 'DELETE');
       expect(deleteEvents.length).toBe(1);
-      expect(deleteEvents[0].data.all_types.data).toBeNull();
+      // DELETE operations now include row data (at least the ID)
+      expect(deleteEvents[0].data.all_types.data).not.toBeNull();
+      expect(deleteEvents[0].data.all_types.data.id).toBe(1001);
       
       client.dispose();
     });
@@ -689,7 +691,9 @@ describe('GraphQL Subscriptions E2E', () => {
       
       const deleteIndex = results.length - 1;
       expect(results[deleteIndex].data.users.operation).toBe('DELETE');
-      expect(results[deleteIndex].data.users.data).toBeNull();
+      // DELETE operations now include row data
+      expect(results[deleteIndex].data.users.data).not.toBeNull();
+      expect(results[deleteIndex].data.users.data.user_id).toBe(userId);
 
       // 4. RE-INSERT with same ID
       await pgClient.query(`
