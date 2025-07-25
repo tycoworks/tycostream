@@ -52,9 +52,10 @@ export class TestClient<TData = any> {
         next: (data: any) => {
           this.handleUpdate(data);
         },
-        error: (error) => {
-          console.error(`Client ${this.options.clientId} subscription error:`, error);
-          this.handleError(new Error(`Client ${this.options.clientId} subscription error: ${error}`));
+        error: (error: any) => {
+          const errorMessage = error?.message || error?.toString() || 'Unknown error';
+          console.error(`Client ${this.options.clientId} subscription error:`, errorMessage);
+          this.handleError(new Error(`Client ${this.options.clientId} subscription error: ${errorMessage}`));
         },
         complete: () => {
           // Stream closed - this is an error condition
