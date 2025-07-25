@@ -18,7 +18,7 @@
 - ✅ Support for custom GraphQL types and fields
 - 🔄 Hasura-style filters (next phase)
 - 🔄 Nested queries based on relational joins (next phase)
-- ✅ Multiple sources per project
+- ✅ Multiple sources per database
 - ✅ Multiple concurrent clients supported
 
 ### 🚀 Dev Experience
@@ -47,6 +47,7 @@
 - Prometheus metrics
 - Health check endpoints
 - Structured logs for query and stream activity
+- Full audit trail of data sent to each connected client
 
 ### 🔄 Materialize Resilience
 
