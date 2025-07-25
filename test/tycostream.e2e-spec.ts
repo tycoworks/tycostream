@@ -3,22 +3,22 @@ import {
   TestContext,
   bootstrapTestEnvironment,
   cleanupTestEnvironment,
-  createWebSocketClient,
   executeAndWait,
-  collectSubscriptionEvents,
-  waitForCondition
-} from './e2e-test-utils';
+  waitForCondition,
+  TestClientManager
+} from './utils';
 
-describe('GraphQL Subscriptions E2E', () => {
+describe('tycostream E2E', () => {
   let testContext: TestContext;
-  let wsClient: any | undefined;
+  let clientManager: TestClientManager;
   const testPort = 4001;
+  const DEFAULT_LIVENESS_TIMEOUT = 30000; // 30 seconds
 
   beforeAll(async () => {
     // Bootstrap complete test environment
     testContext = await bootstrapTestEnvironment({
       appPort: testPort,
-      schemaPath: path.join(__dirname, 'graphql-subscriptions-schema.yaml')
+      schemaPath: path.join(__dirname, 'tycostream-schema.yaml')
     });
 
     // Create test tables matching our schema
@@ -60,20 +60,18 @@ describe('GraphQL Subscriptions E2E', () => {
   }, 120000);
 
   afterAll(async () => {
-    // Clean up WebSocket client
-    if (wsClient) {
-      await wsClient.dispose();
-    }
-
     // Clean up test environment
     await cleanupTestEnvironment(testContext);
   });
 
+  beforeEach(() => {
+    // Client manager will be created in each test with appropriate configuration
+  });
+
   afterEach(async () => {
-    // Clean up WebSocket client after each test
-    if (wsClient) {
-      await wsClient.dispose();
-      wsClient = undefined;
+    // Clean up client manager after each test
+    if (clientManager) {
+      clientManager.dispose();
     }
     
     // Clean up test data
@@ -86,12 +84,19 @@ describe('GraphQL Subscriptions E2E', () => {
 
   describe('User subscriptions', () => {
     it('should receive real-time updates for users', async () => {
-      wsClient = createWebSocketClient(testPort);
-
-      // Subscribe to user updates
-      const { events, promise } = collectSubscriptionEvents(
-        wsClient,
-        `
+      // Define expected state after all operations
+      const expectedState = new Map([
+        [1, { user_id: 1, name: 'Alice', email: 'alice@example.com', active: true }],
+        [2, { user_id: 2, name: 'Bob', email: 'bob@test.com', active: false }]
+      ]);
+      
+      const receivedOperations: string[] = [];
+      
+      // Create and start the client
+      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      
+      await clientManager.startClient({
+        query: `
           subscription {
             users {
               operation
@@ -104,8 +109,13 @@ describe('GraphQL Subscriptions E2E', () => {
             }
           }
         `,
-        3 // We expect 3 events
-      );
+        expectedState,
+        dataPath: 'users',
+        idField: 'user_id',
+        onOperation: (operation) => {
+          receivedOperations.push(operation);
+        }
+      });
 
       // Insert users
       await executeAndWait(testContext.pgClient, 
@@ -122,37 +132,10 @@ describe('GraphQL Subscriptions E2E', () => {
       );
 
       // Wait for all events
-      await promise;
+      await clientManager.waitForCompletion();
 
-      // Verify we received correct events
-      expect(events).toHaveLength(3);
-      
-      // First insert
-      expect(events[0].data.users.operation).toBe('INSERT');
-      expect(events[0].data.users.data).toEqual({
-        user_id: 1,
-        name: 'Alice',
-        email: 'alice@test.com',
-        active: true
-      });
-
-      // Second insert
-      expect(events[1].data.users.operation).toBe('INSERT');
-      expect(events[1].data.users.data).toEqual({
-        user_id: 2,
-        name: 'Bob',
-        email: 'bob@test.com',
-        active: false
-      });
-
-      // Update
-      expect(events[2].data.users.operation).toBe('UPDATE');
-      expect(events[2].data.users.data).toEqual({
-        user_id: 1,
-        name: 'Alice',
-        email: 'alice@example.com',
-        active: true
-      });
+      // Verify operations received
+      expect(receivedOperations).toEqual(['INSERT', 'INSERT', 'UPDATE']);
     }, 30000);
 
     it('should handle DELETE operations with row data', async () => {
@@ -161,41 +144,35 @@ describe('GraphQL Subscriptions E2E', () => {
         "INSERT INTO users (user_id, name, email, active) VALUES (1001, 'ToDelete', 'delete@test.com', true)"
       );
 
-      // Create new client and subscribe
-      wsClient = createWebSocketClient(testPort);
-
-      const deleteEvents: any[] = [];
-      let deleteReceived = false;
-
-      wsClient.subscribe(
-        {
-          query: `
-            subscription {
-              users {
-                operation
-                data {
-                  user_id
-                  name
-                  email
-                  active
-                }
+      // Expected: empty state after delete
+      const expectedState = new Map();
+      let deleteEventReceived: any = null;
+      
+      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      
+      await clientManager.startClient({
+        query: `
+          subscription {
+            users {
+              operation
+              data {
+                user_id
+                name
+                email
+                active
               }
             }
-          `
-        },
-        {
-          next: (value: any) => {
-            if (value.data.users.operation === 'DELETE') {
-              deleteEvents.push(value);
-              deleteReceived = true;
-            }
-          },
-          error: (error: any) => {
-            console.error('Subscription error:', error);
-          },
-          complete: () => {}
+          }
+        `,
+        expectedState,
+        dataPath: 'users',
+        idField: 'user_id',
+        onOperation: (operation, data) => {
+          if (operation === 'DELETE') {
+            deleteEventReceived = data;
+          }
         }
-      );
+      });
 
       // Wait for subscription to be ready
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -206,26 +183,25 @@ describe('GraphQL Subscriptions E2E', () => {
       );
 
       // Wait for delete event
-      await waitForCondition(() => deleteReceived);
+      await clientManager.waitForCompletion();
 
       // Verify DELETE operation includes row data (with nulls for non-key fields per Materialize behavior)
-      expect(deleteEvents).toHaveLength(1);
-      expect(deleteEvents[0].data.users.operation).toBe('DELETE');
-      expect(deleteEvents[0].data.users.data).not.toBeNull();
-      expect(deleteEvents[0].data.users.data.user_id).toBe(1001);
+      expect(deleteEventReceived).not.toBeNull();
+      expect(deleteEventReceived.user_id).toBe(1001);
       // Materialize sends NULL for non-key fields in DELETE operations
-      expect(deleteEvents[0].data.users.data.name).toBeNull();
-      expect(deleteEvents[0].data.users.data.email).toBeNull();
+      expect(deleteEventReceived.name).toBeNull();
+      expect(deleteEventReceived.email).toBeNull();
     }, 30000);
   });
 
   describe('Type handling', () => {
     it('should correctly handle all PostgreSQL types', async () => {
-      wsClient = createWebSocketClient(testPort);
-
-      const { events, promise } = collectSubscriptionEvents(
-        wsClient,
-        `
+      let receivedData: any = null;
+      
+      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      
+      await clientManager.startClient({
+        query: `
           subscription {
             all_types {
               operation
@@ -253,8 +229,24 @@ describe('GraphQL Subscriptions E2E', () => {
             }
           }
         `,
-        1
-      );
+        expectedState: new Map([[1, { 
+          id: 1, bool_val: true, smallint_val: 32767, int_val: 2147483647,
+          bigint_val: '9223372036854775807', decimal_val: 123.45, numeric_val: 678.9,
+          real_val: 1.23, double_val: 4.567890123456789, char_val: 'char      ',
+          varchar_val: 'varchar value', text_val: 'text value',
+          uuid_val: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+          date_val: '2023-12-25', time_val: '13:45:30',
+          timestamp_val: '2023-12-25 13:45:30', timestamptz_val: '2023-12-25 13:45:30+00',
+          json_val: '{"key":"value"}', jsonb_val: '{"nested":{"key":"value"}}'
+        }]]),
+        dataPath: 'all_types',
+        idField: 'id',
+        onOperation: (operation, data) => {
+          if (operation === 'INSERT') {
+            receivedData = data;
+          }
+        }
+      });
 
       // Insert with all types
       await executeAndWait(testContext.pgClient, `
@@ -273,10 +265,10 @@ describe('GraphQL Subscriptions E2E', () => {
         )
       `);
 
-      await promise;
+      await clientManager.waitForCompletion();
 
       // Verify all types are correctly represented
-      const data = events[0].data.all_types.data;
+      const data = receivedData;
       
       // Numeric types
       expect(data.id).toBe(1);
@@ -307,11 +299,12 @@ describe('GraphQL Subscriptions E2E', () => {
     }, 30000);
 
     it('should handle NULL values correctly', async () => {
-      wsClient = createWebSocketClient(testPort);
-
-      const { events, promise } = collectSubscriptionEvents(
-        wsClient,
-        `
+      let receivedData: any = null;
+      
+      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      
+      await clientManager.startClient({
+        query: `
           subscription {
             all_types {
               operation
@@ -325,39 +318,62 @@ describe('GraphQL Subscriptions E2E', () => {
             }
           }
         `,
-        1
-      );
+        expectedState: new Map([[2, {
+          id: 2,
+          bool_val: null,
+          text_val: null,
+          timestamp_val: null,
+          json_val: null
+        }]]),
+        dataPath: 'all_types',
+        idField: 'id',
+        onOperation: (operation, data) => {
+          if (operation === 'INSERT') {
+            receivedData = data;
+          }
+        }
+      });
 
       // Insert with NULL values
       await executeAndWait(testContext.pgClient,
         "INSERT INTO all_types (id, bool_val, text_val, timestamp_val, json_val) VALUES (2, NULL, NULL, NULL, NULL)"
       );
 
-      await promise;
+      await clientManager.waitForCompletion();
 
-      const data = events[0].data.all_types.data;
-      expect(data.id).toBe(2);
-      expect(data.bool_val).toBeNull();
-      expect(data.text_val).toBeNull();
-      expect(data.timestamp_val).toBeNull();
-      expect(data.json_val).toBeNull();
+      expect(receivedData.id).toBe(2);
+      expect(receivedData.bool_val).toBeNull();
+      expect(receivedData.text_val).toBeNull();
+      expect(receivedData.timestamp_val).toBeNull();
+      expect(receivedData.json_val).toBeNull();
     }, 30000);
   });
 
   describe('Multiple concurrent subscriptions', () => {
     it('should handle multiple clients subscribing to same source', async () => {
-      const client1 = createWebSocketClient(testPort);
-      const client2 = createWebSocketClient(testPort);
-
-      const { events: events1 } = collectSubscriptionEvents(
-        client1,
-        `subscription { users { operation data { user_id name } } }`
-      );
-
-      const { events: events2 } = collectSubscriptionEvents(
-        client2,
-        `subscription { users { operation data { user_id name } } }`
-      );
+      // Override manager for this test - we need 2 clients
+      if (clientManager) clientManager.dispose();
+      
+      let event1: any = null;
+      let event2: any = null;
+      
+      // Create manager with configuration for 2 clients
+      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      
+      await clientManager.startClients(2, 0, {
+        query: `subscription { users { operation data { user_id name } } }`,
+        expectedState: new Map([[100, { user_id: 100, name: 'Shared User' }]]),
+        dataPath: 'users',
+        idField: 'user_id',
+        onOperation: (operation, data) => {
+          // Track which client received the event
+          if (!event1) {
+            event1 = { operation, data };
+          } else if (!event2) {
+            event2 = { operation, data };
+          }
+        }
+      });
 
       // Wait for subscriptions to establish
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -367,17 +383,15 @@ describe('GraphQL Subscriptions E2E', () => {
         "INSERT INTO users (user_id, name) VALUES (100, 'Shared User')"
       );
 
-      // Wait for events to propagate
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait for both clients to complete
+      await clientManager.waitForCompletion();
 
       // Both clients should receive the same event
-      expect(events1).toHaveLength(1);
-      expect(events2).toHaveLength(1);
-      expect(events1[0]).toEqual(events2[0]);
-
-      // Clean up
-      client1.dispose();
-      client2.dispose();
+      expect(event1).not.toBeNull();
+      expect(event2).not.toBeNull();
+      expect(event1).toEqual(event2);
+      expect(event1.operation).toBe('INSERT');
+      expect(event1.data).toEqual({ user_id: 100, name: 'Shared User' });
     }, 30000);
   });
 
@@ -394,49 +408,43 @@ describe('GraphQL Subscriptions E2E', () => {
       // Wait for Materialize to process
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // Now create subscription
-      wsClient = createWebSocketClient(testPort);
-
-      const initialEvents: any[] = [];
-      let newEventReceived = false;
-
-      wsClient.subscribe(
-        {
-          query: `
-            subscription {
-              users {
-                operation
-                data {
-                  user_id
-                  name
-                }
+      const events: any[] = [];
+      
+      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      
+      await clientManager.startClient({
+        query: `
+          subscription {
+            users {
+              operation
+              data {
+                user_id
+                name
               }
             }
-          `
-        },
-        {
-          next: (value: any) => {
-            if (value.data.users.data.user_id <= 2) {
-              initialEvents.push(value);
-            } else {
-              newEventReceived = true;
-            }
-          },
-          error: (error: any) => {
-            console.error('Subscription error:', error);
-          },
-          complete: () => {}
+          }
+        `,
+        expectedState: new Map([
+          [1, { user_id: 1, name: 'Existing1' }],
+          [2, { user_id: 2, name: 'Existing2' }],
+          [3, { user_id: 3, name: 'NewUser' }]
+        ]),
+        dataPath: 'users',
+        idField: 'user_id',
+        onOperation: (operation, data) => {
+          events.push({ operation, data });
         }
-      );
+      });
 
-      // Wait for initial snapshot
-      await waitForCondition(() => initialEvents.length >= 2, 5000);
+      // Wait for initial snapshot (should get 2 events immediately)
+      await waitForCondition(() => events.length >= 2, 5000);
 
       // Verify we received the existing data as INSERT events
+      const initialEvents = events.slice(0, 2);
       expect(initialEvents).toHaveLength(2);
-      expect(initialEvents.every(e => e.data.users.operation === 'INSERT')).toBe(true);
+      expect(initialEvents.every(e => e.operation === 'INSERT')).toBe(true);
       
-      const userIds = initialEvents.map(e => e.data.users.data.user_id).sort();
+      const userIds = initialEvents.map(e => e.data.user_id).sort();
       expect(userIds).toEqual([1, 2]);
 
       // Insert new data
@@ -444,8 +452,13 @@ describe('GraphQL Subscriptions E2E', () => {
         "INSERT INTO users (user_id, name) VALUES (3, 'NewUser')"
       );
 
-      // Wait for new event
-      await waitForCondition(() => newEventReceived);
+      // Wait for all events
+      await clientManager.waitForCompletion();
+      
+      // Verify we got the new event
+      expect(events).toHaveLength(3);
+      expect(events[2].data.user_id).toBe(3);
+      expect(events[2].data.name).toBe('NewUser');
     }, 30000);
   });
 });

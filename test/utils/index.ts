@@ -1,3 +1,8 @@
+// Test client utilities
+export { TestClient, TestClientOptions } from './test-client';
+export { TestClientManager } from './test-client-manager';
+
+// Test infrastructure utilities
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -5,11 +10,11 @@ import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { Client } from 'pg';
 import { createClient, Client as WSClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
-import { AppModule } from '../src/app.module';
-import appConfig from '../src/config/app.config';
-import databaseConfig from '../src/config/database.config';
-import graphqlConfig from '../src/config/graphql.config';
-import sourcesConfig from '../src/config/sources.config';
+import { AppModule } from '../../src/app.module';
+import appConfig from '../../src/config/app.config';
+import databaseConfig from '../../src/config/database.config';
+import graphqlConfig from '../../src/config/graphql.config';
+import sourcesConfig from '../../src/config/sources.config';
 
 /**
  * Test configuration options
@@ -160,15 +165,6 @@ export async function cleanupTestEnvironment(context: TestContext): Promise<void
   }
 }
 
-/**
- * Create a GraphQL WebSocket client
- */
-export function createWebSocketClient(port: number): WSClient {
-  return createClient({
-    url: `ws://localhost:${port}/graphql`,
-    webSocketImpl: WebSocket as any,
-  });
-}
 
 /**
  * Wait for condition with timeout
@@ -204,64 +200,22 @@ export async function executeAndWait(
 }
 
 /**
- * Type-safe subscription result
+ * Compare two state maps for equality
  */
-export interface SubscriptionEvent<T> {
-  data: T;
-}
-
-/**
- * Test data builder for predictable test data
- */
-export class TestDataBuilder {
-  static user(overrides?: Partial<any>): any {
-    return {
-      user_id: 1,
-      name: 'Test User',
-      email: 'test@example.com',
-      active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      metadata: {},
-      ...overrides
-    };
+export function areStatesEqual<T>(
+  currentState: Map<string | number, T>,
+  expectedState: Map<string | number, T>
+): boolean {
+  if (currentState.size !== expectedState.size) {
+    return false;
   }
-}
-
-/**
- * Collect events from a GraphQL subscription
- */
-export function collectSubscriptionEvents(
-  client: WSClient,
-  query: string,
-  eventLimit?: number
-): { events: any[]; promise: Promise<void>; unsubscribe: () => void } {
-  const events: any[] = [];
-  let resolver: () => void;
-  let rejecter: (error: any) => void;
   
-  const promise = new Promise<void>((resolve, reject) => {
-    resolver = resolve;
-    rejecter = reject;
-  });
-  
-  const unsubscribe = client.subscribe(
-    { query },
-    {
-      next: (data) => {
-        events.push(data);
-        if (eventLimit && events.length >= eventLimit) {
-          resolver();
-        }
-      },
-      error: (error) => {
-        rejecter(error);
-      },
-      complete: () => {
-        resolver();
-      }
+  for (const [id, expectedData] of expectedState) {
+    const currentData = currentState.get(id);
+    if (!currentData || JSON.stringify(currentData) !== JSON.stringify(expectedData)) {
+      return false;
     }
-  );
+  }
   
-  return { events, promise, unsubscribe };
+  return true;
 }
