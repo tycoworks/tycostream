@@ -2,6 +2,9 @@
 export { TestClient, TestClientOptions } from './test-client';
 export { TestClientManager } from './test-client-manager';
 
+// Test environment
+export { TestEnvironment } from './test-environment';
+
 // Test infrastructure utilities
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';

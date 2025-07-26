@@ -1,28 +1,24 @@
 import * as path from 'path';
 import {
-  TestContext,
-  bootstrapTestEnvironment,
-  cleanupTestEnvironment,
-  executeSqlAndWait,
-  waitUntil,
+  TestEnvironment,
   TestClientManager
 } from './utils';
 
 describe('tycostream E2E', () => {
-  let testContext: TestContext;
+  let testEnv: TestEnvironment;
   let clientManager: TestClientManager;
   const testPort = 4001;
   const DEFAULT_LIVENESS_TIMEOUT = 30000; // 30 seconds
 
   beforeAll(async () => {
     // Bootstrap complete test environment
-    testContext = await bootstrapTestEnvironment({
-      appPort: testPort,
-      schemaPath: path.join(__dirname, 'tycostream-schema.yaml')
-    });
+    testEnv = await TestEnvironment.create(
+      testPort,
+      path.join(__dirname, 'tycostream-schema.yaml')
+    );
 
     // Create test tables matching our schema
-    await testContext.pgClient.query(`
+    await testEnv.executeSql(`
       CREATE TABLE users (
         user_id INTEGER,
         name TEXT,
@@ -34,7 +30,7 @@ describe('tycostream E2E', () => {
       )
     `);
 
-    await testContext.pgClient.query(`
+    await testEnv.executeSql(`
       CREATE TABLE all_types (
         id INTEGER,
         bool_val BOOLEAN,
@@ -60,8 +56,7 @@ describe('tycostream E2E', () => {
   }, 120000);
 
   afterAll(async () => {
-    // Clean up test environment
-    await cleanupTestEnvironment(testContext);
+    await testEnv.stop();
   });
 
   beforeEach(() => {
@@ -75,11 +70,8 @@ describe('tycostream E2E', () => {
     }
     
     // Clean up test data
-    await testContext.pgClient.query('DELETE FROM users');
-    await testContext.pgClient.query('DELETE FROM all_types');
-    
-    // Wait for Materialize to process deletions
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await testEnv.executeSql('DELETE FROM users');
+    await testEnv.executeSql('DELETE FROM all_types');
   });
 
   describe('User subscriptions', () => {
@@ -93,7 +85,7 @@ describe('tycostream E2E', () => {
       const receivedOperations: string[] = [];
       
       // Create and start the client
-      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
       
       await clientManager.startClient({
         query: `
@@ -118,16 +110,16 @@ describe('tycostream E2E', () => {
       });
 
       // Insert users
-      await executeSqlAndWait(testContext.pgClient, 
+      await testEnv.executeSql(
         "INSERT INTO users (user_id, name, email, active) VALUES (1, 'Alice', 'alice@test.com', true)"
       );
 
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "INSERT INTO users (user_id, name, email, active) VALUES (2, 'Bob', 'bob@test.com', false)"
       );
 
       // Update a user
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "UPDATE users SET email = 'alice@example.com' WHERE user_id = 1"
       );
 
@@ -140,7 +132,7 @@ describe('tycostream E2E', () => {
 
     it('should handle DELETE operations with row data', async () => {
       // Insert initial data
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "INSERT INTO users (user_id, name, email, active) VALUES (1001, 'ToDelete', 'delete@test.com', true)"
       );
 
@@ -148,7 +140,7 @@ describe('tycostream E2E', () => {
       const expectedState = new Map();
       let deleteEventReceived: any = null;
       
-      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
       
       await clientManager.startClient({
         query: `
@@ -178,7 +170,7 @@ describe('tycostream E2E', () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Delete the user
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "DELETE FROM users WHERE user_id = 1001"
       );
 
@@ -198,7 +190,7 @@ describe('tycostream E2E', () => {
     it('should correctly handle all PostgreSQL types', async () => {
       let receivedData: any = null;
       
-      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
       
       await clientManager.startClient({
         query: `
@@ -249,7 +241,7 @@ describe('tycostream E2E', () => {
       });
 
       // Insert with all types
-      await executeSqlAndWait(testContext.pgClient, `
+      await testEnv.executeSql(`
         INSERT INTO all_types (
           id, bool_val, smallint_val, int_val, bigint_val,
           decimal_val, numeric_val, real_val, double_val,
@@ -301,7 +293,7 @@ describe('tycostream E2E', () => {
     it('should handle NULL values correctly', async () => {
       let receivedData: any = null;
       
-      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
       
       await clientManager.startClient({
         query: `
@@ -335,7 +327,7 @@ describe('tycostream E2E', () => {
       });
 
       // Insert with NULL values
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "INSERT INTO all_types (id, bool_val, text_val, timestamp_val, json_val) VALUES (2, NULL, NULL, NULL, NULL)"
       );
 
@@ -358,7 +350,7 @@ describe('tycostream E2E', () => {
       let event2: any = null;
       
       // Create manager with configuration for 2 clients
-      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
       
       await clientManager.startClients(2, 0, {
         query: `subscription { users { operation data { user_id name } } }`,
@@ -379,7 +371,7 @@ describe('tycostream E2E', () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Insert data
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "INSERT INTO users (user_id, name) VALUES (100, 'Shared User')"
       );
 
@@ -398,10 +390,10 @@ describe('tycostream E2E', () => {
   describe('Late joiner functionality', () => {
     it('should receive current state when subscribing after data exists', async () => {
       // Insert data before creating subscription
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "INSERT INTO users (user_id, name, email, active) VALUES (1, 'Existing1', 'existing1@test.com', true)"
       );
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "INSERT INTO users (user_id, name, email, active) VALUES (2, 'Existing2', 'existing2@test.com', false)"
       );
 
@@ -410,7 +402,7 @@ describe('tycostream E2E', () => {
 
       const events: any[] = [];
       
-      clientManager = new TestClientManager(testPort, DEFAULT_LIVENESS_TIMEOUT);
+      clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
       
       await clientManager.startClient({
         query: `
@@ -437,7 +429,7 @@ describe('tycostream E2E', () => {
       });
 
       // Wait for initial snapshot (should get 2 events immediately)
-      await waitUntil(() => events.length >= 2, 5000);
+      await testEnv.waitUntil(() => events.length >= 2, 5000);
 
       // Verify we received the existing data as INSERT events
       const initialEvents = events.slice(0, 2);
@@ -448,7 +440,7 @@ describe('tycostream E2E', () => {
       expect(userIds).toEqual([1, 2]);
 
       // Insert new data
-      await executeSqlAndWait(testContext.pgClient,
+      await testEnv.executeSql(
         "INSERT INTO users (user_id, name) VALUES (3, 'NewUser')"
       );
 
