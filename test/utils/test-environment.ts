@@ -24,7 +24,7 @@ export class TestEnvironment {
   private static readonly DATABASE_VERSION = 'materialize/materialized:v0.124.0';
   private static readonly DATABASE_WORKERS = '1';
 
-  constructor(appPort: number, schemaPath: string) {
+  constructor(appPort: number, schemaPath: string, private databaseWorkers?: string) {
     this.appPort = appPort;
     this.schemaPath = schemaPath;
   }
@@ -108,8 +108,8 @@ export class TestEnvironment {
   /**
    * Static factory method to create and setup a test environment
    */
-  static async create(appPort: number, schemaPath: string): Promise<TestEnvironment> {
-    const env = new TestEnvironment(appPort, schemaPath);
+  static async create(appPort: number, schemaPath: string, databaseWorkers?: string): Promise<TestEnvironment> {
+    const env = new TestEnvironment(appPort, schemaPath, databaseWorkers);
     await env.setup();
     return env;
   }
@@ -118,10 +118,11 @@ export class TestEnvironment {
    * Create and start a database container
    */
   private async createDatabaseContainer(): Promise<StartedTestContainer> {
+    const workers = this.databaseWorkers || TestEnvironment.DATABASE_WORKERS;
     return await new GenericContainer(TestEnvironment.DATABASE_VERSION)
       .withExposedPorts(6875)
       .withEnvironment({
-        MZ_WORKERS: TestEnvironment.DATABASE_WORKERS
+        MZ_WORKERS: workers
       })
       .withStartupTimeout(120000)
       .start();

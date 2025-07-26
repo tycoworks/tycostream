@@ -1,8 +1,6 @@
 import * as path from 'path';
 import {
-  TestContext,
-  bootstrapTestEnvironment,
-  cleanupTestEnvironment,
+  TestEnvironment,
   TestClientManager
 } from './utils';
 
@@ -11,58 +9,8 @@ interface StressTestData {
   value: number;
 }
 
-interface StressTestUpdate {
-  operation: 'INSERT' | 'UPDATE' | 'DELETE';
-  data: StressTestData | null;
-}
-
-// Helper function to generate test operations
-function generateTestOperations(numRows: number): {
-  operations: Array<{ type: 'INSERT' | 'UPDATE' | 'DELETE', id: number, value?: number }>,
-  expectedState: Map<number, StressTestData>
-} {
-  const expectedState = new Map<number, StressTestData>();
-  const operations: Array<{ type: 'INSERT' | 'UPDATE' | 'DELETE', id: number, value?: number }> = [];
-  
-  // Use deterministic random for reproducible results
-  let seed = 12345;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  
-  for (let i = 1; i <= numRows; i++) {
-    // INSERT
-    const insertValue = i * 1.5;
-    operations.push({ type: 'INSERT', id: i, value: insertValue });
-    expectedState.set(i, { id: i, value: insertValue });
-    
-    // UPDATE (only update existing rows)
-    if (i > 10) {
-      const updateId = Math.floor(random() * (i - 1)) + 1;
-      // Only update if not previously deleted
-      if (expectedState.has(updateId)) {
-        const updateValue = updateId * 2.5;
-        operations.push({ type: 'UPDATE', id: updateId, value: updateValue });
-        expectedState.set(updateId, { id: updateId, value: updateValue });
-      }
-    }
-    
-    // DELETE (only delete older rows)
-    if (i > 20 && i % 10 === 0) {
-      const deleteId = Math.floor(random() * (i - 10)) + 1;
-      if (expectedState.has(deleteId)) {
-        operations.push({ type: 'DELETE', id: deleteId });
-        expectedState.delete(deleteId);
-      }
-    }
-  }
-  
-  return { operations, expectedState };
-}
-
 describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
-  let testContext: TestContext;
+  let testEnv: TestEnvironment;
   const appPort = 4100; // Different port to avoid conflicts
 
   // Test configuration
@@ -76,14 +24,14 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     console.log(`Starting stress test with ${NUM_ROWS} rows and ${NUM_CLIENTS} concurrent clients`);
     
     // Bootstrap test environment with more workers for stress test
-    testContext = await bootstrapTestEnvironment({
+    testEnv = await TestEnvironment.create(
       appPort,
-      schemaPath: path.join(__dirname, 'stress-test-schema.yaml'),
-      materializeWorkers: '4' // More workers for stress test
-    });
+      path.join(__dirname, 'stress-test-schema.yaml'),
+      '4' // More workers for better stress test performance
+    );
     
     // Create test table with single numeric column
-    await testContext.pgClient.query(`
+    await testEnv.executeSql(`
       CREATE TABLE IF NOT EXISTS stress_test (
         id INTEGER NOT NULL,
         value NUMERIC NOT NULL
@@ -92,13 +40,12 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   }, 300000); // 5 minute timeout for beforeAll
 
   afterAll(async () => {
-    await cleanupTestEnvironment(testContext);
+    await testEnv.stop();
   });
 
   it('should handle concurrent clients with mixed operations', async () => {
     // Clear any existing data first
-    await testContext.pgClient.query('DELETE FROM stress_test');
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await testEnv.executeSql('DELETE FROM stress_test', [], 500);
     
     // Generate test operations
     console.log(`Generating ${NUM_ROWS} rows worth of operations...`);
@@ -108,7 +55,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     console.log(`Expected final state: ${expectedState.size} rows, ${operationCount} total operations`);
     
     // Create client manager
-    const clientManager = new TestClientManager(appPort, CLIENT_LIVENESS_TIMEOUT_MS);
+    const clientManager = new TestClientManager(testEnv.port, CLIENT_LIVENESS_TIMEOUT_MS);
     
     try {
       // Execute the pre-calculated operations
@@ -117,16 +64,15 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         for (const op of operations) {
           switch (op.type) {
             case 'INSERT':
-              await testContext.pgClient.query('INSERT INTO stress_test (id, value) VALUES ($1, $2)', [op.id, op.value]);
+              await testEnv.executeSql('INSERT INTO stress_test (id, value) VALUES ($1, $2)', [op.id, op.value], INSERT_DELAY_MS);
               break;
             case 'UPDATE':
-              await testContext.pgClient.query('UPDATE stress_test SET value = $1 WHERE id = $2', [op.value, op.id]);
+              await testEnv.executeSql('UPDATE stress_test SET value = $1 WHERE id = $2', [op.value, op.id], INSERT_DELAY_MS);
               break;
             case 'DELETE':
-              await testContext.pgClient.query('DELETE FROM stress_test WHERE id = $1', [op.id]);
+              await testEnv.executeSql('DELETE FROM stress_test WHERE id = $1', [op.id], INSERT_DELAY_MS);
               break;
           }
-          await new Promise(resolve => setTimeout(resolve, INSERT_DELAY_MS));
         }
         console.log('All database operations completed');
       })();
@@ -190,3 +136,48 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     }
   }, TEST_TIMEOUT_MS);
 });
+
+// Helper function to generate test operations
+function generateTestOperations(numRows: number): {
+  operations: Array<{ type: 'INSERT' | 'UPDATE' | 'DELETE', id: number, value?: number }>,
+  expectedState: Map<number, StressTestData>
+} {
+  const expectedState = new Map<number, StressTestData>();
+  const operations: Array<{ type: 'INSERT' | 'UPDATE' | 'DELETE', id: number, value?: number }> = [];
+  
+  // Use deterministic random for reproducible results
+  let seed = 12345;
+  const random = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+  
+  for (let i = 1; i <= numRows; i++) {
+    // INSERT
+    const insertValue = i * 1.5;
+    operations.push({ type: 'INSERT', id: i, value: insertValue });
+    expectedState.set(i, { id: i, value: insertValue });
+    
+    // UPDATE (only update existing rows)
+    if (i > 10) {
+      const updateId = Math.floor(random() * (i - 1)) + 1;
+      // Only update if not previously deleted
+      if (expectedState.has(updateId)) {
+        const updateValue = updateId * 2.5;
+        operations.push({ type: 'UPDATE', id: updateId, value: updateValue });
+        expectedState.set(updateId, { id: updateId, value: updateValue });
+      }
+    }
+    
+    // DELETE (only delete older rows)
+    if (i > 20 && i % 10 === 0) {
+      const deleteId = Math.floor(random() * (i - 10)) + 1;
+      if (expectedState.has(deleteId)) {
+        operations.push({ type: 'DELETE', id: deleteId });
+        expectedState.delete(deleteId);
+      }
+    }
+  }
+  
+  return { operations, expectedState };
+}

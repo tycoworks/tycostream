@@ -97,11 +97,9 @@ The test schema includes two tables to ensure comprehensive type coverage:
 ## Test Infrastructure
 
 The test suite uses a custom test infrastructure with:
+- **TestEnvironment**: Manages test infrastructure (database container, NestJS app, SQL execution)
 - **TestClient**: Manages individual WebSocket subscriptions with state tracking
-- **TestClientManager**: Orchestrates multiple test clients with lifecycle management
-- Built-in state validation against expected final state
-- Automatic stall detection and recovery
-- Support for late joiners with proper snapshot handling
+- **TestClientManager**: Manages multiple WebSocket test clients concurrently
 
 ## Requirements
 
