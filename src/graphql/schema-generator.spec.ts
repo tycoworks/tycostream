@@ -107,7 +107,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('data: String'); // JSON is treated as String
   });
 
-  it('should handle unknown PostgreSQL types', () => {
+  it('should throw error for unknown PostgreSQL types', () => {
     const sources = new Map<string, SourceDefinition>([
       ['custom', {
         name: 'custom',
@@ -119,9 +119,7 @@ describe('generateSchema', () => {
       }],
     ]);
     
-    const schema = generateSchema(sources);
-    
-    // Should default to String for unknown types
-    expect(schema).toContain('custom_field: String');
+    // Should fail fast for unknown types
+    expect(() => generateSchema(sources)).toThrow('Unsupported PostgreSQL type: unknown_type');
   });
 });

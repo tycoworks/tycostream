@@ -46,7 +46,7 @@ const DEFAULT_MATERIALIZE_WORKERS = '1';
 /**
  * Create and start a Materialize container for testing
  */
-export async function createMaterializeContainer(
+async function createMaterializeContainer(
   version: string = DEFAULT_MATERIALIZE_VERSION,
   workers: string = DEFAULT_MATERIALIZE_WORKERS
 ): Promise<StartedTestContainer> {
@@ -62,7 +62,7 @@ export async function createMaterializeContainer(
 /**
  * Create a PostgreSQL client connected to Materialize
  */
-export async function createMaterializeClient(port: number): Promise<Client> {
+async function createMaterializeClient(port: number): Promise<Client> {
   const client = new Client({
     host: 'localhost',
     port,
@@ -77,7 +77,7 @@ export async function createMaterializeClient(port: number): Promise<Client> {
 /**
  * Set up environment variables for test
  */
-export function setupTestEnvironment(materializePort: number, appPort: number, schemaPath: string): void {
+function setupTestEnvironment(materializePort: number, appPort: number, schemaPath: string): void {
   process.env.DATABASE_HOST = 'localhost';
   process.env.DATABASE_PORT = materializePort.toString();
   process.env.DATABASE_USER = 'materialize';
@@ -92,7 +92,7 @@ export function setupTestEnvironment(materializePort: number, appPort: number, s
 /**
  * Create and start NestJS application for testing
  */
-export async function createTestApp(config?: { extraProviders?: any[] }): Promise<INestApplication> {
+async function createTestApp(config?: { extraProviders?: any[] }): Promise<INestApplication> {
   const moduleFixture: TestingModule = await Test.createTestingModule({
     imports: [AppModule],
   })
@@ -169,7 +169,7 @@ export async function cleanupTestEnvironment(context: TestContext): Promise<void
 /**
  * Wait for condition with timeout
  */
-export async function waitForCondition(
+export async function waitUntil(
   condition: () => boolean | Promise<boolean>,
   timeoutMs: number = 5000,
   intervalMs: number = 100
@@ -187,9 +187,9 @@ export async function waitForCondition(
 }
 
 /**
- * Execute query and wait for Materialize to process
+ * Execute SQL query and wait for Materialize to process
  */
-export async function executeAndWait(
+export async function executeSqlAndWait(
   pgClient: Client,
   query: string,
   params?: any[],
@@ -199,23 +199,3 @@ export async function executeAndWait(
   await new Promise(resolve => setTimeout(resolve, waitMs));
 }
 
-/**
- * Compare two state maps for equality
- */
-export function areStatesEqual<T>(
-  currentState: Map<string | number, T>,
-  expectedState: Map<string | number, T>
-): boolean {
-  if (currentState.size !== expectedState.size) {
-    return false;
-  }
-  
-  for (const [id, expectedData] of expectedState) {
-    const currentData = currentState.get(id);
-    if (!currentData || JSON.stringify(currentData) !== JSON.stringify(expectedData)) {
-      return false;
-    }
-  }
-  
-  return true;
-}

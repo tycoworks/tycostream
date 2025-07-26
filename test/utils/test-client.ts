@@ -1,6 +1,5 @@
 import { createClient, Client as WSClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
-import { areStatesEqual } from './';
 
 export interface TestClientOptions<TData = any> {
   clientId: string; // Required - TestClientManager will populate with randomUUID
@@ -115,7 +114,7 @@ export class TestClient<TData = any> {
   }
   
   private checkIfFinished() {
-    const isFinished = areStatesEqual(this.currentState, this.options.expectedState);
+    const isFinished = this.areStatesEqual(this.currentState, this.options.expectedState);
       
     if (isFinished) {
       this.finished = true;
@@ -189,5 +188,26 @@ export class TestClient<TData = any> {
       url: `ws://localhost:${port}/graphql`,
       webSocketImpl: WebSocket as any,
     });
+  }
+
+  /**
+   * Compare two state maps for equality
+   */
+  private areStatesEqual<T>(
+    currentState: Map<string | number, T>,
+    expectedState: Map<string | number, T>
+  ): boolean {
+    if (currentState.size !== expectedState.size) {
+      return false;
+    }
+    
+    for (const [id, expectedData] of expectedState) {
+      const currentData = currentState.get(id);
+      if (!currentData || JSON.stringify(currentData) !== JSON.stringify(expectedData)) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 }
