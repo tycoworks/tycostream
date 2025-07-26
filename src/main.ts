@@ -51,7 +51,8 @@ async function bootstrap() {
     logger.log(`GraphQL server running at http://localhost:${graphqlConfig.port}/graphql`);
     
   } catch (error) {
-    logger.error('Failed to start tycostream', error);
+    logger.error('Failed to start tycostream');
+    console.error(error); // Log full error to console before exit
     process.exit(1);
   }
 }

@@ -62,7 +62,7 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
       logger.error(`Schema file not found at ${schemaPath}`);
       throw new Error(`Schema file not found: ${schemaPath}. Please ensure the file exists or set SCHEMA_PATH environment variable.`);
     } else {
-      logger.error('Failed to load source definitions', error);
+      logger.error('Failed to load source definitions');
       throw error;
     }
   }

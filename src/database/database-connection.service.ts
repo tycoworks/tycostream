@@ -50,7 +50,7 @@ export class DatabaseConnectionService implements OnModuleDestroy {
       this.logger.log('Connected to streaming database');
       return client;
     } catch (error) {
-      this.logger.error('Failed to connect to streaming database', error);
+      this.logger.error('Failed to connect to streaming database');
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Database connection failed: ${errorMessage}`);
     }
@@ -65,7 +65,7 @@ export class DatabaseConnectionService implements OnModuleDestroy {
       this.clients.delete(client);
       this.logger.log('Database connection closed');
     } catch (error) {
-      this.logger.error('Error during disconnect', error);
+      this.logger.error('Error during disconnect');
       // Still remove from set even if disconnect fails
       this.clients.delete(client);
       throw error;
@@ -80,7 +80,7 @@ export class DatabaseConnectionService implements OnModuleDestroy {
     
     const disconnectPromises = Array.from(this.clients).map(client =>
       this.disconnect(client).catch(error => 
-        this.logger.error('Error closing connection during shutdown', error)
+        this.logger.error('Error closing connection during shutdown')
       )
     );
     

@@ -49,7 +49,7 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     // Start streaming if not already started
     if (!this.databaseSubscriber.streaming && !this.isShuttingDown) {
       this.startStreaming().catch(error => {
-        this.logger.error(`Failed to start streaming for ${this.sourceName}`, error);
+        this.logger.error(`Failed to start streaming for ${this.sourceName}`);
         // Database connection errors are unrecoverable - trigger application shutdown
         this.handleFatalError(error);
       });
@@ -173,8 +173,8 @@ export class DatabaseStreamingService implements OnModuleDestroy {
           this.processUpdate(row, timestamp, isDelete);
         },
         (error: Error) => {
-          // Propagate runtime database errors to all subscribers
-          this.logger.error(`Database stream error for ${this.sourceName}:`, error);
+          // Log runtime database errors
+          this.logger.error(`Database stream error for ${this.sourceName}`);
           
           // If we're shutting down, don't trigger fail-fast
           if (!this.isShuttingDown) {
@@ -232,11 +232,11 @@ export class DatabaseStreamingService implements OnModuleDestroy {
    * Handle fatal errors by triggering graceful shutdown
    */
   private handleFatalError(error: Error): void {
-    this.logger.error(`Fatal error in database streaming service: ${error.message}`);
+    this.logger.warn(`Triggering application shutdown due to database error`);
     // In NestJS, we should throw an unhandled error to trigger shutdown
     // The error will bubble up and cause the application to exit
     setTimeout(() => {
-      throw new Error(`Fatal database error for source ${this.sourceName}: ${error.message}`);
+      throw error; // Throw the original error to preserve stack trace
     }, 0);
   }
 }

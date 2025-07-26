@@ -21,7 +21,7 @@ export function validateConfig<T extends object>(
       .map(error => Object.values(error.constraints || {}).join(', '))
       .join('; ');
     
-    logger.error(`Configuration validation failed for ${envVariablesKey}: ${errorMessages}`);
+    logger.error(`Configuration validation failed for ${envVariablesKey}`);
     throw new Error(`Invalid configuration for ${envVariablesKey}: ${errorMessages}`);
   }
 

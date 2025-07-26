@@ -66,7 +66,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
       });
 
       copyStream.on('error', (error) => {
-        this.logger.error('Stream error:', error);
+        this.logger.error('Stream error');
         this.isStreaming = false;
         
         // Notify parent of runtime error
@@ -115,7 +115,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
       try {
         await this.connectionService.disconnect(this.client);
       } catch (error) {
-        this.logger.error('Error disconnecting client', error);
+        this.logger.error('Error disconnecting client');
       }
     }
   }
