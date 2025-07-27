@@ -75,7 +75,7 @@ cp schema.example.yaml schema.yaml
 **Option A: Using npm**
 ```bash
 npm install
-npm run start:dev
+npm start
 ```
 
 **Option B: Using Docker**
@@ -91,14 +91,21 @@ If Materialize runs on your host machine, update `.env`:
 
 ## Testing
 
-Enable the built-in GraphQL Explorer UI:
-```bash
-GRAPHQL_UI=true npm run start:dev
-```
+Enable the built-in GraphQL Explorer UI by setting `GRAPHQL_UI=true` in your `.env` file.
 Then visit http://localhost:4000/graphql to test queries and subscriptions interactively.
 
 ---
 
 ## Demo
 
-See a complete example implementation at https://github.com/tycoworks/tycostream-demo
+Run the included live demo:
+```bash
+npm run demo
+```
+
+This starts a complete example with:
+- Live market data streaming  
+- Real-time position tracking
+- AG-Grid frontend with WebSocket subscriptions
+
+Visit http://localhost:5173 to see the demo UI.

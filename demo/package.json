@@ -1,0 +1,33 @@
+{
+  "name": "tycostream-demo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "live": "ts-node live-environment.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tycoworks/tycostream-demo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/tycoworks/tycostream-demo/issues"
+  },
+  "homepage": "https://github.com/tycoworks/tycostream-demo#readme",
+  "devDependencies": {
+    "vite": "^7.0.0"
+  },
+  "dependencies": {
+    "@apollo/client": "^3.13.8",
+    "ag-grid-community": "^34.0.0",
+    "graphql": "^16.11.0",
+    "graphql-ws": "^6.0.5"
+  }
+}
