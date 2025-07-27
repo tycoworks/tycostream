@@ -36,7 +36,11 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
    */
   createSubscribeQuery(): string {
     const keyColumn = this.sourceDefinition.primaryKeyField;
-    const query = `SUBSCRIBE TO ${this.sourceName} ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)`;
+    // Get all column names from the source definition
+    const columns = this.sourceDefinition.fields.map(f => f.name).join(', ');
+    
+    // Use SELECT to explicitly specify columns from our YAML definition
+    const query = `SUBSCRIBE (SELECT ${columns} FROM ${this.sourceName}) ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)`;
     this.logger.debug(`Created subscribe query: ${query}`);
     return query;
   }

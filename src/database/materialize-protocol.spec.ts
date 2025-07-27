@@ -53,7 +53,7 @@ describe('MaterializeProtocolHandler', () => {
     it('should create correct SUBSCRIBE query', () => {
       const query = handler.createSubscribeQuery();
       
-      expect(query).toBe('SUBSCRIBE TO test_view ENVELOPE UPSERT (KEY (id)) WITH (SNAPSHOT)');
+      expect(query).toBe('SUBSCRIBE (SELECT id, name, value FROM test_view) ENVELOPE UPSERT (KEY (id)) WITH (SNAPSHOT)');
     });
 
     it('should use the correct primary key field', () => {
