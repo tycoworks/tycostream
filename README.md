@@ -109,3 +109,5 @@ This starts a complete example with:
 - AG-Grid frontend with WebSocket subscriptions
 
 Visit http://localhost:5173 to see the demo UI.
+
+https://github.com/tycoworks/tycostream/assets/1587467/3c9b8d43-b2f4-4e8b-9c8d-1f2b8d43b2f4
