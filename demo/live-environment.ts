@@ -5,7 +5,7 @@ import { TestEnvironment } from '../test/utils';
 const TEST_PORT = 4000;
 const MARKET_DATA_INTERVAL_MS = 100;
 const TRADE_INTERVAL_MS = 100;
-const PRICE_CHANGE_PERCENT = 0.5; // Maximum price change percentage
+const MAX_PRICE_CHANGE = 0.1; // Maximum absolute price change (e.g. 0.1 = $0.10)
 const MAX_TRADE_QUANTITY = 10000;
 const TRADE_BIAS = 0.5; // 0.5 = equal buy/sell probability
 
@@ -88,9 +88,9 @@ async function insertMarketData(testEnv: TestEnvironment) {
   const instrumentId = Math.floor(Math.random() * 3) + 1;
   const currentPrice = latestPrices.get(instrumentId) || 100;
   
-  // Generate random price change within +/- PRICE_CHANGE_PERCENT
-  const priceChange = (Math.random() - 0.5) * 2 * (PRICE_CHANGE_PERCENT / 100);
-  const newPrice = +(currentPrice * (1 + priceChange)).toFixed(2);
+  // Generate random price change between -MAX_PRICE_CHANGE and +MAX_PRICE_CHANGE
+  const priceChange = (Math.random() - 0.5) * 2 * MAX_PRICE_CHANGE;
+  const newPrice = +(currentPrice + priceChange).toFixed(2);
   
   latestPrices.set(instrumentId, newPrice);
   
