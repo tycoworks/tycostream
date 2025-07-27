@@ -1,0 +1,11 @@
+sources:
+  live_pnl:
+    primary_key: instrument_id
+    columns:
+      instrument_id: integer
+      symbol: text
+      net_position: bigint
+      last_price: double precision
+      market_value: double precision
+      realized_pnl: double precision
+      unrealized_pnl: double precision

@@ -3,13 +3,97 @@ import { TestEnvironment } from '../test/utils';
 
 // Configuration
 const TEST_PORT = 4000;
-const MARKET_DATA_INTERVAL_MS = 100;
-const TRADE_INTERVAL_MS = 100;
+const MARKET_DATA_INTERVAL_MS = 50;
+const TRADE_INTERVAL_MS = 3000;
 const MAX_PRICE_CHANGE = 0.1; // Maximum absolute price change (e.g. 0.1 = $0.10)
+const MIN_TRADE_QUANTITY = 2000;
 const MAX_TRADE_QUANTITY = 10000;
 const TRADE_BIAS = 0.5; // 0.5 = equal buy/sell probability
 
-async function setupDatabase(testEnv: TestEnvironment) {
+// Instrument data: id -> { symbol, name, price, initialPosition }
+const instruments = new Map([
+  [1, { symbol: 'AAPL', name: 'Apple Inc.', price: 170.5, initialPosition: 1000 }],
+  [2, { symbol: 'GOOG', name: 'Alphabet Inc.', price: 125.9, initialPosition: -500 }],
+  [3, { symbol: 'MSFT', name: 'Microsoft Corporation', price: 310.2, initialPosition: 750 }]
+]);
+
+// Global test environment instance
+let testEnv: TestEnvironment;
+
+// ID counters
+let marketDataId = 1;
+let tradeId = 1;
+
+// Run if called directly
+if (require.main === module) {
+  runLiveEnvironment().catch(console.error);
+}
+
+// Functions
+async function runLiveEnvironment() {
+  console.log('Starting live tycostream environment...');
+  console.log(`GraphQL endpoint will be available at http://localhost:${TEST_PORT}/graphql`);
+  
+  // Create test environment
+  testEnv = await TestEnvironment.create(
+    TEST_PORT,
+    path.join(__dirname, 'schema.yaml')
+  );
+  
+  // Setup database
+  await setupDatabase();
+  
+  // Insert initial data for all instruments
+  await insertInitialData();
+  
+  console.log(`
+Live environment running!
+- GraphQL: http://localhost:${TEST_PORT}/graphql
+- Market data updates every ${MARKET_DATA_INTERVAL_MS}ms
+- Trade updates every ${TRADE_INTERVAL_MS}ms
+
+Press Ctrl+C to stop
+`);
+  
+  // Start market data updates
+  const marketDataInterval = setInterval(async () => {
+    try {
+      const instrumentId = Math.floor(Math.random() * instruments.size) + 1;
+      await insertMarketData(instrumentId);
+    } catch (error) {
+      console.error('Error inserting market data:', error);
+    }
+  }, MARKET_DATA_INTERVAL_MS);
+  
+  // Start trade updates
+  const tradeInterval = setInterval(async () => {
+    try {
+      const instrumentId = Math.floor(Math.random() * instruments.size) + 1;
+      const quantity = Math.floor(Math.random() * (MAX_TRADE_QUANTITY - MIN_TRADE_QUANTITY + 1)) + MIN_TRADE_QUANTITY;
+      const signedQuantity = Math.random() < TRADE_BIAS ? quantity : -quantity;
+      await insertTrade(instrumentId, signedQuantity);
+    } catch (error) {
+      console.error('Error inserting trade:', error);
+    }
+  }, TRADE_INTERVAL_MS);
+  
+  // Handle shutdown
+  let shutdownInProgress = false;
+  process.on('SIGINT', async () => {
+    if (shutdownInProgress) {
+      console.log('\nForce exit');
+      process.exit(1);
+    }
+    shutdownInProgress = true;
+    console.log('\nShutting down...');
+    clearInterval(marketDataInterval);
+    clearInterval(tradeInterval);
+    await testEnv.stop();
+    process.exit(0);
+  });
+}
+
+async function setupDatabase() {
   console.log('Setting up database schema...');
   
   // Create tables
@@ -40,13 +124,13 @@ async function setupDatabase(testEnv: TestEnvironment) {
     )
   `);
 
-  // Insert instruments
-  await testEnv.executeSql(`
-    INSERT INTO instruments (id, symbol, name) VALUES
-      (1, 'AAPL', 'Apple Inc.'),
-      (2, 'GOOG', 'Alphabet Inc.'),
-      (3, 'MSFT', 'Microsoft Corporation')
-  `);
+  // Insert instruments from map
+  for (const [id, instrument] of instruments) {
+    await testEnv.executeSql(`
+      INSERT INTO instruments (id, symbol, name) 
+      VALUES ($1, $2, $3)
+    `, [id, instrument.symbol, instrument.name]);
+  }
 
   // Create materialized views
   await testEnv.executeSql(`
@@ -64,6 +148,10 @@ async function setupDatabase(testEnv: TestEnvironment) {
         SUM(t.quantity) AS net_position,
         md.Price AS last_price,
         round((ABS(SUM(t.quantity)) * md.Price)::numeric, 2) AS market_value,
+        round((
+          SUM(CASE WHEN t.quantity < 0 THEN t.price * ABS(t.quantity) ELSE 0 END) -
+          SUM(CASE WHEN t.quantity > 0 THEN t.price * t.quantity ELSE 0 END)
+        )::numeric, 2) as realized_pnl,
         round(((SUM(t.quantity) * md.Price) - SUM(t.price * t.quantity))::numeric, 2) AS unrealized_pnl
       FROM trades AS t
       JOIN instruments AS i ON i.id = t.instrument_id
@@ -74,25 +162,32 @@ async function setupDatabase(testEnv: TestEnvironment) {
   console.log('Database setup complete');
 }
 
-// Track latest prices for each instrument
-const latestPrices: Map<number, number> = new Map([
-  [1, 170.5],
-  [2, 125.9],
-  [3, 310.2]
-]);
+async function insertInitialData() {
+  console.log('Inserting initial data for all instruments...');
+  
+  // Insert initial market data and trades for each instrument
+  for (const [id, instrument] of instruments) {
+    // Insert market data
+    await insertMarketData(id);
+    
+    // Insert initial trade to establish position
+    if (instrument.initialPosition !== 0) {
+      await insertTrade(id, instrument.initialPosition);
+    }
+  }
+  
+  console.log('Initial data inserted for all instruments');
+}
 
-let marketDataId = 1;
-let tradeId = 1;
-
-async function insertMarketData(testEnv: TestEnvironment) {
-  const instrumentId = Math.floor(Math.random() * 3) + 1;
-  const currentPrice = latestPrices.get(instrumentId) || 100;
+async function insertMarketData(instrumentId: number) {
+  const instrument = instruments.get(instrumentId)!;
+  const currentPrice = instrument.price;
   
   // Generate random price change between -MAX_PRICE_CHANGE and +MAX_PRICE_CHANGE
   const priceChange = (Math.random() - 0.5) * 2 * MAX_PRICE_CHANGE;
   const newPrice = +(currentPrice + priceChange).toFixed(2);
   
-  latestPrices.set(instrumentId, newPrice);
+  instrument.price = newPrice;
   
   const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
   
@@ -104,81 +199,17 @@ async function insertMarketData(testEnv: TestEnvironment) {
   console.log(`Market data: Instrument ${instrumentId} price updated to ${newPrice}`);
 }
 
-async function insertTrade(testEnv: TestEnvironment) {
-  const instrumentId = Math.floor(Math.random() * 3) + 1;
-  const quantity = Math.floor(Math.random() * MAX_TRADE_QUANTITY) + 1;
-  // Trade bias: 0.5 = equal buy/sell, > 0.5 = more buys, < 0.5 = more sells
-  const signedQuantity = Math.random() < TRADE_BIAS ? quantity : -quantity;
-  const price = latestPrices.get(instrumentId) || 100;
+async function insertTrade(instrumentId: number, quantity: number) {
+  const instrument = instruments.get(instrumentId)!;
+  const price = instrument.price;
   
   await testEnv.executeSql(`
     INSERT INTO trades (id, instrument_id, quantity, price, executed_at) 
     VALUES ($1, $2, $3, $4, NOW())
-  `, [tradeId++, instrumentId, signedQuantity, price]);
+  `, [tradeId++, instrumentId, quantity, price]);
   
-  const side = signedQuantity > 0 ? 'BUY' : 'SELL';
-  console.log(`Trade: ${side} Instrument ${instrumentId}, quantity ${Math.abs(signedQuantity)} @ ${price}`);
-}
-
-async function runLiveEnvironment() {
-  console.log('Starting live tycostream environment...');
-  console.log(`GraphQL endpoint will be available at http://localhost:${TEST_PORT}/graphql`);
-  
-  // Create test environment
-  const testEnv = await TestEnvironment.create(
-    TEST_PORT,
-    path.join(__dirname, '..', 'schema.yaml')
-  );
-  
-  // Setup database
-  await setupDatabase(testEnv);
-  
-  console.log(`
-Live environment running!
-- GraphQL: http://localhost:${TEST_PORT}/graphql
-- Market data updates every ${MARKET_DATA_INTERVAL_MS}ms
-- Trade updates every ${TRADE_INTERVAL_MS}ms
-
-Press Ctrl+C to stop
-`);
-  
-  // Start market data updates
-  const marketDataInterval = setInterval(async () => {
-    try {
-      await insertMarketData(testEnv);
-    } catch (error) {
-      console.error('Error inserting market data:', error);
-    }
-  }, MARKET_DATA_INTERVAL_MS);
-  
-  // Start trade updates
-  const tradeInterval = setInterval(async () => {
-    try {
-      await insertTrade(testEnv);
-    } catch (error) {
-      console.error('Error inserting trade:', error);
-    }
-  }, TRADE_INTERVAL_MS);
-  
-  // Handle shutdown
-  let shutdownInProgress = false;
-  process.on('SIGINT', async () => {
-    if (shutdownInProgress) {
-      console.log('\nForce exit');
-      process.exit(1);
-    }
-    shutdownInProgress = true;
-    console.log('\nShutting down...');
-    clearInterval(marketDataInterval);
-    clearInterval(tradeInterval);
-    await testEnv.stop();
-    process.exit(0);
-  });
-}
-
-// Run if called directly
-if (require.main === module) {
-  runLiveEnvironment().catch(console.error);
+  const side = quantity > 0 ? 'BUY' : 'SELL';
+  console.log(`Trade: ${side} Instrument ${instrumentId}, quantity ${Math.abs(quantity)} @ ${price}`);
 }
 
 export { runLiveEnvironment };

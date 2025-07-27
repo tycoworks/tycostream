@@ -62,15 +62,25 @@ function getColumnConfig() {
         ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(params.value)
         : ''
     },
+    realized_pnl: { 
+      headerName: 'Realized P&L',
+      ...getPnlColumnConfig()
+    },
     unrealized_pnl: { 
       headerName: 'Unrealized P&L',
-      valueFormatter: params => params.value != null 
-        ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(params.value)
-        : '',
-      cellStyle: params => ({
-        color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black'
-      })
+      ...getPnlColumnConfig()
     }
+  };
+}
+
+function getPnlColumnConfig() {
+  return {
+    valueFormatter: params => params.value != null 
+      ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(params.value)
+      : '',
+    cellStyle: params => ({
+      color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black'
+    })
   };
 }
 
