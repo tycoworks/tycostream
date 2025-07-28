@@ -1,6 +1,6 @@
 ## **Milestone 1 — Stream Real-Time Data via GraphQL with Minimal Setup** ✅ (In Progress)
 
-> Developers can stream updates from streaming SQL sources (views, tables, or any SELECT-able object) into GraphQL clients using a simple YAML schema and local setup.
+> Developers can stream filtered updates from Materialize (views, tables, or any SELECT-able object) into GraphQL clients using a simple YAML schema and local setup.
 > 
 
 ### ⚙️ Core Streaming Infrastructure
@@ -23,7 +23,7 @@
 
 ### 🚀 Dev Experience
 
-- ✅ Start with `npm run start:dev` for development
+- ✅ Start with a single npm run command
 - ✅ Hot reload with NestJS development mode
 - ✅ Environment-based configuration with validation
 - ✅ Docker support with docker-compose for development
@@ -87,14 +87,15 @@
 
 ### 🧹 Backpressure & Caching
 
-- Cache size limits with LRU eviction
+- Clear cache and close DB connection when last subscriber disconnects
 - Memory pressure monitoring
 - Graceful degradation during overload or outages
 
-### ⏱ Update Coalescing
+### ⏱ Protocol Optimizations
 
-- Combine multiple updates per entity within a configurable time window
-- Client-configurable coalescing strategy to reduce network overhead
+- Update coalescing: batch rapid changes within time windows
+- Client-configurable batching strategies (time-based, count-based)
+- Delta updates: send only changed fields instead of full rows
 
 ### 🧪 Performance Testing
 
