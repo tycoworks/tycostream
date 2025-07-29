@@ -10,6 +10,7 @@
 - ✅ WebSocket-based GraphQL Subscriptions using @nestjs/graphql
 - ✅ Compatible with Apollo Client and other standard GraphQL clients
 - ✅ RxJS Observables throughout for reactive streaming
+- ✅ Sends updates for changed fields only
 
 ### 📝 Schema & Configuration
 

@@ -42,35 +42,27 @@ This covers ~80% of filtering use cases while keeping implementation simple.
 
 ## Implementation Phases
 
-### Phase 1: Delta Updates Foundation
-- Implement field-level change detection in `materialize-protocol.ts`
-- Modify `RowUpdateEvent` to include delta information
-- Update GraphQL schema to support optional delta field
-- Normalize DELETE events to only contain primary key field
-- Full test coverage for delta detection
-
-### Phase 2: GraphQL Filter Parsing
+### Phase 1: GraphQL Filter Parsing
 - Add `where` argument to subscription schema
 - Parse GraphQL where clauses to JavaScript expressions
 - Log filter expressions but don't apply them yet
 - Test filter expression generation
-- Clean up string literal duplication in subscription-resolvers.ts (ROW_UPDATE_TYPE_MAP)
 
-### Phase 3: View Infrastructure
+### Phase 2: View Infrastructure
 - Create `View` class as a filtered stream
 - DatabaseStreamingService creates Views (encapsulation)
 - Views track visible keys, not full data
 - Views get row data via callback function
 
-### Phase 4: Filter Implementation
+### Phase 3: Filter Implementation
 - Update DatabaseStreamingManagerService.getUpdates() to accept filter
 - Compile filter expressions to functions with dependency tracking
 - Cache streams by (source + filter expression) key
 - Generate INSERT/UPDATE/DELETE events as items enter/leave filter
 - Optimize: skip re-evaluation when changed fields don't affect filter
 
-### Phase 5: Optimizations
-- Skip evaluation when unchanged fields (using deltas)
+### Phase 4: Optimizations
+- Skip evaluation when unchanged fields (leveraging field-level updates)
 - Async view processing (update cache synchronously, process views async)
 - Memory optimization strategies
 
@@ -144,7 +136,7 @@ class View {
 
 interface RowUpdateEvent {
   type: RowUpdateType;
-  fields: Record<string, any>; // All fields for INSERT, changed for UPDATE, key for DELETE
+  row: Record<string, any>; // All fields for INSERT, changed fields for UPDATE, key only for DELETE
 }
 ```
 
@@ -154,7 +146,7 @@ When processing an update:
 1. Apply filter to new row data
 2. Check if row was previously in view
 3. Generate appropriate event:
-   - Was in view, still matches → UPDATE (with delta)
+   - Was in view, still matches → UPDATE (with only changed fields)
    - Was in view, no longer matches → DELETE  
    - Wasn't in view, now matches → INSERT
    - Wasn't in view, still doesn't match → (ignore)
@@ -277,7 +269,7 @@ function createFilteredSubscriptionResolver(
         map((event: RowUpdateEvent) => ({
           [sourceName]: {
             operation: ROW_UPDATE_TYPE_STRINGS[event.type],
-            data: event.fields
+            data: event.row
           }
         }))
       );
@@ -300,9 +292,9 @@ Compiled filters are cached by expression string to avoid re-parsing identical f
 - Reference main cache for row data
 - Use efficient data structures (Sets) for O(1) visibility checks
 
-### 3. Delta Optimization
+### 3. Field-Level Update Optimization
 
-With delta updates from Phase 1, views can skip processing when irrelevant fields change:
+tycostream already sends only changed fields for UPDATE operations. Views can leverage this to skip processing when irrelevant fields change:
 
 ```typescript
 class View {
@@ -314,7 +306,7 @@ class View {
   ) {}
   
   processUpdate(event: RowUpdateEvent): RowUpdateEvent | null {
-    const key = event.fields[this.primaryKey];
+    const key = event.row[this.primaryKey];
     const wasInView = this.visibleKeys.has(key);
     
     // TODO: Future optimization - check if changed fields affect filter result
@@ -322,7 +314,7 @@ class View {
     
     // Need full row to evaluate filter
     const fullRow = event.type === RowUpdateType.Delete 
-      ? event.fields 
+      ? event.row 
       : this.getRow(key);
       
     const isInView = this.filter.evaluate(fullRow);
@@ -337,11 +329,10 @@ class View {
 
 ### Core Components
 
-1. **Delta Updates**: Field-level change detection in protocol layer
-2. **Filter Compilation**: GraphQL where → JavaScript function with dependency tracking
-3. **Enhanced DatabaseStreamingManagerService**: Handles view creation and caching
-4. **View Class**: Lightweight filtered stream with visibility tracking
-5. **Minimal GraphQL Changes**: Just pass filter to getUpdates()
+1. **Filter Compilation**: GraphQL where → JavaScript function with dependency tracking
+2. **Enhanced DatabaseStreamingManagerService**: Handles view creation and caching
+3. **View Class**: Lightweight filtered stream with visibility tracking
+4. **Minimal GraphQL Changes**: Just pass filter to getUpdates()
 
 ### Code Organization
 
@@ -388,6 +379,6 @@ src/
 ## Future Enhancements
 
 1. **Additional Operators**: Text search, JSON/JSONB, arrays (see MVP scope)
-2. **Delta Protocol**: Send only changed fields instead of full rows
+2. **Advanced Field-Level Optimizations**: Skip filter evaluation when changed fields don't affect filter predicates
 3. **Filter Validation**: Compile-time validation against source schema
 4. **Entitlements**: Row-level security as additional filter predicates
