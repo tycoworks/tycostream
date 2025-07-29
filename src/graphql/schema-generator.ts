@@ -1,5 +1,6 @@
 import type { SourceDefinition } from '../config/source-definition.types';
 import { getGraphQLType } from '../common/type-map';
+import { GraphQLRowOperation } from './subscription-resolvers';
 
 /**
  * Generates GraphQL SDL schema from source definitions
@@ -15,9 +16,9 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
     
     # Row operation types
     enum RowOperation {
-      INSERT
-      UPDATE
-      DELETE
+      ${GraphQLRowOperation.INSERT}
+      ${GraphQLRowOperation.UPDATE}
+      ${GraphQLRowOperation.DELETE}
     }
     
     type Subscription {

@@ -7,9 +7,19 @@ import type { RowUpdateEvent } from '../database/types';
 import { RowUpdateType } from '../database/types';
 import { truncateForLog } from '../common/logging.utils';
 
+/**
+ * GraphQL row operation types
+ * These map to the values used in the GraphQL schema
+ */
+export enum GraphQLRowOperation {
+  INSERT = 'INSERT',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE'
+}
+
 interface GraphQLUpdatePayload {
   [sourceName: string]: {
-    operation: 'INSERT' | 'UPDATE' | 'DELETE';
+    operation: GraphQLRowOperation;
     data: Record<string, any> | null;
     fields: string[];
   };
@@ -20,12 +30,12 @@ type SubscriptionResolver = {
 };
 
 /**
- * Maps RowUpdateType enum values to GraphQL operation strings
+ * Maps RowUpdateType enum values to GraphQL operation enum values
  */
 const ROW_UPDATE_TYPE_MAP = {
-  [RowUpdateType.Insert]: 'INSERT',
-  [RowUpdateType.Update]: 'UPDATE',
-  [RowUpdateType.Delete]: 'DELETE',
+  [RowUpdateType.Insert]: GraphQLRowOperation.INSERT,
+  [RowUpdateType.Update]: GraphQLRowOperation.UPDATE,
+  [RowUpdateType.Delete]: GraphQLRowOperation.DELETE,
 } as const;
 
 const logger = new Logger('GraphQLSubscriptions');
