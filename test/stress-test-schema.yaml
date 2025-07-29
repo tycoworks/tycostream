@@ -4,3 +4,4 @@ sources:
     columns:
       id: integer
       value: numeric
+      status: character varying

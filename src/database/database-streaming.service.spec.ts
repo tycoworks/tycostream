@@ -232,6 +232,95 @@ describe('DatabaseStreamingService', () => {
     });
   });
 
+  describe('multi-field update scenarios', () => {
+    it('should send only changed fields for partial updates', () => {
+      // Initial insert with multiple fields
+      service['processUpdate'](
+        { id: '1', name: 'Alice', email: 'alice@test.com', age: 30, active: true },
+        BigInt(100),
+        DatabaseRowUpdateType.Upsert
+      );
+
+      const updates$ = service.getUpdates();
+      const events: RowUpdateEvent[] = [];
+      const subscription = updates$.subscribe(event => events.push(event));
+
+      // Update only email and age
+      service['processUpdate'](
+        { id: '1', name: 'Alice', email: 'alice@example.com', age: 31, active: true },
+        BigInt(200),
+        DatabaseRowUpdateType.Upsert
+      );
+
+      // Should only include changed fields + primary key
+      expect(events[1].type).toBe(RowUpdateType.Update);
+      expect(events[1].row).toEqual({
+        id: '1',
+        email: 'alice@example.com',
+        age: 31
+      });
+      expect(events[1].row).not.toHaveProperty('name');
+      expect(events[1].row).not.toHaveProperty('active');
+
+      subscription.unsubscribe();
+    });
+
+    it('should handle updates where no fields change', () => {
+      service['processUpdate'](
+        { id: '1', name: 'Bob', value: 100 },
+        BigInt(100),
+        DatabaseRowUpdateType.Upsert
+      );
+
+      const updates$ = service.getUpdates();
+      const events: RowUpdateEvent[] = [];
+      const subscription = updates$.subscribe(event => events.push(event));
+
+      // Update with same values
+      service['processUpdate'](
+        { id: '1', name: 'Bob', value: 100 },
+        BigInt(200),
+        DatabaseRowUpdateType.Upsert
+      );
+
+      // Should still emit update with just primary key
+      expect(events[1].type).toBe(RowUpdateType.Update);
+      expect(events[1].row).toEqual({ id: '1' });
+
+      subscription.unsubscribe();
+    });
+
+    it('should handle updates where all fields change', () => {
+      service['processUpdate'](
+        { id: '1', name: 'Charlie', value: 100, status: 'active' },
+        BigInt(100),
+        DatabaseRowUpdateType.Upsert
+      );
+
+      const updates$ = service.getUpdates();
+      const events: RowUpdateEvent[] = [];
+      const subscription = updates$.subscribe(event => events.push(event));
+
+      // Update all fields
+      service['processUpdate'](
+        { id: '1', name: 'Charles', value: 200, status: 'inactive' },
+        BigInt(200),
+        DatabaseRowUpdateType.Upsert
+      );
+
+      // Should include all changed fields
+      expect(events[1].type).toBe(RowUpdateType.Update);
+      expect(events[1].row).toEqual({
+        id: '1',
+        name: 'Charles',
+        value: 200,
+        status: 'inactive'
+      });
+
+      subscription.unsubscribe();
+    });
+  });
+
   describe('consumer tracking', () => {
     it('should track consumer count', () => {
       expect(service.consumerCount).toBe(0);

@@ -4,10 +4,20 @@ import {
   TestClientManager
 } from './utils';
 
+enum Status {
+  Active = 'active',
+  Inactive = 'inactive',
+  Pending = 'pending'
+}
+
 interface StressTestData {
   id: number;
   value: number;
+  status: Status;
 }
+
+// Define updatable fields (excluding primary key)
+const UPDATABLE_FIELDS = ['value', 'status'] as const;
 
 describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   let testEnv: TestEnvironment;
@@ -30,11 +40,12 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       '4' // More workers for better stress test performance
     );
     
-    // Create test table with single numeric column
+    // Create test table with multiple columns for testing partial updates
     await testEnv.executeSql(`
       CREATE TABLE IF NOT EXISTS stress_test (
         id INTEGER NOT NULL,
-        value NUMERIC NOT NULL
+        value NUMERIC NOT NULL,
+        status VARCHAR(10) NOT NULL
       )
     `);
   }, 300000); // 5 minute timeout for beforeAll
@@ -62,17 +73,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       console.log(`Starting ${operations.length} database operations...`);
       const operationsPromise = (async () => {
         for (const op of operations) {
-          switch (op.type) {
-            case 'INSERT':
-              await testEnv.executeSql('INSERT INTO stress_test (id, value) VALUES ($1, $2)', [op.id, op.value], INSERT_DELAY_MS);
-              break;
-            case 'UPDATE':
-              await testEnv.executeSql('UPDATE stress_test SET value = $1 WHERE id = $2', [op.value, op.id], INSERT_DELAY_MS);
-              break;
-            case 'DELETE':
-              await testEnv.executeSql('DELETE FROM stress_test WHERE id = $1', [op.id], INSERT_DELAY_MS);
-              break;
-          }
+          await testEnv.executeSql(op.sql, op.params, INSERT_DELAY_MS);
         }
         console.log('All database operations completed');
       })();
@@ -89,6 +90,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
               data {
                 id
                 value
+                status
               }
               fields
             }
@@ -140,11 +142,11 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
 
 // Helper function to generate test operations
 function generateTestOperations(numRows: number): {
-  operations: Array<{ type: 'INSERT' | 'UPDATE' | 'DELETE', id: number, value?: number }>,
+  operations: Array<{ sql: string, params: any[] }>,
   expectedState: Map<number, StressTestData>
 } {
   const expectedState = new Map<number, StressTestData>();
-  const operations: Array<{ type: 'INSERT' | 'UPDATE' | 'DELETE', id: number, value?: number }> = [];
+  const operations: Array<{ sql: string, params: any[] }> = [];
   
   // Use deterministic random for reproducible results
   let seed = 12345;
@@ -153,20 +155,42 @@ function generateTestOperations(numRows: number): {
     return seed / 233280;
   };
   
+  const statusValues = Object.values(Status);
+  const numUpdatePatterns = (1 << UPDATABLE_FIELDS.length) - 1;
+  
   for (let i = 1; i <= numRows; i++) {
     // INSERT
-    const insertValue = i * 1.5;
-    operations.push({ type: 'INSERT', id: i, value: insertValue });
-    expectedState.set(i, { id: i, value: insertValue });
+    const insertValue = Math.floor(random() * 1000);
+    const insertStatus = statusValues[i % statusValues.length];
+    operations.push({ 
+      sql: 'INSERT INTO stress_test (id, value, status) VALUES ($1, $2, $3)',
+      params: [i, insertValue, insertStatus]
+    });
+    expectedState.set(i, { id: i, value: insertValue, status: insertStatus });
     
     // UPDATE (only update existing rows)
     if (i > 10) {
       const updateId = Math.floor(random() * (i - 1)) + 1;
       // Only update if not previously deleted
       if (expectedState.has(updateId)) {
-        const updateValue = updateId * 2.5;
-        operations.push({ type: 'UPDATE', id: updateId, value: updateValue });
-        expectedState.set(updateId, { id: updateId, value: updateValue });
+        const fieldValues = {
+          value: Math.floor(random() * 1000),
+          status: statusValues[(updateId + i) % statusValues.length]
+        };
+        const updatePattern = (i % numUpdatePatterns) + 1;
+        
+        const { setClause, params, updates } = buildPartialUpdate(updatePattern, fieldValues);
+        
+        operations.push({
+          sql: `UPDATE stress_test SET ${setClause} WHERE id = $${params.length + 1}`,
+          params: [...params, updateId]
+        });
+        
+        // Merge updates with existing row
+        expectedState.set(updateId, {
+          ...expectedState.get(updateId)!,
+          ...updates
+        });
       }
     }
     
@@ -174,11 +198,41 @@ function generateTestOperations(numRows: number): {
     if (i > 20 && i % 10 === 0) {
       const deleteId = Math.floor(random() * (i - 10)) + 1;
       if (expectedState.has(deleteId)) {
-        operations.push({ type: 'DELETE', id: deleteId });
+        operations.push({
+          sql: 'DELETE FROM stress_test WHERE id = $1',
+          params: [deleteId]
+        });
         expectedState.delete(deleteId);
       }
     }
   }
   
   return { operations, expectedState };
+}
+
+// Helper to build partial UPDATE statements based on bit pattern
+function buildPartialUpdate(updatePattern: number, fieldValues: Record<string, any>): { 
+  setClause: string, 
+  params: any[], 
+  updates: Record<string, any> 
+} {
+  // Use bitmask to determine which fields to update
+  const updates: Record<string, any> = {};
+  const setClauses: string[] = [];
+  const params: any[] = [];
+  
+  UPDATABLE_FIELDS.forEach((fieldName, index) => {
+    // Check if bit at position 'index' is set
+    if (updatePattern & (1 << index)) {
+      updates[fieldName] = fieldValues[fieldName];
+      setClauses.push(`${fieldName} = $${params.length + 1}`);
+      params.push(fieldValues[fieldName]);
+    }
+  });
+  
+  return {
+    setClause: setClauses.join(', '),
+    params,
+    updates
+  };
 }

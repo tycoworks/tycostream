@@ -4,7 +4,7 @@ import {
   TestClientManager
 } from './utils';
 
-describe('tycostream E2E', () => {
+describe('Integration Test', () => {
   let testEnv: TestEnvironment;
   let clientManager: TestClientManager;
   const testPort = 4001;
@@ -14,7 +14,7 @@ describe('tycostream E2E', () => {
     // Bootstrap complete test environment
     testEnv = await TestEnvironment.create(
       testPort,
-      path.join(__dirname, 'tycostream-schema.yaml')
+      path.join(__dirname, 'integration-schema.yaml')
     );
 
     // Create test tables matching our schema
@@ -78,7 +78,7 @@ describe('tycostream E2E', () => {
     it('should receive real-time updates for users', async () => {
       // Define expected state after all operations
       const expectedState = new Map([
-        [1, { user_id: 1, name: 'Alice', email: 'alice@example.com', active: true }],
+        [1, { user_id: 1, name: 'Alice Updated', email: 'alice@example.com', active: true }],
         [2, { user_id: 2, name: 'Bob', email: 'bob@test.com', active: false }]
       ]);
       
@@ -119,9 +119,9 @@ describe('tycostream E2E', () => {
         "INSERT INTO users (user_id, name, email, active) VALUES (2, 'Bob', 'bob@test.com', false)"
       );
 
-      // Update a user
+      // Update a user - test multi-field updates
       await testEnv.executeSql(
-        "UPDATE users SET email = 'alice@example.com' WHERE user_id = 1"
+        "UPDATE users SET name = 'Alice Updated', email = 'alice@example.com' WHERE user_id = 1"
       );
 
       // Wait for all events

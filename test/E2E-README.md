@@ -12,7 +12,7 @@ npm run test:e2e
 
 Our E2E test suite is organized into different test categories, each serving a specific purpose:
 
-### 1. **Integration Test** (`tycostream.e2e-spec.ts`)
+### 1. **Integration Test** (`integration.e2e-spec.ts`)
 - **Purpose**: Functional testing of the complete system
 - **Coverage**:
   - All CRUD operations (INSERT, UPDATE, DELETE)
