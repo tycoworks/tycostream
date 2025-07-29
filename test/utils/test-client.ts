@@ -92,18 +92,42 @@ export class TestClient<TData = any> {
     const responseData = data.data[this.options.dataPath];
     if (!responseData) return;
     
-    const { operation, data: rowData } = responseData;
+    const { operation, data: rowData, fields } = responseData;
     
     // Notify callback
     this.options.onOperation(operation, rowData);
     
     // Update state based on operation
-    if (rowData) {
-      const id = rowData[this.idField];
-      if (operation === 'DELETE') {
+    if (!rowData) {
+      throw new Error(`Received ${operation} operation without data`);
+    }
+    
+    const id = rowData[this.idField];
+    
+    switch (operation) {
+      case 'DELETE':
         this.currentState.delete(id);
-      } else {
+        break;
+        
+      case 'INSERT':
         this.currentState.set(id, rowData);
+        break;
+        
+      case 'UPDATE': {
+        // UPDATE only has changed fields + primary key - merge with existing
+        const existingRow = this.currentState.get(id);
+        if (!existingRow) {
+          throw new Error(`UPDATE for non-existent row with ${this.idField}=${id}`);
+        }
+        
+        // Only update fields that are actually present in the update
+        const updatedRow = { ...existingRow };
+        for (const field of fields) {
+          updatedRow[field] = rowData[field];
+        }
+        
+        this.currentState.set(id, updatedRow);
+        break;
       }
     }
 

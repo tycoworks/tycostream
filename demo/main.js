@@ -17,6 +17,7 @@ const subscription = gql`
       data {
         ${fields.join('\n        ')}
       }
+      fields
     }
   }
 `;
@@ -29,18 +30,47 @@ const client = new ApolloClient({
 });
 
 client.subscribe({ query: subscription }).subscribe(({ data }) => {
-  if (data?.live_pnl) {
-    const { operation, data: rowData } = data.live_pnl;
-    
-    if (operation === 'DELETE' && rowData) {
+  if (!data?.live_pnl) return;
+  
+  const { operation, data: rowData, fields: changedFields } = data.live_pnl;
+  if (!rowData) return;
+  
+  switch (operation) {
+    case 'DELETE':
       gridApi.applyTransaction({ remove: [rowData] });
-    } else if (operation === 'UPDATE' && rowData) {
-      gridApi.applyTransaction({ update: [rowData] });
-    } else if (operation === 'INSERT' && rowData) {
+      break;
+    case 'UPDATE':
+      const updatedRow = mergeWithExistingRow(rowData, changedFields);
+      if (updatedRow) {
+        gridApi.applyTransaction({ update: [updatedRow] });
+      } else {
+        console.warn(`UPDATE received for non-existent row with instrument_id=${rowData.instrument_id}`);
+      }
+      break;
+    case 'INSERT':
       gridApi.applyTransaction({ add: [rowData] });
-    }
+      break;
   }
 });
+
+function mergeWithExistingRow(deltaData, changedFields) {
+  const rowNode = gridApi.getRowNode(String(deltaData.instrument_id));
+  if (!rowNode?.data) return null;
+  
+  // Start with existing row data
+  const merged = { ...rowNode.data };
+  
+  // Apply only the changed fields
+  if (changedFields && changedFields.length > 0) {
+    changedFields.forEach(field => {
+      if (field in deltaData) {
+        merged[field] = deltaData[field];
+      }
+    });
+  }
+  
+  return merged;
+}
 
 function getColumnConfig() {
   return {

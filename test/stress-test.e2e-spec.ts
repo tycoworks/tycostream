@@ -90,6 +90,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
                 id
                 value
               }
+              fields
             }
           }
         `,

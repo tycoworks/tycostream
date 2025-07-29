@@ -98,6 +98,7 @@ describe('tycostream E2E', () => {
                 email
                 active
               }
+              fields
             }
           }
         `,
@@ -153,6 +154,7 @@ describe('tycostream E2E', () => {
                 email
                 active
               }
+              fields
             }
           }
         `,
@@ -218,6 +220,7 @@ describe('tycostream E2E', () => {
                 json_val
                 jsonb_val
               }
+              fields
             }
           }
         `,
@@ -307,6 +310,7 @@ describe('tycostream E2E', () => {
                 timestamp_val
                 json_val
               }
+              fields
             }
           }
         `,
@@ -353,7 +357,7 @@ describe('tycostream E2E', () => {
       clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
       
       await clientManager.startClients(2, 0, {
-        query: `subscription { users { operation data { user_id name } } }`,
+        query: `subscription { users { operation data { user_id name } fields } }`,
         expectedState: new Map([[100, { user_id: 100, name: 'Shared User' }]]),
         dataPath: 'users',
         idField: 'user_id',
@@ -413,6 +417,7 @@ describe('tycostream E2E', () => {
                 user_id
                 name
               }
+              fields
             }
           }
         `,
