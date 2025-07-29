@@ -40,6 +40,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('type tradesUpdate {');
     expect(schema).toContain('operation: RowOperation!');
     expect(schema).toContain('data: trades');
+    expect(schema).toContain('fields: [String!]');
     
     // Check subscription
     expect(schema).toContain('trades: tradesUpdate!');

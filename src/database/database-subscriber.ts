@@ -4,6 +4,7 @@ import type { Client } from 'pg';
 import { DatabaseConnectionService } from './database-connection.service';
 import { StreamBuffer } from './stream-buffer';
 import type { ProtocolHandler } from './types';
+import { DatabaseRowUpdateType } from './types';
 
 /**
  * Manages database subscription and streaming for a single source
@@ -16,7 +17,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
   private client: Client | null = null;
   private isShuttingDown = false;
   private isStreaming = false;
-  private updateCallback?: (row: Record<string, any>, timestamp: bigint, isDelete: boolean) => void;
+  private updateCallback?: (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => void;
   private errorCallback?: (error: Error) => void;
 
   constructor(
@@ -29,7 +30,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
    * Start streaming with callback for updates and errors
    */
   async startStreaming(
-    onUpdate: (row: Record<string, any>, timestamp: bigint, isDelete: boolean) => void,
+    onUpdate: (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => void,
     onError?: (error: Error) => void
   ): Promise<void> {
     if (this.isStreaming) {
@@ -125,7 +126,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
     
     if (parsed && this.updateCallback) {
       // Send raw update to parent service - parent will determine insert vs update
-      this.updateCallback(parsed.row, parsed.timestamp, parsed.isDelete);
+      this.updateCallback(parsed.row, parsed.timestamp, parsed.updateType);
     }
   }
 }

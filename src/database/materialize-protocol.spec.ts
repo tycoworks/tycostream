@@ -1,5 +1,6 @@
 import { MaterializeProtocolHandler } from './materialize-protocol';
 import type { SourceDefinition } from '../config/source-definition.types';
+import { DatabaseRowUpdateType } from './types';
 
 describe('MaterializeProtocolHandler', () => {
   let handler: MaterializeProtocolHandler;
@@ -81,7 +82,7 @@ describe('MaterializeProtocolHandler', () => {
 
       expect(result).toBeDefined();
       expect(result?.timestamp).toBe(BigInt(1234567890));
-      expect(result?.isDelete).toBe(false);
+      expect(result?.updateType).toBe(DatabaseRowUpdateType.Upsert);
       expect(result?.row).toEqual({
         id: '123',
         name: 'test name',
@@ -95,7 +96,7 @@ describe('MaterializeProtocolHandler', () => {
 
       expect(result).toBeDefined();
       expect(result?.timestamp).toBe(BigInt(1234567890));
-      expect(result?.isDelete).toBe(true);
+      expect(result?.updateType).toBe(DatabaseRowUpdateType.Delete);
       expect(result?.row).toEqual({
         id: '123',
         name: 'test name',
@@ -138,7 +139,7 @@ describe('MaterializeProtocolHandler', () => {
       
       expect(result).toBeDefined();
       expect(result?.timestamp).toBe(BigInt(1234567890));
-      expect(result?.isDelete).toBe(false);
+      expect(result?.updateType).toBe(DatabaseRowUpdateType.Upsert);
       expect(result?.row).toEqual({}); // Empty row object
     });
 

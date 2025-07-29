@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { SourceDefinition } from '../config/source-definition.types';
 import type { ProtocolHandler } from './types';
+import { DatabaseRowUpdateType } from './types';
 import { getPostgresType } from '../common/type-map';
 import * as pgTypes from 'pg-types';
 
@@ -49,7 +50,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
    * Parse a single line of COPY output
    * Returns null if the line should be skipped
    */
-  parseLine(line: string): { row: Record<string, any>; timestamp: bigint; isDelete: boolean } | null {
+  parseLine(line: string): { row: Record<string, any>; timestamp: bigint; updateType: DatabaseRowUpdateType } | null {
     const trimmed = line.trim();
     if (!trimmed) return null;
 
@@ -86,8 +87,11 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
       }
     }
 
-    const isDelete = mzState === 'delete';
-    return { row, timestamp, isDelete };
+    const updateType = mzState === 'delete' 
+      ? DatabaseRowUpdateType.Delete 
+      : DatabaseRowUpdateType.Upsert;
+      
+    return { row, timestamp, updateType };
   }
 
   /**

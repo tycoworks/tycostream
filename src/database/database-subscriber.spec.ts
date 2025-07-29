@@ -2,6 +2,7 @@ import { DatabaseSubscriber } from './database-subscriber';
 import { DatabaseConnectionService } from './database-connection.service';
 import type { SourceDefinition } from '../config/source-definition.types';
 import type { ProtocolHandler } from './types';
+import { DatabaseRowUpdateType } from './types';
 
 describe('DatabaseSubscriber', () => {
   let subscriber: DatabaseSubscriber;
@@ -152,7 +153,7 @@ describe('DatabaseSubscriber', () => {
       mockProtocolHandler.parseLine.mockReturnValue({
         row: { id: '1', name: 'test' },
         timestamp: BigInt(1000),
-        isDelete: false
+        updateType: DatabaseRowUpdateType.Upsert
       });
 
       await subscriber.startStreaming(mockUpdateCallback);
@@ -164,11 +165,11 @@ describe('DatabaseSubscriber', () => {
       expect(mockUpdateCallback).toHaveBeenCalledWith(
         { id: '1', name: 'test' },
         BigInt(1000),
-        false
+        DatabaseRowUpdateType.Upsert
       );
     });
 
-    it('should call update callback with delete flag when appropriate', async () => {
+    it('should call update callback with delete type when appropriate', async () => {
       const mockUpdateCallback = jest.fn();
       let dataCallback: (chunk: Buffer) => void;
       
@@ -185,7 +186,7 @@ describe('DatabaseSubscriber', () => {
       mockProtocolHandler.parseLine.mockReturnValue({
         row: { id: '1', name: 'test' },
         timestamp: BigInt(1000),
-        isDelete: true
+        updateType: DatabaseRowUpdateType.Delete
       });
 
       await subscriber.startStreaming(mockUpdateCallback);
@@ -196,7 +197,7 @@ describe('DatabaseSubscriber', () => {
       expect(mockUpdateCallback).toHaveBeenCalledWith(
         { id: '1', name: 'test' },
         BigInt(1000),
-        true
+        DatabaseRowUpdateType.Delete
       );
     });
 

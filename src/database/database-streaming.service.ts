@@ -4,7 +4,7 @@ import { DatabaseConnectionService } from './database-connection.service';
 import { DatabaseSubscriber } from './database-subscriber';
 import type { ProtocolHandler } from './types';
 import type { SourceDefinition } from '../config/source-definition.types';
-import { RowUpdateType, type RowUpdateEvent } from './types';
+import { RowUpdateType, DatabaseRowUpdateType, type RowUpdateEvent } from './types';
 import type { Cache } from './cache.types';
 import { SimpleCache } from './cache';
 import { truncateForLog } from '../common/logging.utils';
@@ -169,8 +169,8 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     try {
       // Start database streaming with callback for updates and errors
       await this.databaseSubscriber.startStreaming(
-        (row: Record<string, any>, timestamp: bigint, isDelete: boolean) => {
-          this.processUpdate(row, timestamp, isDelete);
+        (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => {
+          this.processUpdate(row, timestamp, updateType);
         },
         (error: Error) => {
           // Log runtime database errors
@@ -194,39 +194,85 @@ export class DatabaseStreamingService implements OnModuleDestroy {
   /**
    * Process an incoming update from the database stream
    */
-  private processUpdate(row: Record<string, any>, timestamp: bigint, isDelete: boolean): void {
+  private processUpdate(row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType): void {
     // Update timestamp tracking
     this.latestTimestamp = timestamp;
+    
+    // Extract primary key once
+    const primaryKey = row[this.sourceDef.primaryKeyField];
 
-    // Determine correct event type based on cache state and delete flag
-    let eventType: RowUpdateType;
-    if (isDelete) {
-      eventType = RowUpdateType.Delete;
-    } else {
-      // Check if row exists in cache to determine insert vs update
-      const exists = this.cache.get(row[this.sourceDef.primaryKeyField]) !== undefined;
-      eventType = exists ? RowUpdateType.Update : RowUpdateType.Insert;
-    }
+    // Determine the event type and prepare data
+    const event = this.prepareEvent(row, primaryKey, updateType);
 
-    // Update cache based on event type
-    if (eventType === RowUpdateType.Delete) {
-      this.cache.delete(row);
-      this.logger.debug(`Removed from cache - source: ${this.sourceName}, primaryKey: ${row[this.sourceDef.primaryKeyField]}, data: ${truncateForLog(row)}`);
-    } else {
-      this.cache.set(row);
-      this.logger.debug(`${eventType === RowUpdateType.Insert ? 'Added to' : 'Updated in'} cache - source: ${this.sourceName}, primaryKey: ${row[this.sourceDef.primaryKeyField]}, cacheSize: ${this.cache.size}, data: ${truncateForLog(row)}`);
-    }
+    // Update cache and log the operation
+    this.updateCacheAndLog(row, event.type, primaryKey, event.row);
 
     // Emit to internal subject
-    this.internalUpdates$.next([
-      {
-        type: eventType,
-        row
-      },
-      timestamp
-    ]);
+    this.internalUpdates$.next([event, timestamp]);
   }
 
+  private prepareEvent(row: Record<string, any>, primaryKey: any, updateType: DatabaseRowUpdateType): RowUpdateEvent {
+    // Determine event type and data
+    let eventType: RowUpdateType;
+    let eventData: Record<string, any>;
+    
+    if (updateType === DatabaseRowUpdateType.Delete) {
+      eventType = RowUpdateType.Delete;
+      eventData = this.getPkObject(primaryKey);
+    } else if (updateType === DatabaseRowUpdateType.Upsert) {
+      const existingRow = this.cache.get(primaryKey);
+      
+      if (existingRow) {
+        // UPDATE - start with primary key, add changes
+        eventType = RowUpdateType.Update;
+        eventData = this.getPkObject(primaryKey);
+        this.calculateChanges(existingRow, row, eventData);
+      } else {
+        // INSERT - use full row
+        eventType = RowUpdateType.Insert;
+        eventData = row;
+      }
+    } else {
+      // Unknown update type - this should never happen
+      throw new Error(`Unexpected update type: ${updateType} for row: ${truncateForLog(row)}`);
+    }
+    
+    return {
+      type: eventType,
+      row: eventData
+    };
+  }
+
+  private getPkObject(primaryKey: any): Record<string, any> {
+    return { [this.sourceDef.primaryKeyField]: primaryKey };
+  }
+
+  private updateCacheAndLog(row: Record<string, any>, eventType: RowUpdateType, primaryKey: any, eventData: Record<string, any>): void {
+    // Update cache and determine log action
+    let action: string;
+    
+    if (eventType === RowUpdateType.Delete) {
+      this.cache.delete(row);
+      action = 'Removed from';
+    } else {
+      this.cache.set(row);
+      action = eventType === RowUpdateType.Insert ? 'Added to' : 'Updated in';
+    }
+    
+    this.logger.debug(`${action} cache - source: ${this.sourceName}, primaryKey: ${primaryKey}, cacheSize: ${this.cache.size}, data: ${truncateForLog(eventData)}`);
+  }
+
+  /**
+   * Calculate changes between existing and new row
+   * Adds only changed fields to the provided changes object
+   */
+  private calculateChanges(existingRow: Record<string, any>, newRow: Record<string, any>, changes: Record<string, any>): void {
+    for (const [key, value] of Object.entries(newRow)) {
+      if (existingRow[key] !== value) {
+        changes[key] = value;
+      }
+    }
+  }
 
   /**
    * Handle fatal errors by triggering graceful shutdown

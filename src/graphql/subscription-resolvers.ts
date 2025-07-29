@@ -11,6 +11,7 @@ interface GraphQLUpdatePayload {
   [sourceName: string]: {
     operation: 'INSERT' | 'UPDATE' | 'DELETE';
     data: Record<string, any> | null;
+    fields: string[];
   };
 }
 
@@ -40,17 +41,24 @@ function createSourceSubscriptionResolver(
     subscribe: () => {
       const observable = streamingManager.getUpdates(sourceName).pipe(
         map((event: RowUpdateEvent) => {
+          const operation = ROW_UPDATE_TYPE_MAP[event.type];
+          
+          // Calculate fields array - always populated for consistency
+          const fields: string[] = Object.keys(event.row);
+          
           return {
             [sourceName]: {
-              operation: ROW_UPDATE_TYPE_MAP[event.type],
+              operation,
               data: event.row, // Include row data for all operations, including DELETE
+              fields
             }
           };
         }),
         tap((payload) => {
           const operation = payload[sourceName].operation;
           const data = payload[sourceName].data;
-          logger.debug(`Sending GraphQL update - source: ${sourceName}, operation: ${operation}, data: ${truncateForLog(data)}`);
+          const fields = payload[sourceName].fields;
+          logger.debug(`Sending GraphQL update - source: ${sourceName}, operation: ${operation}, data: ${truncateForLog(data)}${fields ? `, fields: [${fields.join(', ')}]` : ''}`);
         })
       );
       

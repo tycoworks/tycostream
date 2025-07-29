@@ -39,6 +39,7 @@ ${fields}
     type ${sourceName}Update {
       operation: RowOperation!
       data: ${sourceName}
+      fields: [String!]! 
     }`;
   }
 
