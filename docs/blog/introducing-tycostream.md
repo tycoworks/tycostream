@@ -1,14 +1,3 @@
-## Structure
-
-**Section 4: Try It Out**
-- "Here's what it looks like" → embed 9-second MP4 demo
-- Current limitations (no auth yet, etc.) but working on it
-- What's next: filtering and client-side subscriptions (link to roadmap)
-- Call for feedback and contribution
-- Links: demo, GitHub, DMs open
-
----
-
 ## 1. Introducing tycostream
 
 In my last two posts ([part 1](https://www.tycoworks.com/p/can-a-stream-processor-power-a-trading) and [part 2](https://www.tycoworks.com/p/can-a-stream-processor-power-a-trading-196)), I explored whether a streaming database could power a trading desk UI. The answer was a cautious yes: creating the backend logic was straightforward, but getting data into the frontend was surprisingly hard. I ended up building a custom WebSocket relay for the last mile which worked, but felt too brittle and difficult to maintain in the long term.
@@ -35,4 +24,8 @@ This would enable anyone to build reactive applications quickly and safely. Imag
 
 ## 4. Try It Out
 
-[Section 4 content to be written]
+Want to see tycostream in action? I've put together a [demo](https://github.com/tycoworks/tycostream?tab=readme-ov-file#demo) that shows how to stream real-time positions to a data grid. It simulates trades and market prices for a realistic environment, and includes a Materialize emulator so you can get up and running with a single command.
+
+The next big features on my list are [filtered subscriptions / views](https://github.com/tycoworks/tycostream/issues/1), and exploring how to build complete applications with tycostream + Hasura or Supabase. The complete roadmap is [here](https://github.com/tycoworks/tycostream/blob/main/docs/ROADMAP.md) - I hope you'll follow along.
+
+If you're building real-time applications with SQL and GraphQL, I'd love to hear from you. What problems are you solving? What would make this useful for your use case? Drop me a line here or at chris@tycoworks.com - feedback welcome!

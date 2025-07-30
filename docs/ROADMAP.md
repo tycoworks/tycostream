@@ -50,7 +50,7 @@
 - Structured logs for query and stream activity
 - Full audit trail of data sent to each connected client
 
-### 🔄 Materialize Resilience
+### 🔄 Streaming Database Resilience
 
 - Automatic reconnect with exponential backoff
 - Cursor-based resume using SUBSCRIBE AS OF to avoid data loss on reconnection
@@ -101,36 +101,13 @@
 - Memory pressure monitoring
 - Graceful degradation during overload or outages
 
-### ⏱ Protocol Optimizations
+### ⏱ Protocol Support & Optimizations
 
 - Update coalescing: batch rapid changes within time windows
 - Client-configurable batching strategies (time-based, count-based)
-- Delta updates: send only changed fields instead of full rows
+- RisingWave support
 
 ### 🧪 Performance Testing
 
 - Load testing for high-frequency updates and concurrent connections
 - Benchmarks for subscription startup latency and memory usage
-
----
-
-## **Milestone 4 — Use tycostream as a Managed Streaming GraphQL Platform**
-
-> Teams can use tycostream as a hosted service with token-based access, admin tooling, and integrations with downstream GraphQL ecosystems.
-> 
-
-### ☁️ Hosted Platform
-
-- Fully managed, SLA-backed tycostream service
-- Token-based access authentication
-- Admin UI for source config and schema management
-
-### 🔌 Ecosystem Integration
-
-- Support for Live Queries over SSE
-- Hasura-compatible schema introspection and metadata format
-
-### 🔄 Multi-Source Support
-
-- Native RisingWave backend support
-- Multi-source deployment: Materialize + RisingWave in one config
