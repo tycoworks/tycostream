@@ -53,6 +53,7 @@
 ### 🔄 Materialize Resilience
 
 - Automatic reconnect with exponential backoff
+- Cursor-based resume using SUBSCRIBE AS OF to avoid data loss on reconnection
 - Circuit breaker for failed subscriptions
 - Stream health monitoring and self-healing
 - Runtime source existence validation
@@ -63,6 +64,14 @@
 - WebSocket reconnection support
 - Stale client cleanup and connection lifecycle management
 - Standardized error codes for all failure modes
+- Graceful shutdown with client notification before disconnect
+
+### 🔄 Subscription Lifecycle & Reliability
+
+- Clients know when initial data load is complete vs receiving live updates
+- Clients can detect if they missed any updates during brief disconnections
+- Recent updates can be replayed for clients that briefly disconnect
+- Clear visibility into tycostream's connection health with its data sources
 
 ### 🧪 Test Infrastructure
 
