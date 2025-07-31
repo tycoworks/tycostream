@@ -1,28 +1,24 @@
 # GraphQL Subscription Filters
 
-This document outlines the design and implementation of Hasura-compatible filtering for tycostream subscriptions.
-
 ## Overview
 
-tycostream implements client-side filtering to:
-- Support concurrent subscriptions with different filters over the main data cache
-- Avoid creating database views for every filter combination
-- Enable future features like sorting and infinite scrolling in the same layer
+tycostream needs to support filtering for GraphQL subscriptions, allowing clients to subscribe to subsets of data using Hasura-compatible `where` clauses. This document explores the design options and implementation approach.
 
 ## Table of Contents
 
-1. [MVP Scope](#mvp-scope)
-2. [Implementation Phases](#implementation-phases)
-3. [User Experience (Hasura-Compatible)](#user-experience-hasura-compatible)
-4. [The View Concept](#the-view-concept)
+1. [User Experience](#user-experience)
+2. [Architectural Decision](#architectural-decision)
+3. [The View Concept](#the-view-concept)
+4. [Implementation Phases](#implementation-phases)
 5. [Technical Implementation](#technical-implementation)
 6. [Performance Optimizations](#performance-optimizations)
-7. [Implementation Checklist](#implementation-checklist)
-8. [Future Enhancements](#future-enhancements)
+7. [Future Enhancements](#future-enhancements)
 
-## MVP Scope
+## User Experience
 
-### Phase 1 - Core Operators
+tycostream will support Hasura-compatible filtering, allowing users to filter subscriptions using a `where` argument with an intuitive syntax.
+
+### MVP Scope
 
 The initial implementation supports the most commonly used operators:
 
@@ -33,44 +29,9 @@ The initial implementation supports the most commonly used operators:
 
 This covers ~80% of filtering use cases while keeping implementation simple.
 
-### Not in MVP
-
-- Text operators (`_like`, `_ilike`, `_regex`)
-- JSON/JSONB operators  
-- Array operators
-- Nested relationship filtering
-
-## Implementation Phases
-
-### Phase 1: GraphQL Filter Parsing
-- Add `where` argument to subscription schema
-- Parse GraphQL where clauses to JavaScript expressions
-- Log filter expressions but don't apply them yet
-- Test filter expression generation
-
-### Phase 2: View Infrastructure
-- Create `View` class as a filtered stream
-- DatabaseStreamingService creates Views (encapsulation)
-- Views track visible keys, not full data
-- Views get row data via callback function
-
-### Phase 3: Filter Implementation
-- Update DatabaseStreamingManagerService.getUpdates() to accept filter
-- Compile filter expressions to functions with dependency tracking
-- Cache streams by (source + filter expression) key
-- Generate INSERT/UPDATE/DELETE events as items enter/leave filter
-- Optimize: skip re-evaluation when changed fields don't affect filter
-
-### Phase 4: Optimizations
-- Skip evaluation when unchanged fields (leveraging field-level updates)
-- Async view processing (update cache synchronously, process views async)
-- Memory optimization strategies
-
-## User Experience (Hasura-Compatible)
+**Not in MVP**: Text operators (`_like`, `_ilike`, `_regex`), JSON/JSONB operators, array operators, and nested relationship filtering.
 
 ### Basic Filtering
-
-Users should be able to filter subscriptions using a `where` argument with an intuitive syntax:
 
 ```graphql
 subscription ActiveUsers {
@@ -104,8 +65,53 @@ subscription RecentActiveUsers {
 }
 ```
 
+## Architectural Decision
+
+To support the filtering requirements above, we need to decide where filtering happens. There are two main approaches, each with trade-offs:
+
+### Option 1: Push Filters to Materialize (Database-side)
+Create a new Materialize view for each unique `where` clause, letting the database handle all filtering.
+
+**Pros:**
+- Leverages Materialize's optimized query engine
+- Filters run close to the data
+- No additional filtering logic in tycostream
+
+**Cons:**
+- Each unique filter requires a separate SUBSCRIBE connection
+- 1000 users with slightly different filters = 1000 database connections
+- No support for row-level security or user-context filtering
+- View explosion problem (potentially thousands of views)
+
+### Option 2: Filter in tycostream (Client-side)
+Maintain one shared cache per base view and apply filters in tycostream before sending to clients.
+
+**Pros:**
+- Single database connection serves many filtered subscriptions
+- Foundation for row-level security and entitlements
+- Enables additional features (sorting, pagination, field masking)
+- Clear architectural separation of concerns
+
+**Cons:**
+- Filtering logic runs in Node.js instead of optimized database
+- tycostream uses more memory to track view states
+- Additional complexity in tycostream codebase
+
+### Our Choice: Client-Side Filtering
+
+We chose Option 2 (client-side filtering) because:
+
+**Connection Efficiency**: Each unique filter combination would require a separate SUBSCRIBE connection to Materialize. With 1000 users having slightly different filters, this would create 1000 database connections, each with cursor and memory overhead.
+
+**Row-Level Security**: Materialize has role-based access control (RBAC) for table/view permissions, but lacks row-level security (RLS) - the ability to filter which rows users can see based on their identity or context. Client-side filtering provides a foundation for implementing rules like "traders only see their own trades".
+
+**Architectural Clarity**: Clear separation of concerns - Materialize handles computation and incremental view maintenance, while tycostream handles data distribution and user-specific filtering.
+
+**Future Flexibility**: The filtering layer enables features beyond just `where` clauses, such as sorting, pagination, field masking, and rate limiting.
 
 ## The View Concept
+
+With client-side filtering chosen, we need a way to maintain filtered subsets of the main cache for each subscription. This is where "views" come in - lightweight filtered streams that track which rows from the main cache are visible to each client.
 
 ### Why Views?
 
@@ -150,6 +156,34 @@ When processing an update:
    - Was in view, no longer matches → DELETE  
    - Wasn't in view, now matches → INSERT
    - Wasn't in view, still doesn't match → (ignore)
+
+## Implementation Phases
+
+Now that we've decided on client-side filtering with views, here's how we'll implement it:
+
+### Phase 1: GraphQL Filter Parsing
+- Add `where` argument to subscription schema
+- Parse GraphQL where clauses to JavaScript expressions
+- Log filter expressions but don't apply them yet
+- Test filter expression generation
+
+### Phase 2: View Infrastructure
+- Create `View` class as a filtered stream
+- DatabaseStreamingService creates Views (encapsulation)
+- Views track visible keys, not full data
+- Views get row data via callback function
+
+### Phase 3: Filter Implementation
+- Update DatabaseStreamingManagerService.getUpdates() to accept filter
+- Compile filter expressions to functions with dependency tracking
+- Cache streams by (source + filter expression) key
+- Generate INSERT/UPDATE/DELETE events as items enter/leave filter
+- Optimize: skip re-evaluation when changed fields don't affect filter
+
+### Phase 4: Optimizations
+- Skip evaluation when unchanged fields (leveraging field-level updates)
+- Async view processing (update cache synchronously, process views async)
+- Memory optimization strategies
 
 ## Technical Implementation
 
@@ -325,36 +359,7 @@ class View {
 }
 ```
 
-## Implementation Checklist
-
-### Core Components
-
-1. **Filter Compilation**: GraphQL where → JavaScript function with dependency tracking
-2. **Enhanced DatabaseStreamingManagerService**: Handles view creation and caching
-3. **View Class**: Lightweight filtered stream with visibility tracking
-4. **Minimal GraphQL Changes**: Just pass filter to getUpdates()
-
-### Code Organization
-
-```
-src/
-  database/
-    database-view.ts              # View class (filtered stream)
-    database-streaming.service.ts      # Enhanced getUpdates() with filter param
-    database-streaming-manager.service.ts  # Enhanced getUpdates() with filter param
-    
-  graphql/
-    filter-compiler.ts   # whereToExpression function - converts GraphQL where to expression
-```
-
-### Architecture Benefits
-
-- **Encapsulation**: Views can only access cache through callbacks
-- **Simplicity**: No separate ViewManager needed  
-- **Consistency**: Always async boundary, filtered or not
-- **Composability**: Views are just filtered streams
-
-### Design Decisions
+## Design Decisions
 
 **Filter Format**: Expression string approach
 - GraphQL layer converts `where` to expression string
