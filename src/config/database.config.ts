@@ -1,7 +1,7 @@
 import { registerAs } from '@nestjs/config';
 import { IsInt, IsNotEmpty, IsString, Max, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { validateConfig } from './config-validation';
+import { validateConfig } from './validation';
 
 /**
  * Database connection configuration

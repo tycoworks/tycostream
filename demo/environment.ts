@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { TestEnvironment } from '../test/utils';
 
-// Configuration
+// Configuration for the live demo environment
 const TEST_PORT = 4000;
 const MARKET_DATA_INTERVAL_MS = 50;
 const TRADE_INTERVAL_MS = 3000;
@@ -10,40 +10,42 @@ const MIN_TRADE_QUANTITY = 2000;
 const MAX_TRADE_QUANTITY = 10000;
 const TRADE_BIAS = 0.5; // 0.5 = equal buy/sell probability
 
-// Instrument data: id -> { symbol, name, price, initialPosition }
+// Maps instrument IDs to their metadata including symbol, name, current price, and initial position
 const instruments = new Map([
   [1, { symbol: 'AAPL', name: 'Apple Inc.', price: 170.5, initialPosition: 1000 }],
   [2, { symbol: 'GOOG', name: 'Alphabet Inc.', price: 125.9, initialPosition: -500 }],
   [3, { symbol: 'MSFT', name: 'Microsoft Corporation', price: 310.2, initialPosition: 750 }]
 ]);
 
-// Global test environment instance
+// Global test environment instance for managing the demo
 let testEnv: TestEnvironment;
 
-// ID counters
+// Auto-incrementing ID counters for market data and trades
 let marketDataId = 1;
 let tradeId = 1;
 
-// Run if called directly
+// Automatically start the demo when this file is executed directly
 if (require.main === module) {
   runLiveEnvironment().catch(console.error);
 }
 
-// Functions
+/**
+ * Starts a live streaming environment with simulated market data and trades
+ */
 async function runLiveEnvironment() {
   console.log('Starting live tycostream environment...');
   console.log(`GraphQL endpoint will be available at http://localhost:${TEST_PORT}/graphql`);
   
-  // Create test environment
+  // Create test environment with specified port and schema
   testEnv = await TestEnvironment.create(
     TEST_PORT,
     path.join(__dirname, 'schema.yaml')
   );
   
-  // Setup database
+  // Initialize database schema and tables
   await setupDatabase();
   
-  // Insert initial data for all instruments
+  // Populate initial market data and positions
   await insertInitialData();
   
   console.log(`
@@ -55,7 +57,7 @@ Live environment running!
 Press Ctrl+C to stop
 `);
   
-  // Start market data updates
+  // Continuously generate random market data updates
   const marketDataInterval = setInterval(async () => {
     try {
       const instrumentId = Math.floor(Math.random() * instruments.size) + 1;
@@ -65,7 +67,7 @@ Press Ctrl+C to stop
     }
   }, MARKET_DATA_INTERVAL_MS);
   
-  // Start trade updates
+  // Continuously generate random trade executions
   const tradeInterval = setInterval(async () => {
     try {
       const instrumentId = Math.floor(Math.random() * instruments.size) + 1;
@@ -77,7 +79,7 @@ Press Ctrl+C to stop
     }
   }, TRADE_INTERVAL_MS);
   
-  // Handle shutdown
+  // Gracefully handle shutdown on Ctrl+C
   let shutdownInProgress = false;
   process.on('SIGINT', async () => {
     if (shutdownInProgress) {
@@ -93,10 +95,13 @@ Press Ctrl+C to stop
   });
 }
 
+/**
+ * Creates database tables and materialized views for the demo
+ */
 async function setupDatabase() {
   console.log('Setting up database schema...');
   
-  // Create tables
+  // Create instruments table
   await testEnv.executeSql(`
     CREATE TABLE instruments (
       id INT,
@@ -124,7 +129,7 @@ async function setupDatabase() {
     )
   `);
 
-  // Insert instruments from map
+  // Populate instruments table from our configuration
   for (const [id, instrument] of instruments) {
     await testEnv.executeSql(`
       INSERT INTO instruments (id, symbol, name) 
@@ -132,7 +137,7 @@ async function setupDatabase() {
     `, [id, instrument.symbol, instrument.name]);
   }
 
-  // Create materialized views
+  // Create view for latest market data per instrument
   await testEnv.executeSql(`
     CREATE MATERIALIZED VIEW latest_market_data AS
       SELECT DISTINCT ON (instrument_id) instrument_id, Price, Timestamp
@@ -162,15 +167,18 @@ async function setupDatabase() {
   console.log('Database setup complete');
 }
 
+/**
+ * Populates initial market data and positions for all instruments
+ */
 async function insertInitialData() {
   console.log('Inserting initial data for all instruments...');
   
-  // Insert initial market data and trades for each instrument
+  // Generate initial snapshot for each instrument
   for (const [id, instrument] of instruments) {
-    // Insert market data
+    // Create initial market data point
     await insertMarketData(id);
     
-    // Insert initial trade to establish position
+    // Create initial position if specified
     if (instrument.initialPosition !== 0) {
       await insertTrade(id, instrument.initialPosition);
     }
@@ -179,11 +187,14 @@ async function insertInitialData() {
   console.log('Initial data inserted for all instruments');
 }
 
+/**
+ * Inserts a new market data record with a randomly fluctuating price
+ */
 async function insertMarketData(instrumentId: number) {
   const instrument = instruments.get(instrumentId)!;
   const currentPrice = instrument.price;
   
-  // Generate random price change between -MAX_PRICE_CHANGE and +MAX_PRICE_CHANGE
+  // Calculate random price movement within configured bounds
   const priceChange = (Math.random() - 0.5) * 2 * MAX_PRICE_CHANGE;
   const newPrice = +(currentPrice + priceChange).toFixed(2);
   
@@ -199,6 +210,9 @@ async function insertMarketData(instrumentId: number) {
   console.log(`Market data: Instrument ${instrumentId} price updated to ${newPrice}`);
 }
 
+/**
+ * Inserts a trade record at the current market price
+ */
 async function insertTrade(instrumentId: number, quantity: number) {
   const instrument = instruments.get(instrumentId)!;
   const price = instrument.price;

@@ -1,6 +1,6 @@
-import type { SourceDefinition } from '../config/source-definition.types';
-import { getGraphQLType } from '../common/type-map';
-import { GraphQLRowOperation } from './subscription-resolvers';
+import type { SourceDefinition } from '../config/source.types';
+import { getGraphQLType } from '../common/types';
+import { GraphQLRowOperation } from './subscriptions';
 
 /**
  * Generates GraphQL SDL schema from source definitions

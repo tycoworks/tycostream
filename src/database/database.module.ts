@@ -1,18 +1,16 @@
 import { Module } from '@nestjs/common';
-import { DatabaseConnectionService } from './database-connection.service';
-import { DatabaseStreamingManagerService } from './database-streaming-manager.service';
+import { DatabaseConnectionService } from './connection.service';
 
 /**
- * Database module encapsulates all database streaming functionality
- * Exports only DatabaseStreamingManagerService to enforce proper layering
+ * Database module provides database infrastructure services
+ * Exports DatabaseConnectionService for use by streaming module
  */
 @Module({
   providers: [
-    DatabaseConnectionService, 
-    DatabaseStreamingManagerService
+    DatabaseConnectionService
   ],
   exports: [
-    DatabaseStreamingManagerService
+    DatabaseConnectionService
   ],
 })
 export class DatabaseModule {}

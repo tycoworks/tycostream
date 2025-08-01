@@ -1,4 +1,4 @@
-import { TestClient } from './test-client';
+import { TestClient } from './client';
 
 export interface StartClientOptions<TData = any> {
   query: string;

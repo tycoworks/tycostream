@@ -1,13 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseStreamingManagerService } from './database-streaming-manager.service';
-import { DatabaseConnectionService } from './database-connection.service';
-import type { SourceDefinition } from '../config/source-definition.types';
+import { StreamingManagerService } from './manager.service';
+import { DatabaseConnectionService } from '../database/connection.service';
+import type { SourceDefinition } from '../config/source.types';
 import { RowUpdateType, type RowUpdateEvent } from './types';
 import { firstValueFrom, take } from 'rxjs';
 
-describe('DatabaseStreamingManagerService', () => {
-  let managerService: DatabaseStreamingManagerService;
+describe('StreamingManagerService', () => {
+  let managerService: StreamingManagerService;
   let mockConfigService: jest.Mocked<ConfigService>;
   let mockConnectionService: jest.Mocked<DatabaseConnectionService>;
 
@@ -48,13 +48,13 @@ describe('DatabaseStreamingManagerService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        DatabaseStreamingManagerService,
+        StreamingManagerService,
         { provide: ConfigService, useValue: mockConfigService },
         { provide: DatabaseConnectionService, useValue: mockConnectionService }
       ]
     }).compile();
 
-    managerService = module.get<DatabaseStreamingManagerService>(DatabaseStreamingManagerService);
+    managerService = module.get<StreamingManagerService>(StreamingManagerService);
   });
 
   afterEach(() => {

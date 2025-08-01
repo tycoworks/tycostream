@@ -1,10 +1,11 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable, Subject, ReplaySubject, filter, Subscription } from 'rxjs';
-import { DatabaseConnectionService } from './database-connection.service';
-import { DatabaseSubscriber } from './database-subscriber';
-import type { ProtocolHandler } from './types';
-import type { SourceDefinition } from '../config/source-definition.types';
-import { RowUpdateType, DatabaseRowUpdateType, type RowUpdateEvent } from './types';
+import { DatabaseConnectionService } from '../database/connection.service';
+import { DatabaseSubscriber } from '../database/subscriber';
+import type { ProtocolHandler } from '../database/types';
+import { DatabaseRowUpdateType } from '../database/types';
+import type { SourceDefinition } from '../config/source.types';
+import { RowUpdateType, type RowUpdateEvent } from './types';
 import type { Cache } from './cache.types';
 import { SimpleCache } from './cache';
 import { truncateForLog } from '../common/logging.utils';
@@ -14,8 +15,8 @@ import { truncateForLog } from '../common/logging.utils';
  * Handles Observable-based streaming with late joiner support
  * Uses DatabaseProtocolHandler for database connection management
  */
-export class DatabaseStreamingService implements OnModuleDestroy {
-  private readonly logger = new Logger(DatabaseStreamingService.name);
+export class StreamingService implements OnModuleDestroy {
+  private readonly logger = new Logger(StreamingService.name);
   private readonly cache: Cache;
   private readonly internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
   private readonly databaseSubscriber: DatabaseSubscriber;

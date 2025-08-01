@@ -1,5 +1,5 @@
-import { generateSchema } from './schema-generator';
-import type { SourceDefinition } from '../config/source-definition.types';
+import { generateSchema } from './schema';
+import type { SourceDefinition } from '../config/source.types';
 
 describe('generateSchema', () => {
   it('should generate basic schema structure', () => {

@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
-import type { SourceDefinition } from '../config/source-definition.types';
+import type { SourceDefinition } from '../config/source.types';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
-import { getPostgresType } from '../common/type-map';
+import { getPostgresType } from '../common/types';
 import * as pgTypes from 'pg-types';
 
 /**

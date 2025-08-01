@@ -1,8 +1,8 @@
 import { of } from 'rxjs';
-import { buildSubscriptionResolvers } from './subscription-resolvers';
-import { DatabaseStreamingManagerService } from '../database/database-streaming-manager.service';
-import type { SourceDefinition } from '../config/source-definition.types';
-import { RowUpdateType } from '../database/types';
+import { buildSubscriptionResolvers } from './subscriptions';
+import { StreamingManagerService } from '../streaming/manager.service';
+import type { SourceDefinition } from '../config/source.types';
+import { RowUpdateType } from '../streaming/types';
 
 // Mock rxjs-for-await
 jest.mock('rxjs-for-await', () => ({
@@ -22,7 +22,7 @@ jest.mock('rxjs-for-await', () => ({
 }));
 
 describe('buildSubscriptionResolvers', () => {
-  let mockStreamingManager: jest.Mocked<DatabaseStreamingManagerService>;
+  let mockStreamingManager: jest.Mocked<StreamingManagerService>;
 
   beforeEach(() => {
     mockStreamingManager = {

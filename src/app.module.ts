@@ -4,11 +4,12 @@ import databaseConfig from './config/database.config';
 import graphqlConfig from './config/graphql.config';
 import sourcesConfig from './config/sources.config';
 import { DatabaseModule } from './database/database.module';
+import { StreamingModule } from './streaming/streaming.module';
 import { GraphqlModule } from './graphql/graphql.module';
 
 /**
  * Root application module that bootstraps the tycostream server
- * Module order matters: Config → Database → GraphQL
+ * Module order matters: Config → Database → Streaming → GraphQL
  */
 @Module({
   imports: [
@@ -20,8 +21,9 @@ import { GraphqlModule } from './graphql/graphql.module';
     }),
 
     // Core modules - order matters for dependencies
-    DatabaseModule,    // Handles database connections and streaming
-    GraphqlModule,     // Exposes GraphQL subscriptions
+    DatabaseModule,    // Database infrastructure
+    StreamingModule,   // Streaming domain logic
+    GraphqlModule,     // GraphQL API layer
   ],
 })
 export class AppModule {}

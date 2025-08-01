@@ -1,4 +1,4 @@
-import { getPostgresType, getGraphQLType, TYPE_MAP } from './type-map';
+import { getPostgresType, getGraphQLType, TYPE_MAP } from './types';
 import * as pgTypes from 'pg-types';
 
 describe('type-map', () => {

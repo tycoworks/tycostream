@@ -1,6 +1,6 @@
-import { DatabaseSubscriber } from './database-subscriber';
-import { DatabaseConnectionService } from './database-connection.service';
-import type { SourceDefinition } from '../config/source-definition.types';
+import { DatabaseSubscriber } from './subscriber';
+import { DatabaseConnectionService } from './connection.service';
+import type { SourceDefinition } from '../config/source.types';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
 

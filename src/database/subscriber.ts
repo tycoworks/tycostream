@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { to as copyTo } from 'pg-copy-streams';
 import type { Client } from 'pg';
-import { DatabaseConnectionService } from './database-connection.service';
-import { StreamBuffer } from './stream-buffer';
+import { DatabaseConnectionService } from './connection.service';
+import { StreamBuffer } from './buffer';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
 

@@ -4,11 +4,11 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
-import { generateSchema } from './schema-generator';
-import type { SourceDefinition } from '../config/source-definition.types';
-import { buildSubscriptionResolvers } from './subscription-resolvers';
-import { DatabaseModule } from '../database/database.module';
-import { DatabaseStreamingManagerService } from '../database/database-streaming-manager.service';
+import { generateSchema } from './schema';
+import type { SourceDefinition } from '../config/source.types';
+import { buildSubscriptionResolvers } from './subscriptions';
+import { StreamingModule } from '../streaming/streaming.module';
+import { StreamingManagerService } from '../streaming/manager.service';
 
 /**
  * GraphQL module configures Apollo Server with dynamic schema generation
@@ -16,15 +16,15 @@ import { DatabaseStreamingManagerService } from '../database/database-streaming-
  */
 @Module({
   imports: [
-    DatabaseModule,
+    StreamingModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
-      imports: [ConfigModule, DatabaseModule],
+      imports: [ConfigModule, StreamingModule],
       /**
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
        */
-      useFactory: async (configService: ConfigService, streamingManager: DatabaseStreamingManagerService) => {
+      useFactory: async (configService: ConfigService, streamingManager: StreamingManagerService) => {
         const logger = new Logger('GraphQLModule');
         
         // Get source definitions from config
@@ -74,7 +74,7 @@ import { DatabaseStreamingManagerService } from '../database/database-streaming-
           }),
         };
       },
-      inject: [ConfigService, DatabaseStreamingManagerService],
+      inject: [ConfigService, StreamingManagerService],
     }),
   ],
   providers: [],

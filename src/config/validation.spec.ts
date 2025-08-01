@@ -1,5 +1,5 @@
 import { IsString, IsNumber, Min } from 'class-validator';
-import { validateConfig } from './config-validation';
+import { validateConfig } from './validation';
 
 class TestConfig {
   @IsString()

@@ -1,20 +1,20 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Observable } from 'rxjs';
-import { DatabaseStreamingService } from './database-streaming.service';
-import { DatabaseConnectionService } from './database-connection.service';
-import { MaterializeProtocolHandler } from './materialize-protocol';
-import type { SourceDefinition } from '../config/source-definition.types';
+import { StreamingService } from './streaming.service';
+import { DatabaseConnectionService } from '../database/connection.service';
+import { MaterializeProtocolHandler } from '../database/materialize';
+import type { SourceDefinition } from '../config/source.types';
 import type { RowUpdateEvent } from './types';
 
 /**
- * Manages multiple DatabaseStreamingService instances for different sources
+ * Manages multiple StreamingService instances for different sources
  * Provides a unified interface for streaming database updates
  */
 @Injectable()
-export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(DatabaseStreamingManagerService.name);
-  private readonly streamingServices = new Map<string, DatabaseStreamingService>();
+export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(StreamingManagerService.name);
+  private readonly streamingServices = new Map<string, StreamingService>();
   private readonly sourceDefinitions = new Map<string, SourceDefinition>();
 
   constructor(
@@ -113,12 +113,12 @@ export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDe
   /**
    * Create a streaming service with protocol handler for a source
    */
-  private createStreamingService(sourceDef: SourceDefinition): DatabaseStreamingService {
+  private createStreamingService(sourceDef: SourceDefinition): StreamingService {
     // Create protocol handler for this source
     const protocolHandler = new MaterializeProtocolHandler(sourceDef, sourceDef.name);
     
     // Create streaming service
-    return new DatabaseStreamingService(
+    return new StreamingService(
       this.connectionService,
       sourceDef,
       sourceDef.name,
@@ -128,7 +128,7 @@ export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDe
 
   // Internal methods for testing only
   /** @internal */
-  _getStreamingService(sourceName: string): DatabaseStreamingService | undefined {
+  _getStreamingService(sourceName: string): StreamingService | undefined {
     return this.streamingServices.get(sourceName);
   }
 

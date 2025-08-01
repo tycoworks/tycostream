@@ -1,14 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { DatabaseStreamingService } from './database-streaming.service';
-import { DatabaseConnectionService } from './database-connection.service';
-import type { SourceDefinition } from '../config/source-definition.types';
-import type { ProtocolHandler } from './types';
-import { RowUpdateType, DatabaseRowUpdateType, type RowUpdateEvent } from './types';
+import { StreamingService } from './streaming.service';
+import { DatabaseConnectionService } from '../database/connection.service';
+import type { SourceDefinition } from '../config/source.types';
+import type { ProtocolHandler } from '../database/types';
+import { DatabaseRowUpdateType } from '../database/types';
+import { RowUpdateType, type RowUpdateEvent } from './types';
 import { take, toArray } from 'rxjs/operators';
 import { firstValueFrom } from 'rxjs';
 
-describe('DatabaseStreamingService', () => {
-  let service: DatabaseStreamingService;
+describe('StreamingService', () => {
+  let service: StreamingService;
   let connectionService: DatabaseConnectionService;
 
   const mockSourceDef: SourceDefinition = {
@@ -39,7 +40,7 @@ describe('DatabaseStreamingService', () => {
   beforeEach(async () => {
     // Create service directly with constructor since it needs source info
     connectionService = mockConnectionService as any;
-    service = new DatabaseStreamingService(
+    service = new StreamingService(
       connectionService as any,
       mockSourceDef,
       'test_source',

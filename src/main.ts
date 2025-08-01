@@ -6,7 +6,7 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
-import type { SourceDefinition } from './config/source-definition.types';
+import type { SourceDefinition } from './config/source.types';
 import { getLogLevels } from './common/logging.utils';
 
 /**

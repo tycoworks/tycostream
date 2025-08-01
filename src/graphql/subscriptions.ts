@@ -1,10 +1,10 @@
 import { map, tap } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
 import { Logger } from '@nestjs/common';
-import { DatabaseStreamingManagerService } from '../database/database-streaming-manager.service';
-import type { SourceDefinition } from '../config/source-definition.types';
-import type { RowUpdateEvent } from '../database/types';
-import { RowUpdateType } from '../database/types';
+import { StreamingManagerService } from '../streaming/manager.service';
+import type { SourceDefinition } from '../config/source.types';
+import type { RowUpdateEvent } from '../streaming/types';
+import { RowUpdateType } from '../streaming/types';
 import { truncateForLog } from '../common/logging.utils';
 
 /**
@@ -46,7 +46,7 @@ const logger = new Logger('GraphQLSubscriptions');
  */
 function createSourceSubscriptionResolver(
   sourceName: string,
-  streamingManager: DatabaseStreamingManagerService
+  streamingManager: StreamingManagerService
 ) {
   return {
     subscribe: () => {
@@ -84,7 +84,7 @@ function createSourceSubscriptionResolver(
  */
 export function buildSubscriptionResolvers(
   sources: Map<string, SourceDefinition>,
-  streamingManager: DatabaseStreamingManagerService
+  streamingManager: StreamingManagerService
 ): Record<string, SubscriptionResolver> {
   const resolvers: Record<string, SubscriptionResolver> = {};
   

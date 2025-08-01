@@ -1,7 +1,7 @@
 import { registerAs } from '@nestjs/config';
 import { IsBoolean, IsInt, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { validateConfig } from './config-validation';
+import { validateConfig } from './validation';
 
 /**
  * GraphQL server configuration

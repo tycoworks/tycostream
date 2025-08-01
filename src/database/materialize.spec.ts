@@ -1,5 +1,5 @@
-import { MaterializeProtocolHandler } from './materialize-protocol';
-import type { SourceDefinition } from '../config/source-definition.types';
+import { MaterializeProtocolHandler } from './materialize';
+import type { SourceDefinition } from '../config/source.types';
 import { DatabaseRowUpdateType } from './types';
 
 describe('MaterializeProtocolHandler', () => {

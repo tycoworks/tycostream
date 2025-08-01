@@ -1,4 +1,4 @@
-import { StreamBuffer } from './stream-buffer';
+import { StreamBuffer } from './buffer';
 
 describe('StreamBuffer', () => {
   let buffer: StreamBuffer;

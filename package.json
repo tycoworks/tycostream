@@ -14,7 +14,7 @@
     "start": "node dist/main",
     "test": "jest",
     "e2e": "jest --config ./test/jest-e2e.json --runInBand",
-    "demo": "(cd demo && ts-node live-environment.ts &) && cd demo && vite"
+    "demo": "(cd demo && ts-node environment.ts &) && cd demo && vite"
   },
   "dependencies": {
     "@apollo/server": "^4.12.2",
