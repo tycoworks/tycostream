@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { to as copyTo } from 'pg-copy-streams';
 import type { Client } from 'pg';
 import { DatabaseConnectionService } from './connection.service';
@@ -10,7 +10,6 @@ import { DatabaseRowUpdateType } from './types';
  * Manages database subscription and streaming for a single source
  * Delegates to parent service for update processing
  */
-@Injectable()
 export class DatabaseSubscriber implements OnModuleDestroy {
   private readonly logger = new Logger(DatabaseSubscriber.name);
   private readonly buffer = new StreamBuffer();

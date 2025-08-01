@@ -65,6 +65,7 @@
 - Stale client cleanup and connection lifecycle management
 - Standardized error codes for all failure modes
 - Graceful shutdown with client notification before disconnect
+- Exception filters for consistent error handling across the application
 
 ### 🔄 Subscription Lifecycle & Reliability
 
