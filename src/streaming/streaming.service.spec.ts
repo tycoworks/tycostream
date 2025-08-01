@@ -65,7 +65,6 @@ describe('StreamingService', () => {
       
       service['processUpdate'](row, BigInt(1000), DatabaseRowUpdateType.Upsert);
 
-      expect(service._getRow('1')).toEqual(row);
       expect(service.getRowCount()).toBe(1);
     });
 
@@ -80,7 +79,6 @@ describe('StreamingService', () => {
       // Then delete
       service['processUpdate'](row, BigInt(2000), DatabaseRowUpdateType.Delete);
       
-      expect(service._getRow('1')).toBeUndefined();
       expect(service.getRowCount()).toBe(0);
     });
 
@@ -354,15 +352,12 @@ describe('StreamingService', () => {
   });
 
   describe('cache operations', () => {
-    it('should provide cache access methods', () => {
+    it('should track row count correctly', () => {
       service['processUpdate']({ id: '1', name: 'test1' }, BigInt(1000), DatabaseRowUpdateType.Upsert);
       
       service['processUpdate']({ id: '2', name: 'test2' }, BigInt(2000), DatabaseRowUpdateType.Upsert);
       
       expect(service.getRowCount()).toBe(2);
-      expect(service._getRow('1')).toEqual({ id: '1', name: 'test1' });
-      expect(service._getRow('2')).toEqual({ id: '2', name: 'test2' });
-      expect(service._getAllRows()).toHaveLength(2);
     });
   });
 

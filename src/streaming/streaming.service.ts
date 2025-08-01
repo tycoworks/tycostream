@@ -107,16 +107,6 @@ export class StreamingService implements OnModuleDestroy {
     return this.latestTimestamp;
   }
 
-  // Internal methods for testing only
-  /** @internal */
-  _getAllRows(): Record<string, any>[] {
-    return this.cache.getAllRows();
-  }
-
-  /** @internal */
-  _getRow(primaryKey: string | number): Record<string, any> | undefined {
-    return this.cache.get(primaryKey);
-  }
 
   /**
    * Cleanup on module destroy

@@ -126,14 +126,4 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  // Internal methods for testing only
-  /** @internal */
-  _getStreamingService(sourceName: string): StreamingService | undefined {
-    return this.streamingServices.get(sourceName);
-  }
-
-  /** @internal */
-  _getStreamingServiceCount(): number {
-    return this.streamingServices.size;
-  }
 }

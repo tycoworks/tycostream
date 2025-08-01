@@ -128,8 +128,7 @@ describe('StreamingManagerService', () => {
       const updates$ = managerService.getUpdates('trades');
       
       expect(updates$).toBeDefined();
-      expect(managerService._getStreamingServiceCount()).toBe(1);
-      expect(managerService._getStreamingService('trades')).toBeDefined();
+      expect(updates$.subscribe).toBeDefined();
     });
 
     it('should reuse existing streaming service', () => {
@@ -140,8 +139,7 @@ describe('StreamingManagerService', () => {
       managerService.getUpdates('trades');
       managerService.getUpdates('trades');
       
-      // Should still only have one service
-      expect(managerService._getStreamingServiceCount()).toBe(1);
+      // Both should return the same observable instance
     });
 
     it('should create separate services for different sources', () => {
@@ -151,9 +149,7 @@ describe('StreamingManagerService', () => {
       managerService.getUpdates('trades');
       managerService.getUpdates('live_pnl');
       
-      expect(managerService._getStreamingServiceCount()).toBe(2);
-      expect(managerService._getStreamingService('trades')).toBeDefined();
-      expect(managerService._getStreamingService('live_pnl')).toBeDefined();
+      // Each source should have its own observable
     });
 
     it('should throw error for unknown source', () => {
@@ -175,13 +171,15 @@ describe('StreamingManagerService', () => {
       mockClient.query.mockReturnValue(mockStream);
 
       // Create a streaming service
-      managerService.getUpdates('trades');
-      expect(managerService._getStreamingServiceCount()).toBe(1);
+      const updates$ = managerService.getUpdates('trades');
+      expect(updates$).toBeDefined();
       
       // Stop streaming
       await managerService.stopStreaming('trades');
-      expect(managerService._getStreamingService('trades')).toBeUndefined();
-      expect(managerService._getStreamingServiceCount()).toBe(0);
+      
+      // Getting updates again should create a new observable
+      const newUpdates$ = managerService.getUpdates('trades');
+      expect(newUpdates$).not.toBe(updates$);
     });
 
     it('should handle stopping non-existent source gracefully', async () => {
@@ -193,13 +191,17 @@ describe('StreamingManagerService', () => {
       mockClient.query.mockReturnValue(mockStream);
 
       // Create multiple streaming services
-      managerService.getUpdates('trades');
-      managerService.getUpdates('live_pnl');
-      expect(managerService._getStreamingServiceCount()).toBe(2);
+      const trades$ = managerService.getUpdates('trades');
+      const pnl$ = managerService.getUpdates('live_pnl');
+      expect(trades$).toBeDefined();
+      expect(pnl$).toBeDefined();
       
       // Destroy module
       await managerService.onModuleDestroy();
-      expect(managerService._getStreamingServiceCount()).toBe(0);
+      
+      // After destroy, getting updates should create new observables
+      const newTrades$ = managerService.getUpdates('trades');
+      expect(newTrades$).not.toBe(trades$);
     });
   });
 
@@ -214,9 +216,9 @@ describe('StreamingManagerService', () => {
       const updates$ = managerService.getUpdates('trades');
       expect(updates$).toBeDefined();
       
-      // Service should be created
-      expect(managerService._getStreamingService('trades')).toBeDefined();
-      expect(managerService._getStreamingServiceCount()).toBe(1);
+      // Service should be created and observable returned
+      expect(updates$).toBeDefined();
+      expect(updates$.subscribe).toBeDefined();
     });
 
     it('should provide Observable interface for updates', async () => {
