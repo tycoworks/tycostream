@@ -7,6 +7,7 @@ import * as pgTypes from 'pg-types';
 
 /**
  * Handles Materialize-specific protocol details: query generation and data parsing
+ * Implements the ProtocolHandler interface for Materialize's SUBSCRIBE with ENVELOPE UPSERT
  */
 export class MaterializeProtocolHandler implements ProtocolHandler {
   private readonly logger = new Logger(MaterializeProtocolHandler.name);
@@ -34,6 +35,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
 
   /**
    * Create the SUBSCRIBE query for Materialize (without COPY wrapper)
+   * Uses ENVELOPE UPSERT format with KEY field and SNAPSHOT for late joiners
    */
   createSubscribeQuery(): string {
     const keyColumn = this.sourceDefinition.primaryKeyField;
@@ -96,6 +98,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
 
   /**
    * Parse a COPY text format value based on PostgreSQL type
+   * Handles nulls, booleans, numbers, and strings according to PostgreSQL conventions
    */
   private parseValue(value: string, typeName: string): any {
     // Handle COPY format NULL

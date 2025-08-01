@@ -10,12 +10,20 @@ import { buildSubscriptionResolvers } from './subscription-resolvers';
 import { DatabaseModule } from '../database/database.module';
 import { DatabaseStreamingManagerService } from '../database/database-streaming-manager.service';
 
+/**
+ * GraphQL module configures Apollo Server with dynamic schema generation
+ * Runtime schema based on YAML config, supports both WebSocket protocols
+ */
 @Module({
   imports: [
     DatabaseModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       imports: [ConfigModule, DatabaseModule],
+      /**
+       * Factory function runs after ConfigModule loads source definitions
+       * Generates schema and resolvers dynamically from config
+       */
       useFactory: async (configService: ConfigService, streamingManager: DatabaseStreamingManagerService) => {
         const logger = new Logger('GraphQLModule');
         

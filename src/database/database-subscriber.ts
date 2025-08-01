@@ -28,6 +28,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
 
   /**
    * Start streaming with callback for updates and errors
+   * Connects to database and begins COPY stream for continuous updates
    */
   async startStreaming(
     onUpdate: (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => void,
@@ -107,6 +108,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
 
   /**
    * Cleanup on module destroy
+   * Ensures graceful shutdown of database connections
    */
   async onModuleDestroy() {
     this.logger.log('Shutting down database subscriber...');
@@ -121,6 +123,10 @@ export class DatabaseSubscriber implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Process a single line from the COPY stream
+   * Parses the line and forwards to update callback if valid
+   */
   private processLine(line: string): void {
     const parsed = this.protocolHandler.parseLine(line);
     

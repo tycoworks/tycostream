@@ -1,5 +1,6 @@
 /**
  * Truncate data for logging to avoid huge log entries
+ * Defaults to 100 characters with ellipsis for longer strings
  */
 import { LogLevel } from '@nestjs/common';
 

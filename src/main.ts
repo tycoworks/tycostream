@@ -1,3 +1,7 @@
+/**
+ * tycostream entry point - starts the GraphQL server
+ * Loads configuration, initializes database streaming, and serves subscriptions
+ */
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
@@ -5,6 +9,10 @@ import { AppModule } from './app.module';
 import type { SourceDefinition } from './config/source-definition.types';
 import { getLogLevels } from './common/logging.utils';
 
+/**
+ * Bootstrap the NestJS application
+ * Initializes the server with configuration, database connections, and GraphQL endpoint
+ */
 async function bootstrap() {
   const logger = new Logger('tycostream');
   

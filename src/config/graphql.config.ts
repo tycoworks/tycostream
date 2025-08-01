@@ -3,6 +3,10 @@ import { IsBoolean, IsInt, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { validateConfig } from './config-validation';
 
+/**
+ * GraphQL server configuration
+ * Controls port and playground UI settings
+ */
 export class GraphQLConfig {
   @Type(() => Number)
   @IsInt()
@@ -14,6 +18,10 @@ export class GraphQLConfig {
   playground: boolean;
 }
 
+/**
+ * GraphQL configuration factory
+ * Loads GraphQL settings from environment variables
+ */
 export default registerAs('graphql', (): GraphQLConfig => {
   const rawConfig = {
     port: parseInt(process.env.GRAPHQL_PORT || '4000', 10),

@@ -6,6 +6,10 @@ import type { YamlSourcesFile, SourceDefinition, SourceField } from './source-de
 
 const logger = new Logger('SourcesConfig');
 
+/**
+ * Loads and validates source definitions from YAML schema file
+ * Fails fast with clear error messages if schema is invalid or missing
+ */
 export default registerAs('sources', (): Map<string, SourceDefinition> => {
   const sources = new Map<string, SourceDefinition>();
   

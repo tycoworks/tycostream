@@ -4,6 +4,7 @@ import { GraphQLRowOperation } from './subscription-resolvers';
 
 /**
  * Generates GraphQL SDL schema from source definitions
+ * Creates type definitions for each source including Query, Subscription, and custom types
  */
 export function generateSchema(sources: Map<string, SourceDefinition>): string {
   const subscriptionFields = buildSubscriptionFields(sources);
@@ -49,6 +50,7 @@ ${fields}
 
 /**
  * Build subscription fields for all sources
+ * Creates a subscription field for each source that returns its update type
  */
 function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string {
   return Array.from(sources.keys())
@@ -58,6 +60,7 @@ function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string
 
 /**
  * Build field definitions for a source type
+ * Maps source fields to GraphQL fields with appropriate types and nullability
  */
 function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
   return sourceDefinition.fields

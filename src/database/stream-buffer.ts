@@ -22,7 +22,8 @@ export class StreamBuffer {
   }
 
   /**
-   * Clear the buffer
+   * Clear the buffer - typically called on stream end or error
+   * Any partial line is lost (acceptable for database streams)
    */
   clear(): void {
     this.buffer = '';

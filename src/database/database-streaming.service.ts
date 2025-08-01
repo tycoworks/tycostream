@@ -1,5 +1,5 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
-import { Observable, Subject, ReplaySubject, filter } from 'rxjs';
+import { Observable, Subject, ReplaySubject, filter, Subscription } from 'rxjs';
 import { DatabaseConnectionService } from './database-connection.service';
 import { DatabaseSubscriber } from './database-subscriber';
 import type { ProtocolHandler } from './types';
@@ -65,48 +65,17 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     const snapshotTimestamp = this.latestTimestamp;
     const snapshot = this.cache.getAllRows();
     
-    // Emit snapshot as insert events
-    let snapshotCount = 0;
-    for (const row of snapshot) {
-      consumerStream$.next({
-        type: RowUpdateType.Insert,
-        row: { ...row }
-      });
-      snapshotCount++;
-    }
-    
+    // Send snapshot to consumer
+    const snapshotCount = this.sendSnapshot(consumerStream$, snapshot);
     this.logger.debug(`Sending cached data to consumer - source: ${this.sourceName}, cachedRows: ${snapshotCount}, activeConsumers: ${this._consumerCount}`);
     
-    // Subscribe to future updates with timestamp filter
-    const subscription = this.internalUpdates$.pipe(
-      filter(([event, timestamp]) => {
-        // Only emit events newer than snapshot timestamp
-        return timestamp > snapshotTimestamp;
-      })
-    ).subscribe(([event]) => {
-      // Forward the event to consumer
-      consumerStream$.next(event);
-    });
+    // Subscribe to live updates after snapshot
+    const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp);
     
     this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}, activeConsumers: ${this._consumerCount}`);
 
     // Return observable that handles cleanup on unsubscribe
-    return new Observable<RowUpdateEvent>(subscriber => {
-      const proxySubscription = consumerStream$.subscribe(subscriber);
-      
-      // Return teardown logic
-      return () => {
-        // Decrement consumer count
-        this._consumerCount--;
-        
-        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}, remainingConsumers: ${this._consumerCount}`);
-        
-        // Clean up subscriptions
-        subscription.unsubscribe();
-        proxySubscription.unsubscribe();
-        consumerStream$.complete();
-      };
-    });
+    return this.createCleanupObservable(consumerStream$, subscription);
   }
 
   /**
@@ -150,6 +119,7 @@ export class DatabaseStreamingService implements OnModuleDestroy {
 
   /**
    * Cleanup on module destroy
+   * Completes streams and shuts down database subscriber gracefully
    */
   async onModuleDestroy() {
     this.logger.log('Shutting down stream...');
@@ -163,7 +133,8 @@ export class DatabaseStreamingService implements OnModuleDestroy {
   }
 
   /**
-   * Internal method to start streaming
+   * Start streaming from the database if not already active
+   * Sets up callbacks with fail-fast error handling
    */
   private async startStreaming(): Promise<void> {
     try {
@@ -193,6 +164,7 @@ export class DatabaseStreamingService implements OnModuleDestroy {
 
   /**
    * Process an incoming update from the database stream
+   * Core method that updates timestamp, cache, and emits events
    */
   private processUpdate(row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType): void {
     // Update timestamp tracking
@@ -211,6 +183,10 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     this.internalUpdates$.next([event, timestamp]);
   }
 
+  /**
+   * Determine the appropriate event type and data based on database update type
+   * Handles UPSERT logic and minimizes DELETE event data
+   */
   private prepareEvent(row: Record<string, any>, primaryKey: any, updateType: DatabaseRowUpdateType): RowUpdateEvent {
     // Determine event type and data
     let eventType: RowUpdateType;
@@ -243,10 +219,18 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     };
   }
 
+  /**
+   * Create an object containing only the primary key field
+   * Used for DELETE events where we only need to identify the row
+   */
   private getPkObject(primaryKey: any): Record<string, any> {
     return { [this.sourceDef.primaryKeyField]: primaryKey };
   }
 
+  /**
+   * Update the cache and log the operation for debugging
+   * Centralizes cache updates with consistent debug logging
+   */
   private updateCacheAndLog(row: Record<string, any>, eventType: RowUpdateType, primaryKey: any, eventData: Record<string, any>): void {
     // Update cache and determine log action
     let action: string;
@@ -263,8 +247,8 @@ export class DatabaseStreamingService implements OnModuleDestroy {
   }
 
   /**
-   * Calculate changes between existing and new row
-   * Adds only changed fields to the provided changes object
+   * Calculate field-level changes between existing and new row
+   * Enables bandwidth-efficient updates by sending only changed fields
    */
   private calculateChanges(existingRow: Record<string, any>, newRow: Record<string, any>, changes: Record<string, any>): void {
     for (const [key, value] of Object.entries(newRow)) {
@@ -284,5 +268,64 @@ export class DatabaseStreamingService implements OnModuleDestroy {
     setTimeout(() => {
       throw error; // Throw the original error to preserve stack trace
     }, 0);
+  }
+
+  /**
+   * Send cached snapshot data as INSERT events to a new consumer
+   * Returns count for logging/metrics
+   */
+  private sendSnapshot(consumerStream$: ReplaySubject<RowUpdateEvent>, snapshot: Record<string, any>[]): number {
+    // Emit snapshot as insert events
+    let snapshotCount = 0;
+    for (const row of snapshot) {
+      consumerStream$.next({
+        type: RowUpdateType.Insert,
+        row: { ...row }
+      });
+      snapshotCount++;
+    }
+    
+    return snapshotCount;
+  }
+
+  /**
+   * Subscribe to live updates filtering by timestamp
+   * Prevents duplicates by filtering events older than snapshot
+   */
+  private subscribeToLiveUpdates(consumerStream$: ReplaySubject<RowUpdateEvent>, snapshotTimestamp: bigint): Subscription {
+    // Subscribe to future updates with timestamp filter
+    return this.internalUpdates$.pipe(
+      filter(([event, timestamp]) => {
+        // Only emit events newer than snapshot timestamp
+        return timestamp > snapshotTimestamp;
+      })
+    ).subscribe(([event]) => {
+      // Forward the event to consumer
+      consumerStream$.next(event);
+    });
+  }
+
+  /**
+   * Create observable with cleanup logic for graceful disconnection
+   * Ensures proper cleanup: decrements count, unsubscribes, prevents leaks
+   */
+  private createCleanupObservable(consumerStream$: ReplaySubject<RowUpdateEvent>, subscription: Subscription): Observable<RowUpdateEvent> {
+    // Return observable that handles cleanup on unsubscribe
+    return new Observable<RowUpdateEvent>(subscriber => {
+      const proxySubscription = consumerStream$.subscribe(subscriber);
+      
+      // Return teardown logic
+      return () => {
+        // Decrement consumer count
+        this._consumerCount--;
+        
+        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}, remainingConsumers: ${this._consumerCount}`);
+        
+        // Clean up subscriptions
+        subscription.unsubscribe();
+        proxySubscription.unsubscribe();
+        consumerStream$.complete();
+      };
+    });
   }
 }

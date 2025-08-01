@@ -42,6 +42,7 @@ const logger = new Logger('GraphQLSubscriptions');
 
 /**
  * Creates a subscription resolver for a specific source
+ * Returns a GraphQL subscription resolver that streams database updates
  */
 function createSourceSubscriptionResolver(
   sourceName: string,
@@ -79,6 +80,7 @@ function createSourceSubscriptionResolver(
 
 /**
  * Builds all subscription resolvers for the given sources
+ * Creates a resolver for each source that transforms database events to GraphQL updates
  */
 export function buildSubscriptionResolvers(
   sources: Map<string, SourceDefinition>,

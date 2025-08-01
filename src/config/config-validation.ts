@@ -4,6 +4,10 @@ import { Logger } from '@nestjs/common';
 
 const logger = new Logger('ConfigValidation');
 
+/**
+ * Validates configuration objects using class-validator decorators
+ * Fail-fast mechanism that runs at startup with clear error messages
+ */
 export function validateConfig<T extends object>(
   config: Record<string, any>,
   envVariablesKey: string,

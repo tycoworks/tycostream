@@ -58,6 +58,7 @@ export class DatabaseConnectionService implements OnModuleDestroy {
 
   /**
    * Disconnect a specific client
+   * Removes client from tracked set and closes connection gracefully
    */
   async disconnect(client: Client): Promise<void> {
     try {

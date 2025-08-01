@@ -12,7 +12,8 @@ export class SimpleCache implements Cache {
   ) {}
 
   /**
-   * Store a row in the cache
+   * Store a row in the cache, creating a shallow copy to prevent mutations
+   * Returns false if primary key is missing, true if stored successfully
    */
   set(row: Record<string, any>): boolean {
     const primaryKey = row[this.primaryKeyField];
@@ -33,13 +34,15 @@ export class SimpleCache implements Cache {
 
   /**
    * Check if a primary key exists
+   * Used to distinguish between insert and update operations
    */
   has(primaryKey: string | number): boolean {
     return this.cache.has(primaryKey);
   }
 
   /**
-   * Delete a row by primary key
+   * Delete a row using its primary key field
+   * Returns false if primary key is missing or row not found
    */
   delete(row: Record<string, any>): boolean {
     const primaryKey = row[this.primaryKeyField];
@@ -50,7 +53,8 @@ export class SimpleCache implements Cache {
   }
 
   /**
-   * Get all rows as an array
+   * Get all cached rows as an array
+   * Returns row references, not copies - do not mutate
    */
   getAllRows(): Record<string, any>[] {
     return Array.from(this.cache.values());
@@ -65,7 +69,7 @@ export class SimpleCache implements Cache {
   }
 
   /**
-   * Clear all data
+   * Clear all cached data
    */
   clear(): void {
     this.cache.clear();

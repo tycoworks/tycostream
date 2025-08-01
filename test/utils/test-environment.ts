@@ -4,7 +4,6 @@ import { ConfigModule } from '@nestjs/config';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { Client } from 'pg';
 import { AppModule } from '../../src/app.module';
-import appConfig from '../../src/config/app.config';
 import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
 import sourcesConfig from '../../src/config/sources.config';
@@ -171,7 +170,7 @@ export class TestEnvironment {
       ConfigModule.forRoot({
         isGlobal: true,
         cache: false, // Disable cache to pick up env changes
-        load: [appConfig, databaseConfig, graphqlConfig, sourcesConfig],
+        load: [databaseConfig, graphqlConfig, sourcesConfig],
       })
     )
     .compile();

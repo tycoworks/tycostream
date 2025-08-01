@@ -22,6 +22,9 @@ export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDe
     private connectionService: DatabaseConnectionService
   ) {}
 
+  /**
+   * Load source definitions from configuration on startup
+   */
   async onModuleInit() {
     // Load source definitions from config
     const sources = this.configService.get<Map<string, SourceDefinition>>('sources');
@@ -39,6 +42,9 @@ export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDe
     this.logger.log(`Initialized streaming manager for ${this.sourceDefinitions.size} sources: ${Array.from(this.sourceDefinitions.keys()).join(', ')}`);
   }
 
+  /**
+   * Clean up all active streaming services on shutdown
+   */
   async onModuleDestroy() {
     this.logger.log('Shutting down streaming manager...');
     
@@ -55,7 +61,7 @@ export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDe
   }
 
   /**
-   * Get available source names
+   * Get list of all configured source names
    */
   getAvailableSources(): string[] {
     return Array.from(this.sourceDefinitions.keys());
@@ -70,7 +76,7 @@ export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDe
 
   /**
    * Get streaming updates for a specific source
-   * Creates the streaming service if it doesn't exist
+   * Creates the streaming service lazily on first request
    */
   getUpdates(sourceName: string): Observable<RowUpdateEvent> {
     const sourceDef = this.sourceDefinitions.get(sourceName);
@@ -93,6 +99,7 @@ export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDe
 
   /**
    * Stop streaming for a specific source
+   * Cleans up the service and removes it from the active services map
    */
   async stopStreaming(sourceName: string): Promise<void> {
     const streamingService = this.streamingServices.get(sourceName);
@@ -104,7 +111,7 @@ export class DatabaseStreamingManagerService implements OnModuleInit, OnModuleDe
   }
 
   /**
-   * Create a streaming service for a source definition
+   * Create a streaming service with protocol handler for a source
    */
   private createStreamingService(sourceDef: SourceDefinition): DatabaseStreamingService {
     // Create protocol handler for this source

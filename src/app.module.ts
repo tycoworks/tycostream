@@ -2,18 +2,21 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import databaseConfig from './config/database.config';
 import graphqlConfig from './config/graphql.config';
-import appConfig from './config/app.config';
 import sourcesConfig from './config/sources.config';
 import { DatabaseModule } from './database/database.module';
 import { GraphqlModule } from './graphql/graphql.module';
 
+/**
+ * Root application module that bootstraps the tycostream server
+ * Module order matters: Config → Database → GraphQL
+ */
 @Module({
   imports: [
     // Configuration - loaded first, available globally
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      load: [appConfig, databaseConfig, graphqlConfig, sourcesConfig],
+      load: [databaseConfig, graphqlConfig, sourcesConfig],
     }),
 
     // Core modules - order matters for dependencies

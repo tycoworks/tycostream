@@ -3,6 +3,10 @@ import { IsInt, IsNotEmpty, IsString, Max, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { validateConfig } from './config-validation';
 
+/**
+ * Database connection configuration
+ * Validated using class-validator decorators
+ */
 export class DatabaseConfig {
   @IsString()
   @IsNotEmpty()
@@ -27,6 +31,10 @@ export class DatabaseConfig {
   database: string;
 }
 
+/**
+ * Database configuration factory
+ * Loads database settings from environment variables with defaults
+ */
 export default registerAs('database', (): DatabaseConfig => {
   const rawConfig = {
     host: process.env.DATABASE_HOST || 'localhost',
