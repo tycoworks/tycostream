@@ -107,6 +107,7 @@
 - Update coalescing: batch rapid changes within time windows
 - Client-configurable batching strategies (time-based, count-based)
 - RisingWave support
+- Filter expression normalization for functional equivalency (e.g., `a AND b` vs `b AND a`)
 
 ### 🧪 Performance Testing
 

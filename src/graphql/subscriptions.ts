@@ -3,10 +3,10 @@ import { eachValueFrom } from 'rxjs-for-await';
 import { Logger } from '@nestjs/common';
 import { StreamingManagerService } from '../streaming/manager.service';
 import type { SourceDefinition } from '../config/source.types';
-import type { RowUpdateEvent } from '../streaming/types';
+import type { RowUpdateEvent, Filter } from '../streaming/types';
 import { RowUpdateType } from '../streaming/types';
 import { truncateForLog } from '../common/logging.utils';
-import { buildFilterExpression } from './filters';
+import { buildFilter } from './filters';
 
 /**
  * GraphQL row operation types
@@ -59,15 +59,13 @@ function createSourceSubscriptionResolver(
 ) {
   return {
     subscribe: (parent: any, args: any, context: any, info: any) => {
-      // Phase 1: Parse filter expression if provided
-      let filterExpression: string | undefined;
-      
-      if (args.where) {
-        filterExpression = buildFilterExpression(args.where);
-        logger.log(`Subscription for ${sourceName} with filter: ${filterExpression}`);
+      // Parse and compile filter if provided
+      const filter = buildFilter(args.where);
+      if (filter) {
+        logger.log(`Subscription for ${sourceName} with filter: ${filter.expression}`);
       }
       
-      // TODO: Phase 3 - Pass filterExpression to streamingManager.getUpdates()
+      // TODO: Phase 3 - Pass filter to streamingManager.getUpdates()
       const observable = streamingManager.getUpdates(sourceName).pipe(
         map((event: RowUpdateEvent) => {
           const operation = ROW_UPDATE_TYPE_MAP[event.type];

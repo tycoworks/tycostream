@@ -1,29 +1,54 @@
 import { Logger } from '@nestjs/common';
+import { Filter } from '../streaming/types';
 
 const logger = new Logger('GraphQLFilters');
 
 /**
- * Converts a GraphQL where clause to a JavaScript expression string
- * Supports Hasura-compatible operators for filtering
+ * Builds a Filter object from a GraphQL where clause
+ * This includes the compiled function and metadata for optimization
  */
-export function buildFilterExpression(where: any, fieldVar = 'datum'): string {
+export function buildFilter(where: any): Filter | null {
+  if (!where || typeof where !== 'object' || Object.keys(where).length === 0) {
+    return null;
+  }
+  
+  const fields = new Set<string>();
+  const expression = buildExpression(where, 'datum', fields);
+  
+  try {
+    const evaluate = new Function('datum', `return ${expression}`) as (row: any) => boolean;
+    
+    return {
+      evaluate,
+      fields,
+      expression
+    };
+  } catch (error) {
+    throw new Error(`Failed to compile filter expression: ${error.message}`);
+  }
+}
+
+/**
+ * Internal helper that builds expression string and collects fields
+ */
+function buildExpression(where: any, fieldVar: string, fields: Set<string>): string {
   if (!where || typeof where !== 'object') {
     return 'true';
   }
 
   // Handle logical operators
   if (where._and) {
-    const expressions = where._and.map((w: any) => buildFilterExpression(w, fieldVar));
+    const expressions = where._and.map((w: any) => buildExpression(w, fieldVar, fields));
     return `(${expressions.join(' && ')})`;
   }
   
   if (where._or) {
-    const expressions = where._or.map((w: any) => buildFilterExpression(w, fieldVar));
+    const expressions = where._or.map((w: any) => buildExpression(w, fieldVar, fields));
     return `(${expressions.join(' || ')})`;
   }
   
   if (where._not) {
-    return `!(${buildFilterExpression(where._not, fieldVar)})`;
+    return `!(${buildExpression(where._not, fieldVar, fields)})`;
   }
 
   // Handle field comparisons
@@ -33,6 +58,9 @@ export function buildFilterExpression(where: any, fieldVar = 'datum'): string {
     if (typeof operators !== 'object' || operators === null) {
       continue;
     }
+    
+    // Track this field
+    fields.add(field);
     
     for (const [op, value] of Object.entries(operators)) {
       const fieldAccess = `${fieldVar}.${field}`;
@@ -88,3 +116,5 @@ export function buildFilterExpression(where: any, fieldVar = 'datum'): string {
     return `(${expressions.join(' && ')})`;
   }
 }
+
+
