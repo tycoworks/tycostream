@@ -70,7 +70,7 @@ describe('buildSubscriptionResolvers', () => {
     mockStreamingManager.getUpdates.mockReturnValue(of(mockEvent));
 
     const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
-    const asyncIterator = await resolvers.trades.subscribe();
+    const asyncIterator = await resolvers.trades.subscribe({}, {}, {}, {});
     
     // Get first value from async iterator
     const { value } = await asyncIterator[Symbol.asyncIterator]().next();
@@ -104,12 +104,34 @@ describe('buildSubscriptionResolvers', () => {
       mockStreamingManager.getUpdates.mockReturnValue(of(mockEvent));
       
       const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
-      const asyncIterator = await resolvers.trades.subscribe();
+      const asyncIterator = await resolvers.trades.subscribe({}, {}, {}, {});
       
       // Get first value from async iterator
       const { value } = await asyncIterator[Symbol.asyncIterator]().next();
       
       expect(value.trades.operation).toBe(testCase.expected);
     }
+  });
+
+  it('should throw error for invalid filter expressions', async () => {
+    const sources = new Map<string, SourceDefinition>([
+      ['trades', {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [],
+      }],
+    ]);
+
+    const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
+    
+    // Pass an invalid where clause with unknown operator
+    const args = {
+      where: {
+        price: { _unknown_op: 100 }
+      }
+    };
+    
+    // Should throw an error when trying to subscribe
+    expect(() => resolvers.trades.subscribe({}, args, {}, {})).toThrow('Unknown operator: _unknown_op');
   });
 });

@@ -43,7 +43,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('fields: [String!]');
     
     // Check subscription
-    expect(schema).toContain('trades: tradesUpdate!');
+    expect(schema).toContain('trades(where: tradesWhere): tradesUpdate!');
   });
 
   it('should handle PostgreSQL type mappings correctly', () => {
@@ -88,7 +88,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('type live_pnl {');
     expect(schema).toContain('type live_pnlUpdate {');
     expect(schema).toContain('data: live_pnl');
-    expect(schema).toContain('live_pnl: live_pnlUpdate!');
+    expect(schema).toContain('live_pnl(where: live_pnlWhere): live_pnlUpdate!');
   });
 
   it('should treat JSON/JSONB fields as String', () => {

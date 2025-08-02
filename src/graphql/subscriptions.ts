@@ -1,4 +1,4 @@
-import { map, tap } from 'rxjs';
+import { map, tap, of } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
 import { Logger } from '@nestjs/common';
 import { StreamingManagerService } from '../streaming/manager.service';
@@ -6,6 +6,7 @@ import type { SourceDefinition } from '../config/source.types';
 import type { RowUpdateEvent } from '../streaming/types';
 import { RowUpdateType } from '../streaming/types';
 import { truncateForLog } from '../common/logging.utils';
+import { buildFilterExpression } from './filters';
 
 /**
  * GraphQL row operation types
@@ -17,6 +18,10 @@ export enum GraphQLRowOperation {
   DELETE = 'DELETE'
 }
 
+/**
+ * GraphQL subscription payload structure
+ * Contains the operation type, row data, and affected fields
+ */
 interface GraphQLUpdatePayload {
   [sourceName: string]: {
     operation: GraphQLRowOperation;
@@ -25,8 +30,12 @@ interface GraphQLUpdatePayload {
   };
 }
 
+/**
+ * GraphQL subscription resolver type
+ * Defines the subscribe function that returns an async iterator
+ */
 type SubscriptionResolver = {
-  subscribe: () => AsyncIterableIterator<GraphQLUpdatePayload>;
+  subscribe: (parent: any, args: any, context: any, info: any) => AsyncIterableIterator<GraphQLUpdatePayload>;
 };
 
 /**
@@ -49,7 +58,16 @@ function createSourceSubscriptionResolver(
   streamingManager: StreamingManagerService
 ) {
   return {
-    subscribe: () => {
+    subscribe: (parent: any, args: any, context: any, info: any) => {
+      // Phase 1: Parse filter expression if provided
+      let filterExpression: string | undefined;
+      
+      if (args.where) {
+        filterExpression = buildFilterExpression(args.where);
+        logger.log(`Subscription for ${sourceName} with filter: ${filterExpression}`);
+      }
+      
+      // TODO: Phase 3 - Pass filterExpression to streamingManager.getUpdates()
       const observable = streamingManager.getUpdates(sourceName).pipe(
         map((event: RowUpdateEvent) => {
           const operation = ROW_UPDATE_TYPE_MAP[event.type];
