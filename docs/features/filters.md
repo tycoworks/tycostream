@@ -130,11 +130,15 @@ class View {
   private visibleKeys = new Set<string | number>();
   
   constructor(
-    source$: Observable<[RowUpdateEvent, bigint]>,
-    filter: CompiledFilter | null,
+    source$: Observable<RowUpdateEvent>,
+    filter: Filter | null,  // null for unfiltered views
     primaryKey: string,
-    getRow: (key: any) => any  // Callback to get full row data
-  ) {}
+    getRow: (key: any) => any,              // Get single row
+    getAllRows: () => any[]                 // Get snapshot for initial state
+  ) {
+    // On construction, send INSERT events for all matching rows
+    this.sendInitialSnapshot();
+  }
   
   // Return filtered stream of events
   getUpdates(): Observable<RowUpdateEvent>;
@@ -174,11 +178,28 @@ Now that we've decided on client-side filtering with views, here's how we'll imp
 - Views get row data via callback function
 
 ### Phase 3: Filter Implementation
-- Update DatabaseStreamingManagerService.getUpdates() to accept filter
-- Compile filter expressions to functions with dependency tracking
-- Cache streams by (source + filter expression) key
+- Update StreamingManagerService.getUpdates() to accept Filter object
+- StreamingService creates Views for filtered subscriptions
+- All subscriptions (filtered or unfiltered) use Views for consistency
+- **Refactor: Move snapshot logic from StreamingService to View**
+  - Remove from StreamingService: `sendSnapshot()`, `subscribeToLiveUpdates()`, `createCleanupObservable()`, consumer counting
+  - Add to View: Initial snapshot handling in constructor
+  - View sends INSERT events for all matching rows on creation
+  - Move snapshot-related tests from `streaming.service.spec.ts` to `view.spec.ts`
+- Views cached by filter expression
 - Generate INSERT/UPDATE/DELETE events as items enter/leave filter
 - Optimize: skip re-evaluation when changed fields don't affect filter
+
+**Step-by-step refactoring plan:**
+1. Update View constructor to accept `getAllRows` callback
+2. Add snapshot logic to View - send INSERT for each matching row
+3. Update StreamingService.getUpdates() to always create a View (remove conditional)
+4. Remove ReplaySubject and snapshot methods from StreamingService
+5. Move these tests from streaming.service.spec.ts to view.spec.ts:
+   - "should send cache snapshot to new subscribers"
+   - "should not duplicate events for late joiners"
+   - "should filter updates by timestamp correctly"
+6. Update consumer counting to work at View level (if needed)
 
 ### Phase 4: Optimizations
 - Skip evaluation when unchanged fields (leveraging field-level updates)
@@ -221,16 +242,20 @@ function whereToExpression(where: any, fieldVar = 'datum'): string {
   }
 }
 
-// Note: compileFilter is now handled internally in DatabaseStreamingService
-// The GraphQL layer only needs to convert where clause to expression string
+// GraphQL layer creates a Filter object with compiled function
+interface Filter {
+  evaluate: (row: any) => boolean;
+  fields: Set<string>;  // Fields used in filter for optimization
+  expression: string;   // For debugging and cache key
+}
 ```
 
-### 2. Enhanced DatabaseStreamingManagerService
+### 2. Enhanced StreamingManagerService
 
 ```typescript
-// database-streaming-manager.service.ts
-class DatabaseStreamingManagerService {
-  getUpdates(sourceName: string, filterExpression?: string): Observable<RowUpdateEvent> {
+// streaming-manager.service.ts
+class StreamingManagerService {
+  getUpdates(sourceName: string, filter?: Filter | null): Observable<RowUpdateEvent> {
     const sourceDef = this.sourceDefinitions.get(sourceName);
     if (!sourceDef) throw new Error(`Unknown source: ${sourceName}`);
     
@@ -241,39 +266,33 @@ class DatabaseStreamingManagerService {
       this.logger.log(`Created streaming service for source: ${sourceName}`);
     }
     
-    // Pass filter expression through to streaming service
-    return streamingService.getUpdates(filterExpression);
+    // Pass filter object through to streaming service
+    return streamingService.getUpdates(filter);
   }
 }
 
-// database-streaming.service.ts
-class DatabaseStreamingService {
+// streaming.service.ts
+class StreamingService {
   private viewCache = new Map<string, Observable<RowUpdateEvent>>();
   
-  // Overloaded getUpdates method - called without params returns unfiltered stream
-  getUpdates(): Observable<RowUpdateEvent>;
-  getUpdates(filterExpression: string): Observable<RowUpdateEvent>;
-  getUpdates(filterExpression?: string): Observable<RowUpdateEvent> {
-    // Use empty string for unfiltered as cache key
-    const cacheKey = filterExpression || '';
+  getUpdates(filter?: Filter | null): Observable<RowUpdateEvent> {
+    // Use filter expression as cache key (empty string for unfiltered)
+    const cacheKey = filter?.expression || '';
     
     // Check cache first
     let viewObservable = this.viewCache.get(cacheKey);
     if (!viewObservable) {
-      // Compile filter if provided
-      const compiledFilter = filterExpression 
-        ? new Function('datum', `return ${filterExpression}`) 
-        : null;
-      
-      // Create new view (internal implementation detail)
+      // Always create a View (even for unfiltered subscriptions)
       const view = new View(
         this.internalUpdates$,
-        compiledFilter,
+        filter,
         this.sourceDef.primaryKeyField,
-        (key) => this.cache.get(key)  // Row getter callback
+        (key) => this.cache.get(key),      // Row getter callback
+        () => this.cache.getAllRows()       // Snapshot callback
       );
       
-      viewObservable = view.getUpdates();
+      // Share the observable among all subscribers with same filter
+      viewObservable = view.getUpdates().pipe(share());
       this.viewCache.set(cacheKey, viewObservable);
     }
     
@@ -285,18 +304,18 @@ class DatabaseStreamingService {
 ### 3. Subscription Resolver Integration
 
 ```typescript
-// GraphQL layer converts where clause to expression string
-function createFilteredSubscriptionResolver(
+// GraphQL layer creates Filter object and passes to streaming layer
+function createSourceSubscriptionResolver(
   sourceName: string,
-  streamingManager: DatabaseStreamingManagerService
+  streamingManager: StreamingManagerService
 ) {
   return {
     subscribe: (parent, args, context, info) => {
-      // Convert GraphQL where to expression string (or null)
-      const filterExpression = args.where ? whereToExpression(args.where) : null;
+      // Build Filter object from GraphQL where clause
+      const filter = buildFilter(args.where);
       
-      // Pass expression string to database layer
-      const observable = streamingManager.getUpdates(sourceName, filterExpression);
+      // Pass filter to streaming layer
+      const observable = streamingManager.getUpdates(sourceName, filter);
       
       // Rest remains the same
       const graphqlUpdates$ = observable.pipe(
