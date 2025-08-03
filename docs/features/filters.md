@@ -122,7 +122,7 @@ Simple filtering (`stream.filter(predicate)`) doesn't work for subscriptions bec
 
 ### View Abstraction
 
-Each subscription maintains a "view" - a filtered subset of the main cache:
+Each subscription maintains a "view" - a stateful transformer that tracks which rows are visible to a filtered subscription:
 
 ```typescript
 class View {
@@ -130,14 +130,12 @@ class View {
   private visibleKeys = new Set<string | number>();
   
   constructor(
-    source$: Observable<RowUpdateEvent>,
+    source$: Observable<[RowUpdateEvent, bigint]>,
     filter: Filter | null,  // null for unfiltered views
-    primaryKey: string,
-    getRow: (key: any) => any,              // Get single row
-    getAllRows: () => any[]                 // Get snapshot for initial state
+    primaryKeyField: string
   ) {
-    // On construction, send INSERT events for all matching rows
-    this.sendInitialSnapshot();
+    // Subscribe to source and transform events
+    // No snapshot logic here - StreamingService handles that
   }
   
   // Return filtered stream of events
@@ -146,9 +144,16 @@ class View {
 
 interface RowUpdateEvent {
   type: RowUpdateType;
-  row: Record<string, any>; // All fields for INSERT, changed fields for UPDATE, key only for DELETE
+  fields: Record<string, any>;  // Changed fields for UPDATE, all fields for INSERT, key only for DELETE
+  row: Record<string, any>;     // Always contains all fields (needed for filter evaluation)
 }
 ```
+
+The View is a pure stream transformer - it receives events from StreamingService and:
+1. Evaluates the filter using `row` (full data)
+2. Tracks visibility state in `visibleKeys`
+3. Generates appropriate INSERT/UPDATE/DELETE events based on state transitions
+4. Strips `row` before emitting to clients (they only get `fields`)
 
 ### State Transition Logic
 
@@ -172,34 +177,39 @@ Now that we've decided on client-side filtering with views, here's how we'll imp
 - Test filter expression generation
 
 ### Phase 2: View Infrastructure
-- Create `View` class as a filtered stream
-- DatabaseStreamingService creates Views (encapsulation)
-- Views track visible keys, not full data
-- Views get row data via callback function
+- Create `View` class as a stateful stream transformer
+- View receives enriched events with both changed fields and full row data
+- View tracks visible keys to detect state transitions
+- View is a pure transformer with no cache dependencies
 
 ### Phase 3: Filter Implementation
 - Update StreamingManagerService.getUpdates() to accept Filter object
-- StreamingService creates Views for filtered subscriptions
+- StreamingService enriches events with fullRow data
+- StreamingService maintains a cache of Views by filter expression
+- StreamingService handles snapshot replay into new Views
+- Views process enriched events and generate INSERT/UPDATE/DELETE based on state transitions
 - All subscriptions (filtered or unfiltered) use Views for consistency
-- **Refactor: Move snapshot logic from StreamingService to View**
-  - Remove from StreamingService: `sendSnapshot()`, `subscribeToLiveUpdates()`, `createCleanupObservable()`, consumer counting
-  - Add to View: Initial snapshot handling in constructor
-  - View sends INSERT events for all matching rows on creation
-  - Move snapshot-related tests from `streaming.service.spec.ts` to `view.spec.ts`
-- Views cached by filter expression
-- Generate INSERT/UPDATE/DELETE events as items enter/leave filter
 - Optimize: skip re-evaluation when changed fields don't affect filter
 
-**Step-by-step refactoring plan:**
-1. Update View constructor to accept `getAllRows` callback
-2. Add snapshot logic to View - send INSERT for each matching row
-3. Update StreamingService.getUpdates() to always create a View (remove conditional)
-4. Remove ReplaySubject and snapshot methods from StreamingService
-5. Move these tests from streaming.service.spec.ts to view.spec.ts:
-   - "should send cache snapshot to new subscribers"
-   - "should not duplicate events for late joiners"
-   - "should filter updates by timestamp correctly"
-6. Update consumer counting to work at View level (if needed)
+**Implementation approach:**
+1. Update StreamingService to emit EnrichedRowEvent with both `row` and `fullRow`
+2. Create View as a pure stream transformer (no cache access needed)
+3. StreamingService manages view cache:
+   ```typescript
+   getUpdates(filter?: Filter): Observable<RowUpdateEvent> {
+     const cacheKey = filter?.expression || '';
+     let view = this.viewCache.get(cacheKey);
+     if (!view) {
+       view = new View(this.enrichedUpdates$, filter, this.primaryKeyField);
+       this.viewCache.set(cacheKey, view);
+       // Send snapshot through the view
+       this.sendSnapshotToView(view, filter);
+     }
+     return view.getUpdates();
+   }
+   ```
+4. StreamingService sends snapshot events into the View after creation
+5. View reference counting for cleanup when no subscribers
 
 ### Phase 4: Optimizations
 - Skip evaluation when unchanged fields (leveraging field-level updates)
@@ -273,30 +283,56 @@ class StreamingManagerService {
 
 // streaming.service.ts
 class StreamingService {
-  private viewCache = new Map<string, Observable<RowUpdateEvent>>();
+  private viewCache = new Map<string, View>();
+  private internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
+  
+  // Transform internal updates to include fullRow
+  private processUpdate(row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType): void {
+    // ... existing cache update logic ...
+    
+    // Emit event with both changed fields and full row
+    const event: RowUpdateEvent = {
+      type: eventType,
+      fields: eventData,  // Just the changes for UPDATE
+      row: row            // Always the complete row
+    };
+    
+    this.internalUpdates$.next([event, timestamp]);
+  }
   
   getUpdates(filter?: Filter | null): Observable<RowUpdateEvent> {
     // Use filter expression as cache key (empty string for unfiltered)
     const cacheKey = filter?.expression || '';
     
     // Check cache first
-    let viewObservable = this.viewCache.get(cacheKey);
-    if (!viewObservable) {
-      // Always create a View (even for unfiltered subscriptions)
-      const view = new View(
+    let view = this.viewCache.get(cacheKey);
+    if (!view) {
+      // Create new view
+      view = new View(
         this.internalUpdates$,
         filter,
-        this.sourceDef.primaryKeyField,
-        (key) => this.cache.get(key),      // Row getter callback
-        () => this.cache.getAllRows()       // Snapshot callback
+        this.sourceDef.primaryKeyField
       );
+      this.viewCache.set(cacheKey, view);
       
-      // Share the observable among all subscribers with same filter
-      viewObservable = view.getUpdates().pipe(share());
-      this.viewCache.set(cacheKey, viewObservable);
+      // Send current snapshot through the view
+      const snapshot = this.cache.getAllRows();
+      for (const row of snapshot) {
+        if (!filter || filter.evaluate(row)) {
+          const snapshotEvent: RowUpdateEvent = {
+            type: RowUpdateType.Insert,
+            fields: { ...row },  // INSERT has all fields
+            row: row
+          };
+          // Send through view's input stream
+          view.processSnapshotEvent(snapshotEvent);
+        }
+      }
     }
     
-    return viewObservable;
+    return view.getUpdates().pipe(
+      share() // Share among multiple subscribers
+    );
   }
 }
 ```
@@ -351,29 +387,19 @@ tycostream already sends only changed fields for UPDATE operations. Views can le
 
 ```typescript
 class View {
-  constructor(
-    private source$: Observable<[RowUpdateEvent, bigint]>,
-    private filter: ((row: any) => boolean) | null,
-    private primaryKey: string,
-    private getRow: (key: any) => any
-  ) {}
-  
-  processUpdate(event: RowUpdateEvent): RowUpdateEvent | null {
-    const key = event.row[this.primaryKey];
-    const wasInView = this.visibleKeys.has(key);
-    
-    // TODO: Future optimization - check if changed fields affect filter result
-    // For now, always re-evaluate filter when row changes
-    
-    // Need full row to evaluate filter
-    const fullRow = event.type === RowUpdateType.Delete 
-      ? event.row 
-      : this.getRow(key);
+  private shouldBeInView(event: RowUpdateEvent, wasInView: boolean): boolean {
+    // Optimization: For UPDATE events where filter fields haven't changed
+    if (event.type === RowUpdateType.Update && this.filter && wasInView) {
+      const changedFields = Object.keys(event.fields);
+      const hasRelevantChanges = changedFields.some(field => this.filter!.fields.has(field));
       
-    const isInView = this.filter.evaluate(fullRow);
+      if (!hasRelevantChanges) {
+        return wasInView; // Filter result can't have changed
+      }
+    }
     
-    // Generate appropriate view event based on state transition
-    // ...
+    // Evaluate filter using full row data
+    return this.filter ? this.filter.evaluate(event.row) : true;
   }
 }
 ```
