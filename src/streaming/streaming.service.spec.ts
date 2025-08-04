@@ -286,10 +286,9 @@ describe('StreamingService', () => {
       expect(events).toHaveLength(2);
       expect(events[0].type).toBe(RowUpdateType.Insert); // Snapshot
       
-      // TODO: This should be UPDATE but due to View initialization timing, it appears as INSERT
-      // The view doesn't know about the row until after the stream is created
-      expect(events[1].type).toBe(RowUpdateType.Insert);
-      expect(events[1].fields).toEqual(new Set(['id', 'name', 'email', 'age', 'active']));
+      // This should be UPDATE since the view knows about the row from the snapshot
+      expect(events[1].type).toBe(RowUpdateType.Update);
+      expect(events[1].fields).toEqual(new Set(['id', 'email', 'age']));
       // But row should have all fields
       expect(events[1].row).toEqual({
         id: '1',
@@ -327,9 +326,9 @@ describe('StreamingService', () => {
       expect(events).toHaveLength(2);
       expect(events[0].type).toBe(RowUpdateType.Insert); // Snapshot
       
-      // TODO: This should be UPDATE but due to View initialization timing, it appears as INSERT
-      expect(events[1].type).toBe(RowUpdateType.Insert);
-      expect(events[1].fields).toEqual(new Set(['id', 'name', 'value']));
+      // This should be UPDATE since the view knows about the row from the snapshot
+      expect(events[1].type).toBe(RowUpdateType.Update);
+      expect(events[1].fields).toEqual(new Set(['id']));
       expect(events[1].row).toEqual({ id: '1', name: 'Bob', value: 100 });
 
       subscription.unsubscribe();
@@ -360,8 +359,8 @@ describe('StreamingService', () => {
       expect(events).toHaveLength(2);
       expect(events[0].type).toBe(RowUpdateType.Insert); // Snapshot
       
-      // TODO: This should be UPDATE but due to View initialization timing, it appears as INSERT
-      expect(events[1].type).toBe(RowUpdateType.Insert);
+      // This should be UPDATE since the view knows about the row from the snapshot
+      expect(events[1].type).toBe(RowUpdateType.Update);
       expect(events[1].fields).toEqual(new Set(['id', 'name', 'value', 'status']));
       expect(events[1].row).toEqual({
         id: '1',
