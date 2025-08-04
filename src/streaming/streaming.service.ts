@@ -168,7 +168,7 @@ export class StreamingService implements OnModuleDestroy {
     const event = this.prepareEvent(row, primaryKey, updateType);
 
     // Update cache and log the operation
-    this.updateCacheAndLog(row, event.type, primaryKey, event.fields);
+    this.updateCacheAndLog(row, event.type, primaryKey, event.row);
 
     // Emit to internal subject
     this.internalUpdates$.next([event, timestamp]);
@@ -182,24 +182,28 @@ export class StreamingService implements OnModuleDestroy {
     // Get existing row from cache if it exists
     const existingRow = this.cache.get(primaryKey);
     
-    // Determine event type and data
+    // Determine event type and fields
     let eventType: RowUpdateType;
-    let eventData: Record<string, any>;
+    let fields: Set<string>;
+    let eventRow: Record<string, any>;
     
     if (updateType === DatabaseRowUpdateType.Delete) {
       eventType = RowUpdateType.Delete;
-      eventData = this.getPkObject(primaryKey);
+      fields = this.getPkFieldSet();
+      // For DELETE, normalize row to only contain primary key
+      eventRow = { [this.sourceDef.primaryKeyField]: primaryKey };
     } else if (updateType === DatabaseRowUpdateType.Upsert) {
       if (existingRow) {
-        // UPDATE - start with primary key, add changes
+        // UPDATE - start with primary key, add changed fields
         eventType = RowUpdateType.Update;
-        eventData = this.getPkObject(primaryKey);
-        this.calculateChanges(existingRow, row, eventData);
+        fields = this.getPkFieldSet();
+        this.calculateChanges(existingRow, row, fields);
       } else {
-        // INSERT - use full row
+        // INSERT - all fields
         eventType = RowUpdateType.Insert;
-        eventData = row;
+        fields = new Set(Object.keys(row));
       }
+      eventRow = row;
     } else {
       // Unknown update type - this should never happen
       throw new Error(`Unexpected update type: ${updateType} for row: ${truncateForLog(row)}`);
@@ -207,24 +211,24 @@ export class StreamingService implements OnModuleDestroy {
     
     return {
       type: eventType,
-      fields: eventData,
-      row: eventType === RowUpdateType.Delete ? existingRow : row
+      fields,
+      row: eventRow
     };
   }
 
   /**
-   * Create an object containing only the primary key field
-   * Used for DELETE events where we only need to identify the row
+   * Create a Set containing only the primary key field
+   * Used for DELETE events and as the base for UPDATE events
    */
-  private getPkObject(primaryKey: any): Record<string, any> {
-    return { [this.sourceDef.primaryKeyField]: primaryKey };
+  private getPkFieldSet(): Set<string> {
+    return new Set<string>([this.sourceDef.primaryKeyField]);
   }
 
   /**
    * Update the cache and log the operation for debugging
    * Centralizes cache updates with consistent debug logging
    */
-  private updateCacheAndLog(row: Record<string, any>, eventType: RowUpdateType, primaryKey: any, eventData: Record<string, any>): void {
+  private updateCacheAndLog(row: Record<string, any>, eventType: RowUpdateType, primaryKey: any, logData: Record<string, any>): void {
     // Update cache and determine log action
     let action: string;
     
@@ -236,17 +240,17 @@ export class StreamingService implements OnModuleDestroy {
       action = eventType === RowUpdateType.Insert ? 'Added to' : 'Updated in';
     }
     
-    this.logger.debug(`${action} cache - source: ${this.sourceName}, primaryKey: ${primaryKey}, cacheSize: ${this.cache.size}, data: ${truncateForLog(eventData)}`);
+    this.logger.debug(`${action} cache - source: ${this.sourceName}, primaryKey: ${primaryKey}, cacheSize: ${this.cache.size}, data: ${truncateForLog(logData)}`);
   }
 
   /**
    * Calculate field-level changes between existing and new row
-   * Enables bandwidth-efficient updates by sending only changed fields
+   * Adds changed fields to the provided Set
    */
-  private calculateChanges(existingRow: Record<string, any>, newRow: Record<string, any>, changes: Record<string, any>): void {
+  private calculateChanges(existingRow: Record<string, any>, newRow: Record<string, any>, fields: Set<string>): void {
     for (const [key, value] of Object.entries(newRow)) {
       if (existingRow[key] !== value) {
-        changes[key] = value;
+        fields.add(key);
       }
     }
   }
@@ -273,7 +277,8 @@ export class StreamingService implements OnModuleDestroy {
     for (const row of snapshot) {
       consumerStream$.next({
         type: RowUpdateType.Insert,
-        fields: { ...row }
+        fields: new Set(Object.keys(row)),
+        row: row
       });
       snapshotCount++;
     }

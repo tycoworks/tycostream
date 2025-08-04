@@ -63,7 +63,8 @@ describe('buildSubscriptionResolvers', () => {
 
     const mockEvent = {
       type: RowUpdateType.Insert,
-      fields: { id: 1, symbol: 'AAPL', price: 150 },
+      fields: new Set(['id', 'symbol', 'price']),
+      row: { id: 1, symbol: 'AAPL', price: 150 },
       timestamp: BigInt(1234567890000),
     };
 
@@ -76,7 +77,7 @@ describe('buildSubscriptionResolvers', () => {
     const { value } = await asyncIterator[Symbol.asyncIterator]().next();
     
     expect(value.trades.operation).toBe('INSERT');
-    expect(value.trades.data).toEqual(mockEvent.fields);
+    expect(value.trades.data).toEqual(mockEvent.row);
   });
 
   it('should handle all RowUpdateType values', async () => {
@@ -97,7 +98,8 @@ describe('buildSubscriptionResolvers', () => {
     for (const testCase of testCases) {
       const mockEvent = {
         type: testCase.type,
-        fields: { id: 1 },
+        fields: new Set(['id']),
+        row: { id: 1 },
         timestamp: BigInt(1234567890000),
       };
 

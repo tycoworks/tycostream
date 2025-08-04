@@ -10,13 +10,16 @@ export enum RowUpdateType {
 
 /**
  * Row update event sent to GraphQL subscriptions
- * fields: changed fields (UPDATE), all fields (INSERT), or key only (DELETE)
- * row: always contains all fields (needed for filter evaluation)
+ * fields: set of field names that are relevant for this event
+ *   - INSERT: all field names
+ *   - UPDATE: changed field names (including primary key)
+ *   - DELETE: primary key only
+ * row: complete row data (always present)
  */
 export interface RowUpdateEvent {
   type: RowUpdateType;
-  fields: Record<string, any>;  // Changed fields for UPDATE, all fields for INSERT, key only for DELETE
-  row?: Record<string, any>;     // Full row data, optional and only used internally for filtering
+  fields: Set<string>;  // Field names relevant to this event
+  row: Record<string, any>;  // Complete row data
 }
 
 /**

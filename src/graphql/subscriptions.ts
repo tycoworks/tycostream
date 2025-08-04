@@ -70,13 +70,13 @@ function createSourceSubscriptionResolver(
         map((event: RowUpdateEvent) => {
           const operation = ROW_UPDATE_TYPE_MAP[event.type];
           
-          // Calculate fields array - always populated for consistency
-          const fields: string[] = Object.keys(event.fields);
+          // Convert Set to array for GraphQL
+          const fields: string[] = Array.from(event.fields);
           
           return {
             [sourceName]: {
               operation,
-              data: event.fields, // Use fields instead of row
+              data: event.row,
               fields
             }
           };

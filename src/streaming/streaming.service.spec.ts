@@ -97,8 +97,8 @@ describe('StreamingService', () => {
       // Verify the emitted delete event only contains primary key
       expect(emittedEvent).toBeDefined();
       expect(emittedEvent!.type).toBe(RowUpdateType.Delete);
-      expect(emittedEvent!.fields).toEqual({ id: '1' });
-      expect(Object.keys(emittedEvent!.fields)).toEqual(['id']);
+      expect(emittedEvent!.fields).toEqual(new Set(['id']));
+      expect(emittedEvent!.row).toEqual({ id: '1' });
     });
 
     it('should calculate changes for updates', () => {
@@ -117,11 +117,13 @@ describe('StreamingService', () => {
       
       // Verify INSERT has full data
       expect(emittedEvents[0].type).toBe(RowUpdateType.Insert);
-      expect(emittedEvents[0].fields).toEqual({ id: '1', name: 'original', value: 100 });
+      expect(emittedEvents[0].fields).toEqual(new Set(['id', 'name', 'value']));
+      expect(emittedEvents[0].row).toEqual({ id: '1', name: 'original', value: 100 });
       
       // Verify UPDATE has only changes (changed fields + pk)
       expect(emittedEvents[1].type).toBe(RowUpdateType.Update);
-      expect(emittedEvents[1].fields).toEqual({ id: '1', name: 'updated' });
+      expect(emittedEvents[1].fields).toEqual(new Set(['id', 'name']));
+      expect(emittedEvents[1].row).toEqual({ id: '1', name: 'updated', value: 100 });
     });
 
     it('should track latest timestamp', () => {
@@ -155,11 +157,13 @@ describe('StreamingService', () => {
       expect(events).toHaveLength(2);
       expect(events[0]).toEqual({
         type: RowUpdateType.Insert,
-        fields: { id: '1', name: 'test1', value: 100 }
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: '1', name: 'test1', value: 100 }
       });
       expect(events[1]).toEqual({
         type: RowUpdateType.Insert,
-        fields: { id: '2', name: 'test2', value: 200 }
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: '2', name: 'test2', value: 200 }
       });
     });
 
@@ -188,14 +192,14 @@ describe('StreamingService', () => {
       
       // First subscriber should have: initial (snapshot) + updated + final
       expect(firstEvents).toHaveLength(3);
-      expect(firstEvents[0].fields.name).toBe('initial');
-      expect(firstEvents[1].fields.name).toBe('updated');
-      expect(firstEvents[2].fields.name).toBe('final');
+      expect(firstEvents[0].row.name).toBe('initial');
+      expect(firstEvents[1].row.name).toBe('updated');
+      expect(firstEvents[2].row.name).toBe('final');
       
       // Second subscriber should have: updated (snapshot) + final
       expect(secondEvents).toHaveLength(2);
-      expect(secondEvents[0].fields.name).toBe('updated'); // Current cache state
-      expect(secondEvents[1].fields.name).toBe('final');   // New update
+      expect(secondEvents[0].row.name).toBe('updated'); // Current cache state
+      expect(secondEvents[1].row.name).toBe('final');   // New update
       
       firstSubscription.unsubscribe();
       secondSubscription.unsubscribe();
@@ -224,8 +228,8 @@ describe('StreamingService', () => {
       
       // Should have snapshot + only the last update
       expect(events).toHaveLength(2);
-      expect(events[0].fields.value).toBe(2); // Snapshot
-      expect(events[1].fields.value).toBe(5); // Only update with timestamp > 200
+      expect(events[0].row.value).toBe(2); // Snapshot
+      expect(events[1].row.value).toBe(5); // Only update with timestamp > 200
       
       subscription.unsubscribe();
     });
@@ -253,13 +257,17 @@ describe('StreamingService', () => {
 
       // Should only include changed fields + primary key
       expect(events[1].type).toBe(RowUpdateType.Update);
-      expect(events[1].fields).toEqual({
+      expect(events[1].fields).toEqual(new Set(['id', 'email', 'age']));
+      expect(events[1].fields.has('name')).toBe(false);
+      expect(events[1].fields.has('active')).toBe(false);
+      // But row should have all fields
+      expect(events[1].row).toEqual({
         id: '1',
+        name: 'Alice',
         email: 'alice@example.com',
-        age: 31
+        age: 31,
+        active: true
       });
-      expect(events[1].fields).not.toHaveProperty('name');
-      expect(events[1].fields).not.toHaveProperty('active');
 
       subscription.unsubscribe();
     });
@@ -284,7 +292,8 @@ describe('StreamingService', () => {
 
       // Should still emit update with just primary key
       expect(events[1].type).toBe(RowUpdateType.Update);
-      expect(events[1].fields).toEqual({ id: '1' });
+      expect(events[1].fields).toEqual(new Set(['id']));
+      expect(events[1].row).toEqual({ id: '1', name: 'Bob', value: 100 });
 
       subscription.unsubscribe();
     });
@@ -309,7 +318,8 @@ describe('StreamingService', () => {
 
       // Should include all changed fields
       expect(events[1].type).toBe(RowUpdateType.Update);
-      expect(events[1].fields).toEqual({
+      expect(events[1].fields).toEqual(new Set(['id', 'name', 'value', 'status']));
+      expect(events[1].row).toEqual({
         id: '1',
         name: 'Charles',
         value: 200,

@@ -1,4 +1,3 @@
-import { Observable, Subject } from 'rxjs';
 import { Logger } from '@nestjs/common';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 
@@ -10,34 +9,52 @@ import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 export class View {
   private readonly logger = new Logger(`View`);
   private readonly visibleKeys = new Set<string | number>();
-  private readonly output$ = new Subject<RowUpdateEvent>();
+  private initialized = false;
   
   constructor(
-    private readonly source$: Observable<RowUpdateEvent>,
     private readonly filter: Filter | null,
-    private readonly primaryKeyField: string,
-    private readonly getRow: (key: string | number) => any | undefined
+    private readonly primaryKeyField: string
   ) {
-    // Subscribe to source and process events
-    this.source$.subscribe({
-      next: (event) => this.processEvent(event),
-      error: (err) => this.output$.error(err),
-      complete: () => this.output$.complete()
-    });
+    // Pure transformer - no streams or subscriptions
   }
   
   /**
-   * Get the filtered stream of events
+   * Get filtered snapshot, building visibleKeys if needed
    */
-  getUpdates(): Observable<RowUpdateEvent> {
-    return this.output$.asObservable();
+  getSnapshot(allRows: Record<string, any>[]): Record<string, any>[] {
+    let result: Record<string, any>[];
+    
+    if (!this.filter) {
+      // No filter = all rows visible
+      result = allRows;
+    } else if (!this.initialized) {
+      // First time - build visibleKeys while filtering
+      result = [];
+      for (const row of allRows) {
+        if (this.filter.evaluate(row)) {
+          const key = row[this.primaryKeyField];
+          this.visibleKeys.add(key);
+          result.push(row);
+        }
+      }
+      this.initialized = true;
+    } else {
+      // Already initialized - use visibleKeys for O(1) lookups
+      result = allRows.filter(row => {
+        const key = row[this.primaryKeyField];
+        return this.visibleKeys.has(key);
+      });
+    }
+    
+    return result;
   }
   
   /**
-   * Process an event from the source stream
+   * Process an event through this view, updating visibility state
+   * Returns transformed event or null if filtered out
    */
-  private processEvent(event: RowUpdateEvent): void {
-    const key = event.fields[this.primaryKeyField];
+  processEvent(event: RowUpdateEvent): RowUpdateEvent | null {
+    const key = event.row[this.primaryKeyField];
     const wasInView = this.visibleKeys.has(key);
     
     let isInView: boolean;
@@ -51,11 +68,11 @@ export class View {
       isInView = this.shouldBeInView(event, wasInView);
       
       if (!wasInView && isInView) {
-        // Row entering view
-        outputEvent = { type: RowUpdateType.Insert, fields: this.getFullRow(event) };
+        // Row entering view - send as INSERT with all fields
+        outputEvent = { type: RowUpdateType.Insert, fields: new Set(Object.keys(event.row)), row: event.row };
       } else if (wasInView && !isInView) {
-        // Row leaving view
-        outputEvent = { type: RowUpdateType.Delete, fields: { [this.primaryKeyField]: key } };
+        // Row leaving view - send as DELETE with just primary key
+        outputEvent = { type: RowUpdateType.Delete, fields: new Set([this.primaryKeyField]), row: event.row };
       } else if (wasInView && isInView) {
         // Row still in view
         outputEvent = event;
@@ -72,34 +89,23 @@ export class View {
       this.visibleKeys.delete(key);
     }
     
-    // Emit event if there's a transition we care about
-    if (outputEvent) {
-      this.output$.next(outputEvent);
+    // Mark as initialized if not already
+    if (!this.initialized) {
+      this.initialized = true;
     }
-  }
-  
-  /**
-   * Get the full row for an event
-   */
-  private getFullRow(event: RowUpdateEvent): any {
-    if (event.type === RowUpdateType.Insert) {
-      return event.fields;
-    } else {
-      const key = event.fields[this.primaryKeyField];
-      return this.getRow(key);
-    }
+    
+    return outputEvent;
   }
   
   /**
    * Determine if a row should be in the view
    */
   private shouldBeInView(event: RowUpdateEvent, wasInView: boolean): boolean {
-    const fullRow = this.getFullRow(event);
+    const fullRow = event.row;
     
     // Optimization: For UPDATE events where filter fields haven't changed
     if (event.type === RowUpdateType.Update && this.filter && wasInView) {
-      const changedFields = Object.keys(event.fields);
-      const hasRelevantChanges = changedFields.some(field => this.filter!.fields.has(field));
+      const hasRelevantChanges = Array.from(event.fields).some(field => this.filter!.fields.has(field));
       
       if (!hasRelevantChanges) {
         return wasInView; // Filter result can't have changed
@@ -131,7 +137,6 @@ export class View {
    * Clean up resources
    */
   dispose(): void {
-    this.output$.complete();
     this.visibleKeys.clear();
   }
 }

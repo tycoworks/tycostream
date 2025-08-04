@@ -1,236 +1,252 @@
-import { of, Subject } from 'rxjs';
 import { View } from './view';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 
 describe('View', () => {
-  let source$: Subject<RowUpdateEvent>;
-  let cache: Map<string | number, any>;
-  let getRow: (key: string | number) => any | undefined;
-  
-  beforeEach(() => {
-    source$ = new Subject<RowUpdateEvent>();
-    cache = new Map();
-    getRow = (key: string | number) => cache.get(key);
-  });
-  
-  afterEach(() => {
-    source$.complete();
-  });
-  
-  describe('without filter', () => {
-    it('should pass through all events when no filter is provided', (done) => {
-      const view = new View(source$, null, 'id', getRow);
-      const events: RowUpdateEvent[] = [];
+  describe('getSnapshot', () => {
+    it('should return all rows when no filter is provided', () => {
+      const view = new View(null, 'id');
+      const rows = [
+        { id: 1, name: 'Test1' },
+        { id: 2, name: 'Test2' }
+      ];
       
-      view.getUpdates().subscribe({
-        next: (event) => events.push(event),
-        complete: () => {
-          expect(events).toHaveLength(3);
-          expect(events[0].type).toBe(RowUpdateType.Insert);
-          expect(events[1].type).toBe(RowUpdateType.Update);
-          expect(events[2].type).toBe(RowUpdateType.Delete);
-          done();
-        }
-      });
-      
-      // Simulate events
-      cache.set(1, { id: 1, name: 'Test' });
-      source$.next({ type: RowUpdateType.Insert, row: { id: 1, name: 'Test' } });
-      
-      cache.set(1, { id: 1, name: 'Updated' });
-      source$.next({ type: RowUpdateType.Update, row: { id: 1, name: 'Updated' } });
-      
-      source$.next({ type: RowUpdateType.Delete, row: { id: 1 } });
-      
-      source$.complete();
-    });
-  });
-  
-  describe('with filter', () => {
-    it('should only emit INSERT when row enters the view', (done) => {
-      const filter: Filter = {
-        evaluate: (row) => row.status === 'active',
-        fields: new Set(['status']),
-        expression: 'datum.status === "active"'
-      };
-      
-      const view = new View(source$, filter, 'id', getRow);
-      const events: RowUpdateEvent[] = [];
-      
-      view.getUpdates().subscribe({
-        next: (event) => events.push(event),
-        complete: () => {
-          expect(events).toHaveLength(1);
-          expect(events[0].type).toBe(RowUpdateType.Insert);
-          expect(events[0].row).toEqual({ id: 1, status: 'active' });
-          done();
-        }
-      });
-      
-      // Row doesn't match filter initially
-      cache.set(1, { id: 1, status: 'inactive' });
-      source$.next({ type: RowUpdateType.Insert, row: { id: 1, status: 'inactive' } });
-      
-      // Row updated to match filter - should generate INSERT
-      cache.set(1, { id: 1, status: 'active' });
-      source$.next({ type: RowUpdateType.Update, row: { id: 1, status: 'active' } });
-      
-      source$.complete();
+      const snapshot = view.getSnapshot(rows);
+      expect(snapshot).toEqual(rows);
     });
     
-    it('should emit DELETE when row leaves the view', (done) => {
+    it('should filter rows based on filter expression', () => {
       const filter: Filter = {
-        evaluate: (row) => row.status === 'active',
-        fields: new Set(['status']),
-        expression: 'datum.status === "active"'
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
       };
       
-      const view = new View(source$, filter, 'id', getRow);
-      const events: RowUpdateEvent[] = [];
+      const view = new View(filter, 'id');
+      const rows = [
+        { id: 1, name: 'Test1', active: true },
+        { id: 2, name: 'Test2', active: false },
+        { id: 3, name: 'Test3', active: true }
+      ];
       
-      view.getUpdates().subscribe({
-        next: (event) => events.push(event),
-        complete: () => {
-          expect(events).toHaveLength(2);
-          expect(events[0].type).toBe(RowUpdateType.Insert);
-          expect(events[1].type).toBe(RowUpdateType.Delete);
-          expect(events[1].row).toEqual({ id: 1 }); // DELETE only has key
-          done();
-        }
-      });
-      
-      // Row matches filter initially
-      cache.set(1, { id: 1, status: 'active' });
-      source$.next({ type: RowUpdateType.Insert, row: { id: 1, status: 'active' } });
-      
-      // Row updated to not match filter - should generate DELETE
-      cache.set(1, { id: 1, status: 'inactive' });
-      source$.next({ type: RowUpdateType.Update, row: { id: 1, status: 'inactive' } });
-      
-      source$.complete();
+      const snapshot = view.getSnapshot(rows);
+      expect(snapshot).toHaveLength(2);
+      expect(snapshot).toEqual([
+        { id: 1, name: 'Test1', active: true },
+        { id: 3, name: 'Test3', active: true }
+      ]);
     });
     
-    it('should pass through UPDATE when row stays in view', (done) => {
+    it('should use cached visibility on subsequent calls', () => {
+      const evaluateMock = jest.fn((row) => row.active === true);
       const filter: Filter = {
-        evaluate: (row) => row.age >= 18,
-        fields: new Set(['age']),
-        expression: 'datum.age >= 18'
+        evaluate: evaluateMock,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
       };
       
-      const view = new View(source$, filter, 'id', getRow);
-      const events: RowUpdateEvent[] = [];
+      const view = new View(filter, 'id');
+      const rows = [
+        { id: 1, name: 'Test1', active: true },
+        { id: 2, name: 'Test2', active: false }
+      ];
       
-      view.getUpdates().subscribe({
-        next: (event) => events.push(event),
-        complete: () => {
-          expect(events).toHaveLength(2);
-          expect(events[0].type).toBe(RowUpdateType.Insert);
-          expect(events[1].type).toBe(RowUpdateType.Update);
-          expect(events[1].row).toEqual({ id: 1, name: 'Updated' }); // Only changed fields
-          done();
-        }
-      });
+      // First call should evaluate filter
+      view.getSnapshot(rows);
+      expect(evaluateMock).toHaveBeenCalledTimes(2);
       
-      // Row matches filter
-      cache.set(1, { id: 1, name: 'Test', age: 25 });
-      source$.next({ type: RowUpdateType.Insert, row: { id: 1, name: 'Test', age: 25 } });
-      
-      // Update doesn't affect filter match
-      cache.set(1, { id: 1, name: 'Updated', age: 25 });
-      source$.next({ type: RowUpdateType.Update, row: { id: 1, name: 'Updated' } });
-      
-      source$.complete();
-    });
-    
-    it('should ignore events for rows not in view', (done) => {
-      const filter: Filter = {
-        evaluate: (row) => row.visible === true,
-        fields: new Set(['visible']),
-        expression: 'datum.visible === true'
-      };
-      
-      const view = new View(source$, filter, 'id', getRow);
-      const events: RowUpdateEvent[] = [];
-      
-      view.getUpdates().subscribe({
-        next: (event) => events.push(event),
-        complete: () => {
-          expect(events).toHaveLength(0);
-          done();
-        }
-      });
-      
-      // Row doesn't match filter
-      cache.set(1, { id: 1, visible: false });
-      source$.next({ type: RowUpdateType.Insert, row: { id: 1, visible: false } });
-      
-      // Update still doesn't match
-      cache.set(1, { id: 1, visible: false, name: 'Updated' });
-      source$.next({ type: RowUpdateType.Update, row: { id: 1, name: 'Updated' } });
-      
-      // Delete of non-visible row
-      source$.next({ type: RowUpdateType.Delete, row: { id: 1 } });
-      
-      source$.complete();
-    });
-    
-    it('should handle filter evaluation errors gracefully', (done) => {
-      const filter: Filter = {
-        evaluate: (row) => {
-          if (row.id === 2) {
-            throw new Error('Filter error');
-          }
-          return true;
-        },
-        fields: new Set(),
-        expression: 'custom filter'
-      };
-      
-      const view = new View(source$, filter, 'id', getRow);
-      const events: RowUpdateEvent[] = [];
-      
-      view.getUpdates().subscribe({
-        next: (event) => events.push(event),
-        complete: () => {
-          expect(events).toHaveLength(1);
-          expect(events[0].row.id).toBe(1);
-          done();
-        }
-      });
-      
-      // This should work
-      cache.set(1, { id: 1 });
-      source$.next({ type: RowUpdateType.Insert, row: { id: 1 } });
-      
-      // This should fail filter evaluation and be excluded
-      cache.set(2, { id: 2 });
-      source$.next({ type: RowUpdateType.Insert, row: { id: 2 } });
-      
-      source$.complete();
+      // Second call should use cached visibility
+      evaluateMock.mockClear();
+      view.getSnapshot(rows);
+      expect(evaluateMock).not.toHaveBeenCalled();
     });
   });
   
-  describe('edge cases', () => {
-    it('should handle INSERT events as full row', (done) => {
-      // For INSERT events, we should use the event row, not cache
-      const view = new View(source$, null, 'id', getRow);
-      const events: RowUpdateEvent[] = [];
+  describe('processEvent', () => {
+    it('should pass through events when no filter is provided', () => {
+      const view = new View(null, 'id');
       
-      view.getUpdates().subscribe({
-        next: (event) => events.push(event),
-        complete: () => {
-          expect(events).toHaveLength(1);
-          expect(events[0].type).toBe(RowUpdateType.Insert);
-          expect(events[0].row).toEqual({ id: 1, name: 'Test' });
-          done();
-        }
-      });
+      const insertEvent: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name']),
+        row: { id: 1, name: 'Test' }
+      };
       
-      // INSERT should work without cache entry
-      source$.next({ type: RowUpdateType.Insert, row: { id: 1, name: 'Test' } });
-      
-      source$.complete();
+      const result = view.processEvent(insertEvent);
+      expect(result).toEqual(insertEvent);
     });
     
+    it('should handle row entering view', () => {
+      const filter: Filter = {
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      };
+      
+      const view = new View(filter, 'id');
+      
+      const event: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['id', 'active']),
+        row: { id: 1, name: 'Test', active: true }
+      };
+      
+      const result = view.processEvent(event);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe(RowUpdateType.Insert);
+      expect(result!.fields).toEqual(new Set(['id', 'name', 'active']));
+    });
+    
+    it('should handle row leaving view', () => {
+      const filter: Filter = {
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      };
+      
+      const view = new View(filter, 'id');
+      
+      // First, add row to view
+      view.processEvent({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'active']),
+        row: { id: 1, name: 'Test', active: true }
+      });
+      
+      // Then update to make it leave
+      const event: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['id', 'active']),
+        row: { id: 1, name: 'Test', active: false }
+      };
+      
+      const result = view.processEvent(event);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe(RowUpdateType.Delete);
+      expect(result!.fields).toEqual(new Set(['id']));
+    });
+    
+    it('should handle row updating within view', () => {
+      const filter: Filter = {
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      };
+      
+      const view = new View(filter, 'id');
+      
+      // First, add row to view
+      view.processEvent({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'active']),
+        row: { id: 1, name: 'Test', active: true }
+      });
+      
+      // Update name only (not affecting filter)
+      const event: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['id', 'name']),
+        row: { id: 1, name: 'Updated', active: true }
+      };
+      
+      const result = view.processEvent(event);
+      expect(result).toEqual(event);
+    });
+    
+    it('should filter out rows not matching filter', () => {
+      const filter: Filter = {
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      };
+      
+      const view = new View(filter, 'id');
+      
+      const event: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'active']),
+        row: { id: 1, name: 'Test', active: false }
+      };
+      
+      const result = view.processEvent(event);
+      expect(result).toBeNull();
+    });
+    
+    it('should handle DELETE events correctly', () => {
+      const view = new View(null, 'id');
+      
+      // First insert a row
+      view.processEvent({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name']),
+        row: { id: 1, name: 'Test' }
+      });
+      
+      // Then delete it
+      const deleteEvent: RowUpdateEvent = {
+        type: RowUpdateType.Delete,
+        fields: new Set(['id']),
+        row: { id: 1 }
+      };
+      
+      const result = view.processEvent(deleteEvent);
+      expect(result).toEqual(deleteEvent);
+    });
+    
+    it('should skip filter evaluation for UPDATE when fields dont affect filter', () => {
+      const evaluateMock = jest.fn((row) => row.active === true);
+      const filter: Filter = {
+        evaluate: evaluateMock,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      };
+      
+      const view = new View(filter, 'id');
+      
+      // First insert to establish visibility
+      view.processEvent({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'active']),
+        row: { id: 1, name: 'Test', active: true }
+      });
+      
+      evaluateMock.mockClear();
+      
+      // Update that doesn't affect filter fields
+      const event: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['id', 'name']),
+        row: { id: 1, name: 'Updated', active: true }
+      };
+      
+      view.processEvent(event);
+      
+      // Should not re-evaluate filter
+      expect(evaluateMock).not.toHaveBeenCalled();
+    });
+  });
+  
+  describe('dispose', () => {
+    it('should clear visible keys', () => {
+      const view = new View(null, 'id');
+      
+      // Add some rows
+      view.processEvent({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name']),
+        row: { id: 1, name: 'Test' }
+      });
+      
+      view.dispose();
+      
+      // After dispose, processing same row should treat it as new
+      const result = view.processEvent({
+        type: RowUpdateType.Update,
+        fields: new Set(['id', 'name']),
+        row: { id: 1, name: 'Test2' }
+      });
+      
+      // Should be INSERT since visibleKeys was cleared
+      expect(result!.type).toBe(RowUpdateType.Insert);
+    });
   });
 });
