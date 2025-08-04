@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { Observable, filter, map, share } from 'rxjs';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 
 /**
@@ -10,28 +11,47 @@ export class View {
   private readonly logger = new Logger(`View`);
   private readonly visibleKeys = new Set<string | number>();
   private initialized = false;
+  private readonly stream$: Observable<[RowUpdateEvent, bigint]>;
   
   constructor(
-    private readonly filter: Filter | null,
-    private readonly primaryKeyField: string
+    private readonly viewFilter: Filter,
+    private readonly primaryKeyField: string,
+    sourceStream$: Observable<[RowUpdateEvent, bigint]>
   ) {
-    // Pure transformer - no streams or subscriptions
+    // Create the filtered stream
+    this.stream$ = sourceStream$.pipe(
+      map(([event, timestamp]): [RowUpdateEvent, bigint] | null => {
+        const transformed = this.processEvent(event);
+        return transformed ? [transformed, timestamp] : null;
+      }),
+      filter((result): result is [RowUpdateEvent, bigint] => result !== null),
+      share()  // Share among all subscribers
+    );
+  }
+  
+  /**
+   * Check if this view has an actual filter expression
+   */
+  private hasFilter(): boolean {
+    return this.viewFilter.expression !== '';
   }
   
   /**
    * Get filtered snapshot, building visibleKeys if needed
    */
   getSnapshot(allRows: Record<string, any>[]): Record<string, any>[] {
+    // Fast path for empty filter
+    if (!this.hasFilter()) {
+      return allRows;
+    }
+    
     let result: Record<string, any>[];
     
-    if (!this.filter) {
-      // No filter = all rows visible
-      result = allRows;
-    } else if (!this.initialized) {
+    if (!this.initialized) {
       // First time - build visibleKeys while filtering
       result = [];
       for (const row of allRows) {
-        if (this.filter.evaluate(row)) {
+        if (this.viewFilter.evaluate(row)) {
           const key = row[this.primaryKeyField];
           this.visibleKeys.add(key);
           result.push(row);
@@ -54,6 +74,11 @@ export class View {
    * Returns transformed event or null if filtered out
    */
   processEvent(event: RowUpdateEvent): RowUpdateEvent | null {
+    // Fast path for empty filter
+    if (!this.hasFilter()) {
+      return event;
+    }
+    
     const key = event.row[this.primaryKeyField];
     const wasInView = this.visibleKeys.has(key);
     
@@ -104,8 +129,8 @@ export class View {
     const fullRow = event.row;
     
     // Optimization: For UPDATE events where filter fields haven't changed
-    if (event.type === RowUpdateType.Update && this.filter && wasInView) {
-      const hasRelevantChanges = Array.from(event.fields).some(field => this.filter!.fields.has(field));
+    if (event.type === RowUpdateType.Update && wasInView) {
+      const hasRelevantChanges = Array.from(event.fields).some(field => this.viewFilter.fields.has(field));
       
       if (!hasRelevantChanges) {
         return wasInView; // Filter result can't have changed
@@ -119,18 +144,20 @@ export class View {
    * Check if a row matches the filter
    */
   private matchesFilter(row: any): boolean {
-    if (!this.filter) {
-      // No filter means all rows match
-      return true;
-    }
-    
     try {
-      return this.filter.evaluate(row);
+      return this.viewFilter.evaluate(row);
     } catch (error) {
       this.logger.error(`Filter evaluation error: ${error.message}`, error.stack);
       // On error, exclude the row from view
       return false;
     }
+  }
+  
+  /**
+   * Get the filtered stream for this view
+   */
+  get stream(): Observable<[RowUpdateEvent, bigint]> {
+    return this.stream$;
   }
   
   /**

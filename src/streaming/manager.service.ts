@@ -8,6 +8,15 @@ import type { SourceDefinition } from '../config/source.types';
 import type { RowUpdateEvent, Filter } from './types';
 
 /**
+ * Empty filter that matches all rows
+ */
+const EMPTY_FILTER: Filter = {
+  expression: '',
+  fields: new Set<string>(),
+  evaluate: () => true
+};
+
+/**
  * Manages multiple StreamingService instances for different sources
  * Provides a unified interface for streaming database updates
  */
@@ -93,7 +102,7 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Created streaming service for source: ${sourceName}`);
     }
 
-    return streamingService.getUpdates(filter);
+    return streamingService.getUpdates(filter || EMPTY_FILTER);
   }
 
 

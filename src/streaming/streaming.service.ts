@@ -1,5 +1,5 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
-import { Observable, Subject, ReplaySubject, filter, Subscription } from 'rxjs';
+import { Observable, Subject, ReplaySubject, filter, Subscription, map, share } from 'rxjs';
 import { DatabaseConnectionService } from '../database/connection.service';
 import { DatabaseSubscriber } from '../database/subscriber';
 import type { ProtocolHandler } from '../database/types';
@@ -9,6 +9,7 @@ import { RowUpdateType, type RowUpdateEvent, type Filter } from './types';
 import type { Cache } from './cache.types';
 import { SimpleCache } from './cache';
 import { truncateForLog } from '../common/logging.utils';
+import { View } from './view';
 
 /**
  * Database streaming service for a single source
@@ -23,6 +24,7 @@ export class StreamingService implements OnModuleDestroy {
   private latestTimestamp = BigInt(0);
   private _consumerCount = 0;
   private isShuttingDown = false;
+  private readonly viewCache = new Map<string, View>();
 
   constructor(
     private connectionService: DatabaseConnectionService,
@@ -42,7 +44,7 @@ export class StreamingService implements OnModuleDestroy {
    * Get a stream of updates with late joiner support
    * This is the main interface that will be used by GraphQL subscriptions
    */
-  getUpdates(filter?: Filter | null): Observable<RowUpdateEvent> {
+  getUpdates(viewFilter: Filter): Observable<RowUpdateEvent> {
     if (this.isShuttingDown) {
       throw new Error('Database subscriber is shutting down, cannot accept new subscriptions');
     }
@@ -59,19 +61,22 @@ export class StreamingService implements OnModuleDestroy {
     // Increment consumer count
     this._consumerCount++;
 
+    // Get or create view
+    const view = this.getView(viewFilter);
+
     // Create a replayable stream for this consumer
     const consumerStream$ = new ReplaySubject<RowUpdateEvent>();
     
     // Take snapshot before subscribing to avoid race condition
     const snapshotTimestamp = this.latestTimestamp;
-    const snapshot = this.cache.getAllRows();
+    const snapshot = view.getSnapshot(this.cache.getAllRows());
     
     // Send snapshot to consumer
     const snapshotCount = this.sendSnapshot(consumerStream$, snapshot);
     this.logger.debug(`Sending cached data to consumer - source: ${this.sourceName}, cachedRows: ${snapshotCount}, activeConsumers: ${this._consumerCount}`);
     
     // Subscribe to live updates after snapshot
-    const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp);
+    const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp, view);
     
     this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}, activeConsumers: ${this._consumerCount}`);
 
@@ -121,6 +126,13 @@ export class StreamingService implements OnModuleDestroy {
     
     // Complete internal streams
     this.internalUpdates$.complete();
+    
+    // Dispose all cached views
+    const disposePromises = Array.from(this.viewCache.values()).map(
+      view => Promise.resolve(view.dispose())
+    );
+    await Promise.all(disposePromises);
+    this.viewCache.clear();
   }
 
   /**
@@ -290,15 +302,15 @@ export class StreamingService implements OnModuleDestroy {
    * Subscribe to live updates filtering by timestamp
    * Prevents duplicates by filtering events older than snapshot
    */
-  private subscribeToLiveUpdates(consumerStream$: ReplaySubject<RowUpdateEvent>, snapshotTimestamp: bigint): Subscription {
-    // Subscribe to future updates with timestamp filter
-    return this.internalUpdates$.pipe(
-      filter(([event, timestamp]) => {
-        // Only emit events newer than snapshot timestamp
-        return timestamp > snapshotTimestamp;
-      })
-    ).subscribe(([event]) => {
-      // Forward the event to consumer
+  private subscribeToLiveUpdates(consumerStream$: ReplaySubject<RowUpdateEvent>, snapshotTimestamp: bigint, view: View): Subscription {
+    // Get the stream from the view
+    const viewStream$ = view.stream;
+    
+    // Subscribe with timestamp filter
+    return viewStream$.pipe(
+      filter(([event, timestamp]) => timestamp > snapshotTimestamp),
+      map(([event]) => event)
+    ).subscribe(event => {
       consumerStream$.next(event);
     });
   }
@@ -326,5 +338,23 @@ export class StreamingService implements OnModuleDestroy {
         consumerStream$.complete();
       };
     });
+  }
+
+
+  /**
+   * Get or create a view for the given filter
+   */
+  private getView(viewFilter: Filter): View {
+    let view = this.viewCache.get(viewFilter.expression);
+    
+    if (!view) {
+      // Create new view with source stream
+      view = new View(viewFilter, this.sourceDef.primaryKeyField, this.internalUpdates$);
+      
+      // Cache the view
+      this.viewCache.set(viewFilter.expression, view);
+    }
+    
+    return view;
   }
 }

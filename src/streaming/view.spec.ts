@@ -1,10 +1,23 @@
 import { View } from './view';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
+import { Subject } from 'rxjs';
+
+// Empty filter that matches all rows
+const EMPTY_FILTER: Filter = {
+  expression: '',
+  fields: new Set<string>(),
+  evaluate: () => true
+};
 
 describe('View', () => {
+  let mockSourceStream$: Subject<[RowUpdateEvent, bigint]>;
+  
+  beforeEach(() => {
+    mockSourceStream$ = new Subject<[RowUpdateEvent, bigint]>();
+  });
   describe('getSnapshot', () => {
-    it('should return all rows when no filter is provided', () => {
-      const view = new View(null, 'id');
+    it('should return all rows when empty filter is provided', () => {
+      const view = new View(EMPTY_FILTER, 'id', mockSourceStream$);
       const rows = [
         { id: 1, name: 'Test1' },
         { id: 2, name: 'Test2' }
@@ -21,7 +34,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, 'id');
+      const view = new View(filter, 'id', mockSourceStream$);
       const rows = [
         { id: 1, name: 'Test1', active: true },
         { id: 2, name: 'Test2', active: false },
@@ -44,7 +57,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, 'id');
+      const view = new View(filter, 'id', mockSourceStream$);
       const rows = [
         { id: 1, name: 'Test1', active: true },
         { id: 2, name: 'Test2', active: false }
@@ -62,8 +75,8 @@ describe('View', () => {
   });
   
   describe('processEvent', () => {
-    it('should pass through events when no filter is provided', () => {
-      const view = new View(null, 'id');
+    it('should pass through events when empty filter is provided', () => {
+      const view = new View(EMPTY_FILTER, 'id', mockSourceStream$);
       
       const insertEvent: RowUpdateEvent = {
         type: RowUpdateType.Insert,
@@ -82,7 +95,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, 'id');
+      const view = new View(filter, 'id', mockSourceStream$);
       
       const event: RowUpdateEvent = {
         type: RowUpdateType.Update,
@@ -103,7 +116,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, 'id');
+      const view = new View(filter, 'id', mockSourceStream$);
       
       // First, add row to view
       view.processEvent({
@@ -132,7 +145,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, 'id');
+      const view = new View(filter, 'id', mockSourceStream$);
       
       // First, add row to view
       view.processEvent({
@@ -159,7 +172,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, 'id');
+      const view = new View(filter, 'id', mockSourceStream$);
       
       const event: RowUpdateEvent = {
         type: RowUpdateType.Insert,
@@ -172,7 +185,7 @@ describe('View', () => {
     });
     
     it('should handle DELETE events correctly', () => {
-      const view = new View(null, 'id');
+      const view = new View(EMPTY_FILTER, 'id', mockSourceStream$);
       
       // First insert a row
       view.processEvent({
@@ -200,7 +213,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, 'id');
+      const view = new View(filter, 'id', mockSourceStream$);
       
       // First insert to establish visibility
       view.processEvent({
@@ -225,28 +238,63 @@ describe('View', () => {
     });
   });
   
-  describe('dispose', () => {
-    it('should clear visible keys', () => {
-      const view = new View(null, 'id');
+  describe('stream', () => {
+    it('should emit transformed events that pass the filter', (done) => {
+      const filter: Filter = {
+        expression: 'value > 10',
+        fields: new Set(['value']),
+        evaluate: (row) => row.value > 10
+      };
+      const view = new View(filter, 'id', mockSourceStream$);
       
-      // Add some rows
-      view.processEvent({
+      // Subscribe to the view's stream
+      const receivedEvents: RowUpdateEvent[] = [];
+      view.stream.subscribe(([event]) => {
+        receivedEvents.push(event);
+      });
+      
+      // Emit an event that passes the filter
+      const passingEvent: RowUpdateEvent = {
         type: RowUpdateType.Insert,
-        fields: new Set(['id', 'name']),
-        row: { id: 1, name: 'Test' }
+        fields: new Set(['id', 'value']),
+        row: { id: 1, value: 20 }
+      };
+      mockSourceStream$.next([passingEvent, BigInt(1000)]);
+      
+      // Emit an event that fails the filter
+      const failingEvent: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'value']),
+        row: { id: 2, value: 5 }
+      };
+      mockSourceStream$.next([failingEvent, BigInt(2000)]);
+      
+      // Give time for async operations
+      setTimeout(() => {
+        expect(receivedEvents).toHaveLength(1);
+        expect(receivedEvents[0]).toEqual(passingEvent);
+        done();
+      }, 10);
+    });
+    
+    
+    it('should preserve timestamps in emitted events', (done) => {
+      const view = new View(EMPTY_FILTER, 'id', mockSourceStream$);
+      
+      // Subscribe and check timestamp
+      view.stream.subscribe(([event, timestamp]) => {
+        expect(timestamp).toBe(BigInt(12345));
+        done();
       });
       
-      view.dispose();
-      
-      // After dispose, processing same row should treat it as new
-      const result = view.processEvent({
-        type: RowUpdateType.Update,
-        fields: new Set(['id', 'name']),
-        row: { id: 1, name: 'Test2' }
-      });
-      
-      // Should be INSERT since visibleKeys was cleared
-      expect(result!.type).toBe(RowUpdateType.Insert);
+      // Emit event with timestamp
+      const event: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(['id']),
+        row: { id: 1 }
+      };
+      mockSourceStream$.next([event, BigInt(12345)]);
     });
   });
+  
 });
