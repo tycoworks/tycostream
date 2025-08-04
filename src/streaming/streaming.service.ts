@@ -5,7 +5,7 @@ import { DatabaseSubscriber } from '../database/subscriber';
 import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
 import type { SourceDefinition } from '../config/source.types';
-import { RowUpdateType, type RowUpdateEvent } from './types';
+import { RowUpdateType, type RowUpdateEvent, type Filter } from './types';
 import type { Cache } from './cache.types';
 import { SimpleCache } from './cache';
 import { truncateForLog } from '../common/logging.utils';
@@ -42,7 +42,7 @@ export class StreamingService implements OnModuleDestroy {
    * Get a stream of updates with late joiner support
    * This is the main interface that will be used by GraphQL subscriptions
    */
-  getUpdates(): Observable<RowUpdateEvent> {
+  getUpdates(filter?: Filter | null): Observable<RowUpdateEvent> {
     if (this.isShuttingDown) {
       throw new Error('Database subscriber is shutting down, cannot accept new subscriptions');
     }
@@ -168,7 +168,7 @@ export class StreamingService implements OnModuleDestroy {
     const event = this.prepareEvent(row, primaryKey, updateType);
 
     // Update cache and log the operation
-    this.updateCacheAndLog(row, event.type, primaryKey, event.row);
+    this.updateCacheAndLog(row, event.type, primaryKey, event.fields);
 
     // Emit to internal subject
     this.internalUpdates$.next([event, timestamp]);
@@ -179,6 +179,9 @@ export class StreamingService implements OnModuleDestroy {
    * Handles UPSERT logic and minimizes DELETE event data
    */
   private prepareEvent(row: Record<string, any>, primaryKey: any, updateType: DatabaseRowUpdateType): RowUpdateEvent {
+    // Get existing row from cache if it exists
+    const existingRow = this.cache.get(primaryKey);
+    
     // Determine event type and data
     let eventType: RowUpdateType;
     let eventData: Record<string, any>;
@@ -187,8 +190,6 @@ export class StreamingService implements OnModuleDestroy {
       eventType = RowUpdateType.Delete;
       eventData = this.getPkObject(primaryKey);
     } else if (updateType === DatabaseRowUpdateType.Upsert) {
-      const existingRow = this.cache.get(primaryKey);
-      
       if (existingRow) {
         // UPDATE - start with primary key, add changes
         eventType = RowUpdateType.Update;
@@ -206,7 +207,8 @@ export class StreamingService implements OnModuleDestroy {
     
     return {
       type: eventType,
-      row: eventData
+      fields: eventData,
+      row: eventType === RowUpdateType.Delete ? existingRow : row
     };
   }
 
@@ -271,7 +273,7 @@ export class StreamingService implements OnModuleDestroy {
     for (const row of snapshot) {
       consumerStream$.next({
         type: RowUpdateType.Insert,
-        row: { ...row }
+        fields: { ...row }
       });
       snapshotCount++;
     }
@@ -295,6 +297,7 @@ export class StreamingService implements OnModuleDestroy {
       consumerStream$.next(event);
     });
   }
+
 
   /**
    * Create observable with cleanup logic for graceful disconnection

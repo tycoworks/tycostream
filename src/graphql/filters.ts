@@ -8,7 +8,7 @@ const logger = new Logger('GraphQLFilters');
  * This includes the compiled function and metadata for optimization
  */
 export function buildFilter(where: any): Filter | null {
-  if (!where || typeof where !== 'object' || Object.keys(where).length === 0) {
+  if (!where || Object.keys(where).length === 0) {
     return null;
   }
   
@@ -32,9 +32,6 @@ export function buildFilter(where: any): Filter | null {
  * Internal helper that builds expression string and collects fields
  */
 function buildExpression(where: any, fieldVar: string, fields: Set<string>): string {
-  if (!where || typeof where !== 'object') {
-    return 'true';
-  }
 
   // Handle logical operators
   if (where._and) {

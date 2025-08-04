@@ -5,7 +5,7 @@ import { StreamingService } from './streaming.service';
 import { DatabaseConnectionService } from '../database/connection.service';
 import { MaterializeProtocolHandler } from '../database/materialize';
 import type { SourceDefinition } from '../config/source.types';
-import type { RowUpdateEvent } from './types';
+import type { RowUpdateEvent, Filter } from './types';
 
 /**
  * Manages multiple StreamingService instances for different sources
@@ -78,7 +78,7 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
    * Get streaming updates for a specific source
    * Creates the streaming service lazily on first request
    */
-  getUpdates(sourceName: string): Observable<RowUpdateEvent> {
+  getUpdates(sourceName: string, filter?: Filter | null): Observable<RowUpdateEvent> {
     const sourceDef = this.sourceDefinitions.get(sourceName);
     if (!sourceDef) {
       throw new Error(`Unknown source: ${sourceName}. Available sources: ${this.getAvailableSources().join(', ')}`);
@@ -93,7 +93,7 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Created streaming service for source: ${sourceName}`);
     }
 
-    return streamingService.getUpdates();
+    return streamingService.getUpdates(filter);
   }
 
 

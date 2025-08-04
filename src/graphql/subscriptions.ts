@@ -65,18 +65,18 @@ function createSourceSubscriptionResolver(
         logger.log(`Subscription for ${sourceName} with filter: ${filter.expression}`);
       }
       
-      // TODO: Phase 3 - Pass filter to streamingManager.getUpdates()
-      const observable = streamingManager.getUpdates(sourceName).pipe(
+      // Pass filter to streamingManager if provided
+      const observable = streamingManager.getUpdates(sourceName, filter).pipe(
         map((event: RowUpdateEvent) => {
           const operation = ROW_UPDATE_TYPE_MAP[event.type];
           
           // Calculate fields array - always populated for consistency
-          const fields: string[] = Object.keys(event.row);
+          const fields: string[] = Object.keys(event.fields);
           
           return {
             [sourceName]: {
               operation,
-              data: event.row, // Include row data for all operations, including DELETE
+              data: event.fields, // Use fields instead of row
               fields
             }
           };

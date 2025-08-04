@@ -37,7 +37,7 @@ export class View {
    * Process an event from the source stream
    */
   private processEvent(event: RowUpdateEvent): void {
-    const key = event.row[this.primaryKeyField];
+    const key = event.fields[this.primaryKeyField];
     const wasInView = this.visibleKeys.has(key);
     
     let isInView: boolean;
@@ -52,10 +52,10 @@ export class View {
       
       if (!wasInView && isInView) {
         // Row entering view
-        outputEvent = { type: RowUpdateType.Insert, row: this.getFullRow(event) };
+        outputEvent = { type: RowUpdateType.Insert, fields: this.getFullRow(event) };
       } else if (wasInView && !isInView) {
         // Row leaving view
-        outputEvent = { type: RowUpdateType.Delete, row: { [this.primaryKeyField]: key } };
+        outputEvent = { type: RowUpdateType.Delete, fields: { [this.primaryKeyField]: key } };
       } else if (wasInView && isInView) {
         // Row still in view
         outputEvent = event;
@@ -83,9 +83,9 @@ export class View {
    */
   private getFullRow(event: RowUpdateEvent): any {
     if (event.type === RowUpdateType.Insert) {
-      return event.row;
+      return event.fields;
     } else {
-      const key = event.row[this.primaryKeyField];
+      const key = event.fields[this.primaryKeyField];
       return this.getRow(key);
     }
   }
@@ -98,7 +98,7 @@ export class View {
     
     // Optimization: For UPDATE events where filter fields haven't changed
     if (event.type === RowUpdateType.Update && this.filter && wasInView) {
-      const changedFields = Object.keys(event.row);
+      const changedFields = Object.keys(event.fields);
       const hasRelevantChanges = changedFields.some(field => this.filter!.fields.has(field));
       
       if (!hasRelevantChanges) {
