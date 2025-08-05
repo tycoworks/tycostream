@@ -21,7 +21,6 @@ export class StreamingService implements OnModuleDestroy {
   private readonly internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
   private readonly databaseSubscriber: DatabaseSubscriber;
   private latestTimestamp = BigInt(0);
-  private _consumerCount = 0;
   private isShuttingDown = false;
 
   constructor(
@@ -56,8 +55,6 @@ export class StreamingService implements OnModuleDestroy {
       });
     }
 
-    // Increment consumer count
-    this._consumerCount++;
 
     // Create a replayable stream for this consumer
     const consumerStream$ = new ReplaySubject<RowUpdateEvent>();
@@ -67,51 +64,22 @@ export class StreamingService implements OnModuleDestroy {
     
     // Send snapshot to consumer (unfiltered)
     const snapshotCount = this.sendSnapshot(consumerStream$);
-    this.logger.debug(`Sending cached data to consumer - source: ${this.sourceName}, cachedRows: ${snapshotCount}, activeConsumers: ${this._consumerCount}`);
+    this.logger.debug(`Sending cached data to consumer - source: ${this.sourceName}, cachedRows: ${snapshotCount}`);
     
     // Subscribe to live updates after snapshot (unfiltered)
     const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp);
     
-    this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}, activeConsumers: ${this._consumerCount}`);
+    this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}`);
 
     // Return observable that handles cleanup on unsubscribe
     return this.createCleanupObservable(consumerStream$, subscription);
   }
 
   /**
-   * Get row count
-   */
-  getRowCount(): number {
-    return this.cache.size;
-  }
-
-
-  /**
    * Get the primary key field for this source
    */
   getPrimaryKeyField(): string {
     return this.sourceDef.primaryKeyField;
-  }
-
-  /**
-   * Check if streaming is active
-   */
-  get streaming(): boolean {
-    return this.databaseSubscriber.streaming;
-  }
-
-  /**
-   * Get consumer count for monitoring
-   */
-  get consumerCount(): number {
-    return this._consumerCount;
-  }
-
-  /**
-   * Get latest timestamp
-   */
-  get currentTimestamp(): bigint {
-    return this.latestTimestamp;
   }
 
 
@@ -322,10 +290,7 @@ export class StreamingService implements OnModuleDestroy {
       
       // Return teardown logic
       return () => {
-        // Decrement consumer count
-        this._consumerCount--;
-        
-        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}, remainingConsumers: ${this._consumerCount}`);
+        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}`);
         
         // Clean up subscriptions
         subscription.unsubscribe();

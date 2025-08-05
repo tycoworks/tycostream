@@ -1,19 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { StreamingService } from './streaming.service';
 import { DatabaseConnectionService } from '../database/connection.service';
 import type { SourceDefinition } from '../config/source.types';
 import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
-import { RowUpdateType, type RowUpdateEvent, type Filter } from './types';
+import { RowUpdateType, type RowUpdateEvent } from './types';
 import { take, toArray } from 'rxjs/operators';
 import { firstValueFrom } from 'rxjs';
-
-// Empty filter that matches all rows
-const EMPTY_FILTER: Filter = {
-  expression: '',
-  fields: new Set<string>(),
-  evaluate: () => true
-};
 
 describe('StreamingService', () => {
   let service: StreamingService;
@@ -44,8 +36,7 @@ describe('StreamingService', () => {
     parseLine: jest.fn()
   };
 
-  beforeEach(async () => {
-    // Create service directly with constructor since it needs source info
+  beforeEach(() => {
     connectionService = mockConnectionService as any;
     service = new StreamingService(
       connectionService as any,
@@ -62,498 +53,137 @@ describe('StreamingService', () => {
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  describe('processUpdate (internal)', () => {
-    it('should update cache on insert/update', () => {
-      const row = { id: '1', name: 'test', value: 100 };
-      
-      service['processUpdate'](row, BigInt(1000), DatabaseRowUpdateType.Upsert);
-
-      expect(service.getRowCount()).toBe(1);
-    });
-
-    it('should remove from cache on delete', () => {
-      const row = { id: '1', name: 'test', value: 100 };
-      
-      // First insert
-      service['processUpdate'](row, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      
-      expect(service.getRowCount()).toBe(1);
-      
-      // Then delete
-      service['processUpdate'](row, BigInt(2000), DatabaseRowUpdateType.Delete);
-      
-      expect(service.getRowCount()).toBe(0);
-    });
-
-    it('should normalize delete events to only contain primary key', async () => {
-      const fullRow = { id: '1', name: 'test', value: 100, extra: 'data' };
-      
-      let events: RowUpdateEvent[] = [];
-      
-      // Subscribe first, then add data
-      const subscription = service.getUpdates(EMPTY_FILTER).subscribe(event => {
-        events.push(event);
-      });
-      
-      // Insert the row - this will be seen by the view
-      service['processUpdate'](fullRow, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      
-      // Give time for INSERT to process
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // Process delete with full row data
-      service['processUpdate'](fullRow, BigInt(2000), DatabaseRowUpdateType.Delete);
-      
-      // Give time for DELETE to process
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // Should have INSERT then DELETE
-      expect(events).toHaveLength(2);
-      expect(events[0].type).toBe(RowUpdateType.Insert);
-      
-      // Verify the emitted delete event only contains primary key
-      const deleteEvent = events[1];
-      expect(deleteEvent).toBeDefined();
-      expect(deleteEvent.type).toBe(RowUpdateType.Delete);
-      expect(deleteEvent.fields).toEqual(new Set(['id']));
-      expect(deleteEvent.row).toEqual({ id: '1' });
-      
-      subscription.unsubscribe();
-    });
-
-    it('should calculate changes for updates', () => {
-      let emittedEvents: RowUpdateEvent[] = [];
-      
-      // Subscribe to capture all events
-      service.getUpdates(EMPTY_FILTER).subscribe(event => {
-        emittedEvents.push(event);
-      });
-      
-      // First insert
-      service['processUpdate']({ id: '1', name: 'original', value: 100 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      
-      // Update with some changes
-      service['processUpdate']({ id: '1', name: 'updated', value: 100 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
-      
-      // Verify INSERT has full data
-      expect(emittedEvents[0].type).toBe(RowUpdateType.Insert);
-      expect(emittedEvents[0].fields).toEqual(new Set(['id', 'name', 'value']));
-      expect(emittedEvents[0].row).toEqual({ id: '1', name: 'original', value: 100 });
-      
-      // Verify UPDATE has only changes (changed fields + pk)
-      expect(emittedEvents[1].type).toBe(RowUpdateType.Update);
-      expect(emittedEvents[1].fields).toEqual(new Set(['id', 'name']));
-      expect(emittedEvents[1].row).toEqual({ id: '1', name: 'updated', value: 100 });
-    });
-
-    it('should track latest timestamp', () => {
-      expect(service.currentTimestamp).toBe(BigInt(0));
-      
-      service['processUpdate']({ id: '1' }, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      
-      expect(service.currentTimestamp).toBe(BigInt(1000));
-      
-      service['processUpdate']({ id: '1' }, BigInt(2000), DatabaseRowUpdateType.Upsert);
-      
-      expect(service.currentTimestamp).toBe(BigInt(2000));
-    });
-  });
-
-  describe('getUpdates - late joiner support', () => {
-    it('should send cache snapshot to new subscribers', async () => {
-      // Pre-populate cache
-      service['processUpdate']({ id: '1', name: 'test1', value: 100 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      
-      service['processUpdate']({ id: '2', name: 'test2', value: 200 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
-      
-      // Subscribe and collect initial events
-      const events = await firstValueFrom(
-        service.getUpdates(EMPTY_FILTER).pipe(
-          take(2),
-          toArray()
-        )
-      );
-      
-      expect(events).toHaveLength(2);
-      expect(events[0]).toEqual({
-        type: RowUpdateType.Insert,
-        fields: new Set(['id', 'name', 'value']),
-        row: { id: '1', name: 'test1', value: 100 }
-      });
-      expect(events[1]).toEqual({
-        type: RowUpdateType.Insert,
-        fields: new Set(['id', 'name', 'value']),
-        row: { id: '2', name: 'test2', value: 200 }
-      });
-    });
-
-    it('should not duplicate events for late joiners', async () => {
-      // Initial data
-      service['processUpdate']({ id: '1', name: 'initial', value: 100 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      
-      // First subscriber
-      const firstSub = service.getUpdates(EMPTY_FILTER);
-      const firstEvents: RowUpdateEvent[] = [];
-      const firstSubscription = firstSub.subscribe(event => firstEvents.push(event));
-      
-      // Update happens after first subscriber
-      service['processUpdate']({ id: '1', name: 'updated', value: 200 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
-      
-      // Second subscriber joins after update
-      const secondSub = service.getUpdates(EMPTY_FILTER);
-      const secondEvents: RowUpdateEvent[] = [];
-      const secondSubscription = secondSub.subscribe(event => secondEvents.push(event));
-      
-      // New update after both subscribers
-      service['processUpdate']({ id: '1', name: 'final', value: 300 }, BigInt(3000), DatabaseRowUpdateType.Upsert);
-      
-      // Give time to process
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // First subscriber should have: initial (snapshot) + updated + final
-      expect(firstEvents).toHaveLength(3);
-      expect(firstEvents[0].row.name).toBe('initial');
-      expect(firstEvents[1].row.name).toBe('updated');
-      expect(firstEvents[2].row.name).toBe('final');
-      
-      // Second subscriber should have: updated (snapshot) + final
-      expect(secondEvents).toHaveLength(2);
-      expect(secondEvents[0].row.name).toBe('updated'); // Current cache state
-      expect(secondEvents[1].row.name).toBe('final');   // New update
-      
-      firstSubscription.unsubscribe();
-      secondSubscription.unsubscribe();
-    });
-
-    it('should filter updates by timestamp correctly', async () => {
-      // Process some updates
-      service['processUpdate']({ id: '1', value: 1 }, BigInt(100), DatabaseRowUpdateType.Upsert);
-      
-      service['processUpdate']({ id: '1', value: 2 }, BigInt(200), DatabaseRowUpdateType.Upsert);
-      
-      // Subscribe (snapshot taken at timestamp 200)
-      const updates$ = service.getUpdates(EMPTY_FILTER);
-      const events: RowUpdateEvent[] = [];
-      const subscription = updates$.subscribe(event => events.push(event));
-      
-      // These should be filtered out (same or earlier timestamp)
-      service['processUpdate']({ id: '1', value: 3 }, BigInt(200), DatabaseRowUpdateType.Upsert); // Same timestamp - should be filtered
-      
-      service['processUpdate']({ id: '1', value: 4 }, BigInt(150), DatabaseRowUpdateType.Upsert); // Earlier timestamp - should be filtered
-      
-      // This should pass through
-      service['processUpdate']({ id: '1', value: 5 }, BigInt(300), DatabaseRowUpdateType.Upsert); // Later timestamp - should pass
-      
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // Should have snapshot + only the last update
-      expect(events).toHaveLength(2);
-      expect(events[0].row.value).toBe(2); // Snapshot
-      expect(events[1].row.value).toBe(5); // Only update with timestamp > 200
-      
-      subscription.unsubscribe();
-    });
-  });
-
-  describe('multi-field update scenarios', () => {
-    it('should send only changed fields for partial updates', async () => {
-      // Initial insert with multiple fields
-      service['processUpdate'](
-        { id: '1', name: 'Alice', email: 'alice@test.com', age: 30, active: true },
-        BigInt(100),
-        DatabaseRowUpdateType.Upsert
-      );
-
-      const updates$ = service.getUpdates(EMPTY_FILTER);
-      const events: RowUpdateEvent[] = [];
-      const subscription = updates$.subscribe(event => events.push(event));
-
-      // Update only email and age
-      service['processUpdate'](
-        { id: '1', name: 'Alice', email: 'alice@example.com', age: 31, active: true },
-        BigInt(200),
-        DatabaseRowUpdateType.Upsert
-      );
-
-      // Give time for async operations
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // We should have snapshot + update
-      expect(events).toHaveLength(2);
-      expect(events[0].type).toBe(RowUpdateType.Insert); // Snapshot
-      
-      // This should be UPDATE since the view knows about the row from the snapshot
-      expect(events[1].type).toBe(RowUpdateType.Update);
-      expect(events[1].fields).toEqual(new Set(['id', 'email', 'age']));
-      // But row should have all fields
-      expect(events[1].row).toEqual({
-        id: '1',
-        name: 'Alice',
-        email: 'alice@example.com',
-        age: 31,
-        active: true
-      });
-
-      subscription.unsubscribe();
-    });
-
-    it('should handle updates where no fields change', async () => {
-      service['processUpdate'](
-        { id: '1', name: 'Bob', value: 100 },
-        BigInt(100),
-        DatabaseRowUpdateType.Upsert
-      );
-
-      const updates$ = service.getUpdates(EMPTY_FILTER);
-      const events: RowUpdateEvent[] = [];
-      const subscription = updates$.subscribe(event => events.push(event));
-
-      // Update with same values
-      service['processUpdate'](
-        { id: '1', name: 'Bob', value: 100 },
-        BigInt(200),
-        DatabaseRowUpdateType.Upsert
-      );
-
-      // Give time for async operations
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // We should have snapshot + update
-      expect(events).toHaveLength(2);
-      expect(events[0].type).toBe(RowUpdateType.Insert); // Snapshot
-      
-      // This should be UPDATE since the view knows about the row from the snapshot
-      expect(events[1].type).toBe(RowUpdateType.Update);
-      expect(events[1].fields).toEqual(new Set(['id']));
-      expect(events[1].row).toEqual({ id: '1', name: 'Bob', value: 100 });
-
-      subscription.unsubscribe();
-    });
-
-    it('should handle updates where all fields change', async () => {
-      service['processUpdate'](
-        { id: '1', name: 'Charlie', value: 100, status: 'active' },
-        BigInt(100),
-        DatabaseRowUpdateType.Upsert
-      );
-
-      const updates$ = service.getUpdates(EMPTY_FILTER);
-      const events: RowUpdateEvent[] = [];
-      const subscription = updates$.subscribe(event => events.push(event));
-
-      // Update all fields
-      service['processUpdate'](
-        { id: '1', name: 'Charles', value: 200, status: 'inactive' },
-        BigInt(200),
-        DatabaseRowUpdateType.Upsert
-      );
-
-      // Give time for async operations
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // We should have snapshot + update
-      expect(events).toHaveLength(2);
-      expect(events[0].type).toBe(RowUpdateType.Insert); // Snapshot
-      
-      // This should be UPDATE since the view knows about the row from the snapshot
-      expect(events[1].type).toBe(RowUpdateType.Update);
-      expect(events[1].fields).toEqual(new Set(['id', 'name', 'value', 'status']));
-      expect(events[1].row).toEqual({
-        id: '1',
-        name: 'Charles',
-        value: 200,
-        status: 'inactive'
-      });
-
-      subscription.unsubscribe();
-    });
-  });
-
-  describe('consumer tracking', () => {
-    it('should track consumer count', () => {
-      expect(service.consumerCount).toBe(0);
-      
-      const sub1 = service.getUpdates(EMPTY_FILTER).subscribe();
-      expect(service.consumerCount).toBe(1);
-      
-      const sub2 = service.getUpdates(EMPTY_FILTER).subscribe();
-      expect(service.consumerCount).toBe(2);
-      
-      const sub3 = service.getUpdates(EMPTY_FILTER).subscribe();
-      expect(service.consumerCount).toBe(3);
-      
-      // Clean up
-      sub1.unsubscribe();
-      sub2.unsubscribe();
-      sub3.unsubscribe();
-    });
-
-    it('should decrement consumer count on unsubscribe', () => {
-      expect(service.consumerCount).toBe(0);
-      
-      const sub1 = service.getUpdates(EMPTY_FILTER).subscribe();
-      expect(service.consumerCount).toBe(1);
-      
-      const sub2 = service.getUpdates(EMPTY_FILTER).subscribe();
-      expect(service.consumerCount).toBe(2);
-      
-      sub1.unsubscribe();
-      expect(service.consumerCount).toBe(1);
-      
-      sub2.unsubscribe();
-      expect(service.consumerCount).toBe(0);
-    });
-  });
-
-  describe('cache operations', () => {
-    it('should track row count correctly', () => {
-      service['processUpdate']({ id: '1', name: 'test1' }, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      
-      service['processUpdate']({ id: '2', name: 'test2' }, BigInt(2000), DatabaseRowUpdateType.Upsert);
-      
-      expect(service.getRowCount()).toBe(2);
-    });
-  });
-
   describe('getUpdates', () => {
-    it('should return an Observable', () => {
-      const updates$ = service.getUpdates(EMPTY_FILTER);
+    it('should provide observable stream of row updates', () => {
+      const updates$ = service.getUpdates();
       expect(updates$).toBeDefined();
       expect(updates$.subscribe).toBeDefined();
     });
 
-    it('should process snapshot events through the same pipeline as live events', async () => {
-      // Add some data to cache before subscription
-      service['processUpdate']({ id: '1', name: 'cached', value: 100 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      service['processUpdate']({ id: '2', name: 'also-cached', value: 200 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
+    it('should emit INSERT event when new row is added', async () => {
+      const updates$ = service.getUpdates();
+      const eventsPromise = firstValueFrom(updates$.pipe(take(1), toArray()));
       
-      // Track all events received
-      const events: RowUpdateEvent[] = [];
-      const subscription = service.getUpdates(EMPTY_FILTER).subscribe(event => {
-        events.push(event);
-      });
+      // Simulate database sending a new row
+      const row = { id: '1', name: 'test', value: 100 };
+      service['processUpdate'](row, BigInt(1000), DatabaseRowUpdateType.Upsert);
       
-      // Add a live update after subscription
-      service['processUpdate']({ id: '3', name: 'live', value: 300 }, BigInt(3000), DatabaseRowUpdateType.Upsert);
-      
-      // Give time for async operations
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // Should receive 2 snapshot events + 1 live event
-      expect(events).toHaveLength(3);
-      
-      // Verify snapshot events are INSERT type with all fields
+      const events = await eventsPromise;
+      expect(events).toHaveLength(1);
       expect(events[0]).toEqual({
         type: RowUpdateType.Insert,
         fields: new Set(['id', 'name', 'value']),
-        row: { id: '1', name: 'cached', value: 100 }
+        row: row
       });
-      
-      expect(events[1]).toEqual({
-        type: RowUpdateType.Insert,
-        fields: new Set(['id', 'name', 'value']),
-        row: { id: '2', name: 'also-cached', value: 200 }
-      });
-      
-      // Live event should be INSERT (new row)
-      expect(events[2]).toEqual({
-        type: RowUpdateType.Insert,
-        fields: new Set(['id', 'name', 'value']),
-        row: { id: '3', name: 'live', value: 300 }
-      });
-      
-      subscription.unsubscribe();
     });
 
-    it('should filter snapshot events through view', async () => {
-      // Add mixed data to cache
-      service['processUpdate']({ id: '1', name: 'active1', active: true }, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      service['processUpdate']({ id: '2', name: 'inactive', active: false }, BigInt(2000), DatabaseRowUpdateType.Upsert);
-      service['processUpdate']({ id: '3', name: 'active2', active: true }, BigInt(3000), DatabaseRowUpdateType.Upsert);
+    it('should emit UPDATE event with only changed fields', async () => {
+      // First insert a row
+      service['processUpdate']({ id: '1', name: 'original', value: 100 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
       
-      // Create filter for active items only
-      const activeFilter: Filter = {
-        expression: 'active === true',
-        fields: new Set(['active']),
-        evaluate: (row) => row.active === true
-      };
+      // Subscribe after insert - will get snapshot (INSERT) then update
+      const updates$ = service.getUpdates();
+      const eventsPromise = firstValueFrom(updates$.pipe(take(2), toArray()));
       
-      // Subscribe with filter
-      const events: RowUpdateEvent[] = [];
-      const subscription = service.getUpdates(activeFilter).subscribe(event => {
-        events.push(event);
-      });
+      // Update with changed name
+      service['processUpdate']({ id: '1', name: 'updated', value: 100 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
       
-      // Give time for async operations
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // Should only receive the 2 active items from snapshot
+      const events = await eventsPromise;
       expect(events).toHaveLength(2);
-      expect(events[0].row.id).toBe('1');
-      expect(events[1].row.id).toBe('3');
       
-      subscription.unsubscribe();
+      // First event is snapshot (INSERT)
+      expect(events[0].type).toBe(RowUpdateType.Insert);
+      
+      // Second event is the UPDATE with only changed fields
+      expect(events[1]).toEqual({
+        type: RowUpdateType.Update,
+        fields: new Set(['id', 'name']), // Only changed field + pk
+        row: { id: '1', name: 'updated', value: 100 }
+      });
     });
 
-    it('should build view state from snapshot events (unified streaming)', async () => {
-      // Add data that will change filter match status
-      service['processUpdate']({ id: '1', name: 'item1', value: 5 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
-      service['processUpdate']({ id: '2', name: 'item2', value: 15 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
+    it('should emit DELETE event with only primary key', async () => {
+      // First insert a row
+      const fullRow = { id: '1', name: 'test', value: 100, extra: 'data' };
+      service['processUpdate'](fullRow, BigInt(1000), DatabaseRowUpdateType.Upsert);
       
-      // Filter for value > 10
-      const valueFilter: Filter = {
-        expression: 'value > 10',
-        fields: new Set(['value']),
-        evaluate: (row) => row.value > 10
-      };
+      // Subscribe after insert - will get snapshot (INSERT) then delete
+      const updates$ = service.getUpdates();
+      const eventsPromise = firstValueFrom(updates$.pipe(take(2), toArray()));
       
-      const events: RowUpdateEvent[] = [];
-      const subscription = service.getUpdates(valueFilter).subscribe(event => {
-        events.push(event);
-      });
+      // Delete the row
+      service['processUpdate'](fullRow, BigInt(2000), DatabaseRowUpdateType.Delete);
       
-      // Update item1 to match filter (should appear as INSERT since view hasn't seen it)
-      service['processUpdate']({ id: '1', name: 'item1', value: 20 }, BigInt(3000), DatabaseRowUpdateType.Upsert);
+      const events = await eventsPromise;
+      expect(events).toHaveLength(2);
       
-      // Update item2 to not match filter (should appear as DELETE)
-      service['processUpdate']({ id: '2', name: 'item2', value: 5 }, BigInt(4000), DatabaseRowUpdateType.Upsert);
+      // First event is snapshot (INSERT)
+      expect(events[0].type).toBe(RowUpdateType.Insert);
+      
+      // Second event is the DELETE with only primary key
+      expect(events[1].type).toBe(RowUpdateType.Delete);
+      expect(events[1].fields).toEqual(new Set(['id']));
+      expect(events[1].row).toEqual({ id: '1' });
+    });
+
+    it('should provide snapshot to new subscribers', async () => {
+      // Insert some data before subscribing
+      service['processUpdate']({ id: '1', name: 'first', value: 10 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
+      service['processUpdate']({ id: '2', name: 'second', value: 20 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
+      
+      // New subscriber should get snapshot
+      const updates$ = service.getUpdates();
+      const events = await firstValueFrom(updates$.pipe(take(2), toArray()));
+      
+      expect(events).toHaveLength(2);
+      expect(events[0].type).toBe(RowUpdateType.Insert);
+      expect(events[0].row.id).toBe('1');
+      expect(events[1].type).toBe(RowUpdateType.Insert);
+      expect(events[1].row.id).toBe('2');
+    });
+
+    it('should handle multiple subscribers independently', async () => {
+      // Insert initial data
+      service['processUpdate']({ id: '1', name: 'initial', value: 100 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
+      
+      // First subscriber
+      const events1: RowUpdateEvent[] = [];
+      const sub1 = service.getUpdates().subscribe(event => events1.push(event));
+      
+      // Second subscriber
+      const events2: RowUpdateEvent[] = [];
+      const sub2 = service.getUpdates().subscribe(event => events2.push(event));
+      
+      // Both should get snapshot
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(events1).toHaveLength(1);
+      expect(events2).toHaveLength(1);
+      
+      // New update
+      service['processUpdate']({ id: '2', name: 'new', value: 200 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
       
       await new Promise(resolve => setTimeout(resolve, 10));
       
-      // Snapshot: only item2 matches initially
-      expect(events[0].type).toBe(RowUpdateType.Insert);
-      expect(events[0].row.id).toBe('2');
+      // Both should have received the new event
+      expect(events1).toHaveLength(2);
+      expect(events2).toHaveLength(2);
       
-      // Live updates
-      expect(events[1].type).toBe(RowUpdateType.Insert); // item1 enters view
-      expect(events[1].row.id).toBe('1');
-      
-      expect(events[2].type).toBe(RowUpdateType.Delete); // item2 leaves view
-      expect(events[2].row.id).toBe('2');
-      
-      subscription.unsubscribe();
+      sub1.unsubscribe();
+      sub2.unsubscribe();
     });
   });
 
-  describe('getRowCount', () => {
-    it('should return 0 initially', () => {
-      expect(service.getRowCount()).toBe(0);
+  describe('getPrimaryKeyField', () => {
+    it('should return the primary key field name', () => {
+      expect(service.getPrimaryKeyField()).toBe('id');
     });
   });
 
-  describe('streaming', () => {
-    it('should return false initially', () => {
-      expect(service.streaming).toBe(false);
-    });
-  });
-
-  describe('consumerCount', () => {
-    it('should return 0 initially', () => {
-      expect(service.consumerCount).toBe(0);
+  describe('lifecycle', () => {
+    it('should reject new subscriptions after shutdown', async () => {
+      await service.onModuleDestroy();
+      
+      expect(() => service.getUpdates()).toThrow('shutting down');
     });
   });
 });

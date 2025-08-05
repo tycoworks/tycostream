@@ -3,22 +3,21 @@ import { ConfigService } from '@nestjs/config';
 import { StreamingManagerService } from './manager.service';
 import { DatabaseConnectionService } from '../database/connection.service';
 import type { SourceDefinition } from '../config/source.types';
-import { RowUpdateType, type RowUpdateEvent } from './types';
-import { firstValueFrom, take } from 'rxjs';
 
 describe('StreamingManagerService', () => {
   let managerService: StreamingManagerService;
   let mockConfigService: jest.Mocked<ConfigService>;
   let mockConnectionService: jest.Mocked<DatabaseConnectionService>;
+  let mockClient: any;
 
   const mockSourceDefs = new Map<string, SourceDefinition>([
     ['trades', {
       name: 'trades',
-      primaryKeyField: 'id',
+      primaryKeyField: 'trade_id',
       fields: [
-        { name: 'id', type: 'text' },
+        { name: 'trade_id', type: 'text' },
         { name: 'symbol', type: 'text' },
-        { name: 'price', type: 'numeric' }
+        { name: 'quantity', type: 'integer' }
       ]
     }],
     ['live_pnl', {
@@ -31,134 +30,92 @@ describe('StreamingManagerService', () => {
     }]
   ]);
 
-  const mockClient = {
-    query: jest.fn(),
-    end: jest.fn()
-  };
-
   beforeEach(async () => {
+    mockClient = {
+      query: jest.fn(),
+      release: jest.fn(),
+      on: jest.fn(),
+      removeAllListeners: jest.fn(),
+      end: jest.fn()
+    };
+
     mockConfigService = {
-      get: jest.fn()
+      get: jest.fn(),
     } as any;
 
     mockConnectionService = {
-      connect: jest.fn().mockResolvedValue(mockClient),
-      disconnect: jest.fn().mockResolvedValue(undefined)
+      getClient: jest.fn().mockResolvedValue(mockClient),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StreamingManagerService,
         { provide: ConfigService, useValue: mockConfigService },
-        { provide: DatabaseConnectionService, useValue: mockConnectionService }
-      ]
+        { provide: DatabaseConnectionService, useValue: mockConnectionService },
+      ],
     }).compile();
 
     managerService = module.get<StreamingManagerService>(StreamingManagerService);
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
   describe('initialization', () => {
-    it('should be defined', () => {
-      expect(managerService).toBeDefined();
-    });
-
     it('should load source definitions on module init', async () => {
       mockConfigService.get.mockReturnValue(mockSourceDefs);
-
+      
       await managerService.onModuleInit();
-
+      
       expect(mockConfigService.get).toHaveBeenCalledWith('sources');
-      expect(managerService.getAvailableSources()).toEqual(['trades', 'live_pnl']);
     });
 
-    it('should handle no source definitions gracefully', async () => {
-      mockConfigService.get.mockReturnValue(new Map());
-
-      await managerService.onModuleInit();
-
-      expect(managerService.getAvailableSources()).toEqual([]);
-    });
-
-    it('should handle undefined source definitions', async () => {
+    it('should handle missing source definitions gracefully', async () => {
       mockConfigService.get.mockReturnValue(undefined);
+      
+      // Should not throw
+      await expect(managerService.onModuleInit()).resolves.toBeUndefined();
+    });
 
-      await managerService.onModuleInit();
-
-      expect(managerService.getAvailableSources()).toEqual([]);
+    it('should handle empty source definitions', async () => {
+      mockConfigService.get.mockReturnValue(new Map());
+      
+      // Should not throw
+      await expect(managerService.onModuleInit()).resolves.toBeUndefined();
     });
   });
 
-  describe('source management', () => {
-    beforeEach(async () => {
-      mockConfigService.get.mockReturnValue(mockSourceDefs);
-      await managerService.onModuleInit();
-    });
-
-    it('should return available source names', () => {
-      const sources = managerService.getAvailableSources();
-      expect(sources).toEqual(['trades', 'live_pnl']);
-    });
-
-    it('should return source definition for valid source', () => {
-      const sourceDef = managerService.getSourceDefinition('trades');
-      expect(sourceDef).toEqual(mockSourceDefs.get('trades'));
-    });
-
-    it('should return undefined for invalid source', () => {
-      const sourceDef = managerService.getSourceDefinition('invalid');
-      expect(sourceDef).toBeUndefined();
-    });
-  });
-
-  describe('streaming service creation', () => {
+  describe('getStreamingService', () => {
     beforeEach(async () => {
       mockConfigService.get.mockReturnValue(mockSourceDefs);
       await managerService.onModuleInit();
     });
 
     it('should create streaming service for valid source', () => {
-      // Mock the query to avoid connection issues in tests
-      const mockStream = { on: jest.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-
-      const updates$ = managerService.getUpdates('trades');
+      const streamingService = managerService.getStreamingService('trades');
       
-      expect(updates$).toBeDefined();
-      expect(updates$.subscribe).toBeDefined();
+      expect(streamingService).toBeDefined();
+      expect(streamingService.getUpdates).toBeDefined();
+      expect(streamingService.getPrimaryKeyField).toBeDefined();
     });
 
-    it('should reuse existing streaming service', () => {
-      const mockStream = { on: jest.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-
-      // Get updates twice
-      managerService.getUpdates('trades');
-      managerService.getUpdates('trades');
+    it('should reuse existing streaming service for same source', () => {
+      const firstService = managerService.getStreamingService('trades');
+      const secondService = managerService.getStreamingService('trades');
       
-      // Both should return the same observable instance
+      expect(firstService).toBe(secondService);
     });
 
-    it('should create separate services for different sources', () => {
-      const mockStream = { on: jest.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-
-      managerService.getUpdates('trades');
-      managerService.getUpdates('live_pnl');
+    it('should create separate streaming services for different sources', () => {
+      const tradesService = managerService.getStreamingService('trades');
+      const pnlService = managerService.getStreamingService('live_pnl');
       
-      // Each source should have its own observable
+      expect(tradesService).not.toBe(pnlService);
     });
 
     it('should throw error for unknown source', () => {
       expect(() => {
-        managerService.getUpdates('unknown_source');
+        managerService.getStreamingService('unknown_source');
       }).toThrow('Unknown source: unknown_source. Available sources: trades, live_pnl');
     });
   });
-
 
   describe('lifecycle management', () => {
     beforeEach(async () => {
@@ -166,80 +123,26 @@ describe('StreamingManagerService', () => {
       await managerService.onModuleInit();
     });
 
-    it('should stop streaming for specific source', async () => {
-      const mockStream = { on: jest.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-
-      // Create a streaming service
-      const updates$ = managerService.getUpdates('trades');
-      expect(updates$).toBeDefined();
-      
-      // Stop streaming
-      await managerService.stopStreaming('trades');
-      
-      // Getting updates again should create a new observable
-      const newUpdates$ = managerService.getUpdates('trades');
-      expect(newUpdates$).not.toBe(updates$);
-    });
-
-    it('should handle stopping non-existent source gracefully', async () => {
-      await expect(managerService.stopStreaming('non_existent')).resolves.toBeUndefined();
-    });
-
     it('should clean up all services on module destroy', async () => {
-      const mockStream = { on: jest.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-
-      // Create multiple streaming services
-      const trades$ = managerService.getUpdates('trades');
-      const pnl$ = managerService.getUpdates('live_pnl');
-      expect(trades$).toBeDefined();
-      expect(pnl$).toBeDefined();
+      // Create streaming services
+      const tradesService = managerService.getStreamingService('trades');
+      const pnlService = managerService.getStreamingService('live_pnl');
+      
+      // Spy on their cleanup methods
+      const tradesCleanup = jest.spyOn(tradesService, 'onModuleDestroy');
+      const pnlCleanup = jest.spyOn(pnlService, 'onModuleDestroy');
       
       // Destroy module
       await managerService.onModuleDestroy();
       
-      // After destroy, getting updates should create new observables
-      const newTrades$ = managerService.getUpdates('trades');
-      expect(newTrades$).not.toBe(trades$);
-    });
-  });
-
-  describe('integration', () => {
-    beforeEach(async () => {
-      mockConfigService.get.mockReturnValue(mockSourceDefs);
-      await managerService.onModuleInit();
+      // Verify cleanup was called
+      expect(tradesCleanup).toHaveBeenCalled();
+      expect(pnlCleanup).toHaveBeenCalled();
     });
 
-    it('should create streaming service even with connection issues', () => {
-      // Should not throw when creating a streaming service
-      const updates$ = managerService.getUpdates('trades');
-      expect(updates$).toBeDefined();
-      
-      // Service should be created and observable returned
-      expect(updates$).toBeDefined();
-      expect(updates$.subscribe).toBeDefined();
-    });
-
-    it('should provide Observable interface for updates', async () => {
-      const mockStream = { on: jest.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-
-      const updates$ = managerService.getUpdates('trades');
-      
-      // Should be able to subscribe
-      const subscription = updates$.subscribe({
-        next: (event: RowUpdateEvent) => {
-          expect(event).toHaveProperty('type');
-          expect(event).toHaveProperty('row');
-        }
-      });
-
-      // Should support RxJS operators
-      const firstUpdate$ = updates$.pipe(take(1));
-      expect(firstUpdate$).toBeDefined();
-
-      subscription.unsubscribe();
+    it('should handle destroy when no services exist', async () => {
+      // Don't create any services
+      await expect(managerService.onModuleDestroy()).resolves.toBeUndefined();
     });
   });
 });

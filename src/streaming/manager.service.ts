@@ -59,27 +59,13 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Get list of all configured source names
-   */
-  getAvailableSources(): string[] {
-    return Array.from(this.sourceDefinitions.keys());
-  }
-
-  /**
-   * Get source definition for a specific source
-   */
-  getSourceDefinition(sourceName: string): SourceDefinition | undefined {
-    return this.sourceDefinitions.get(sourceName);
-  }
-
-  /**
    * Get the streaming service instance for a source
    * Used by ViewService to access raw streams
    */
   getStreamingService(sourceName: string): StreamingService {
     const sourceDef = this.sourceDefinitions.get(sourceName);
     if (!sourceDef) {
-      throw new Error(`Unknown source: ${sourceName}. Available sources: ${this.getAvailableSources().join(', ')}`);
+      throw new Error(`Unknown source: ${sourceName}. Available sources: ${Array.from(this.sourceDefinitions.keys()).join(', ')}`);
     }
 
     let streamingService = this.streamingServices.get(sourceName);
@@ -91,19 +77,6 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
     }
 
     return streamingService;
-  }
-
-  /**
-   * Stop streaming for a specific source
-   * Cleans up the service and removes it from the active services map
-   */
-  async stopStreaming(sourceName: string): Promise<void> {
-    const streamingService = this.streamingServices.get(sourceName);
-    if (streamingService) {
-      await streamingService.onModuleDestroy();
-      this.streamingServices.delete(sourceName);
-      this.logger.log(`Stopped streaming for source: ${sourceName}`);
-    }
   }
 
   /**
