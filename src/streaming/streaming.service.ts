@@ -69,10 +69,9 @@ export class StreamingService implements OnModuleDestroy {
     
     // Take snapshot before subscribing to avoid race condition
     const snapshotTimestamp = this.latestTimestamp;
-    const snapshot = view.getSnapshot(this.cache.getAllRows());
     
     // Send snapshot to consumer
-    const snapshotCount = this.sendSnapshot(consumerStream$, snapshot);
+    const snapshotCount = this.sendSnapshot(consumerStream$, view);
     this.logger.debug(`Sending cached data to consumer - source: ${this.sourceName}, cachedRows: ${snapshotCount}, activeConsumers: ${this._consumerCount}`);
     
     // Subscribe to live updates after snapshot
@@ -281,18 +280,25 @@ export class StreamingService implements OnModuleDestroy {
 
   /**
    * Send cached snapshot data as INSERT events to a new consumer
+   * Processes through view for unified streaming pipeline
    * Returns count for logging/metrics
    */
-  private sendSnapshot(consumerStream$: ReplaySubject<RowUpdateEvent>, snapshot: Record<string, any>[]): number {
-    // Emit snapshot as insert events
+  private sendSnapshot(consumerStream$: ReplaySubject<RowUpdateEvent>, view: View): number {
+    // Emit snapshot as insert events, processing through view
     let snapshotCount = 0;
-    for (const row of snapshot) {
-      consumerStream$.next({
+    for (const row of this.cache.getAllRows()) {
+      const event: RowUpdateEvent = {
         type: RowUpdateType.Insert,
         fields: new Set(Object.keys(row)),
         row: row
-      });
-      snapshotCount++;
+      };
+      
+      // Process through view for stateful filtering
+      const processed = view.processEvent(event);
+      if (processed) {
+        consumerStream$.next(processed);
+        snapshotCount++;
+      }
     }
     
     return snapshotCount;

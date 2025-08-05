@@ -425,6 +425,118 @@ describe('StreamingService', () => {
       expect(updates$).toBeDefined();
       expect(updates$.subscribe).toBeDefined();
     });
+
+    it('should process snapshot events through the same pipeline as live events', async () => {
+      // Add some data to cache before subscription
+      service['processUpdate']({ id: '1', name: 'cached', value: 100 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
+      service['processUpdate']({ id: '2', name: 'also-cached', value: 200 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
+      
+      // Track all events received
+      const events: RowUpdateEvent[] = [];
+      const subscription = service.getUpdates(EMPTY_FILTER).subscribe(event => {
+        events.push(event);
+      });
+      
+      // Add a live update after subscription
+      service['processUpdate']({ id: '3', name: 'live', value: 300 }, BigInt(3000), DatabaseRowUpdateType.Upsert);
+      
+      // Give time for async operations
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // Should receive 2 snapshot events + 1 live event
+      expect(events).toHaveLength(3);
+      
+      // Verify snapshot events are INSERT type with all fields
+      expect(events[0]).toEqual({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: '1', name: 'cached', value: 100 }
+      });
+      
+      expect(events[1]).toEqual({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: '2', name: 'also-cached', value: 200 }
+      });
+      
+      // Live event should be INSERT (new row)
+      expect(events[2]).toEqual({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: '3', name: 'live', value: 300 }
+      });
+      
+      subscription.unsubscribe();
+    });
+
+    it('should filter snapshot events through view', async () => {
+      // Add mixed data to cache
+      service['processUpdate']({ id: '1', name: 'active1', active: true }, BigInt(1000), DatabaseRowUpdateType.Upsert);
+      service['processUpdate']({ id: '2', name: 'inactive', active: false }, BigInt(2000), DatabaseRowUpdateType.Upsert);
+      service['processUpdate']({ id: '3', name: 'active2', active: true }, BigInt(3000), DatabaseRowUpdateType.Upsert);
+      
+      // Create filter for active items only
+      const activeFilter: Filter = {
+        expression: 'active === true',
+        fields: new Set(['active']),
+        evaluate: (row) => row.active === true
+      };
+      
+      // Subscribe with filter
+      const events: RowUpdateEvent[] = [];
+      const subscription = service.getUpdates(activeFilter).subscribe(event => {
+        events.push(event);
+      });
+      
+      // Give time for async operations
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // Should only receive the 2 active items from snapshot
+      expect(events).toHaveLength(2);
+      expect(events[0].row.id).toBe('1');
+      expect(events[1].row.id).toBe('3');
+      
+      subscription.unsubscribe();
+    });
+
+    it('should build view state from snapshot events (unified streaming)', async () => {
+      // Add data that will change filter match status
+      service['processUpdate']({ id: '1', name: 'item1', value: 5 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
+      service['processUpdate']({ id: '2', name: 'item2', value: 15 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
+      
+      // Filter for value > 10
+      const valueFilter: Filter = {
+        expression: 'value > 10',
+        fields: new Set(['value']),
+        evaluate: (row) => row.value > 10
+      };
+      
+      const events: RowUpdateEvent[] = [];
+      const subscription = service.getUpdates(valueFilter).subscribe(event => {
+        events.push(event);
+      });
+      
+      // Update item1 to match filter (should appear as INSERT since view hasn't seen it)
+      service['processUpdate']({ id: '1', name: 'item1', value: 20 }, BigInt(3000), DatabaseRowUpdateType.Upsert);
+      
+      // Update item2 to not match filter (should appear as DELETE)
+      service['processUpdate']({ id: '2', name: 'item2', value: 5 }, BigInt(4000), DatabaseRowUpdateType.Upsert);
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // Snapshot: only item2 matches initially
+      expect(events[0].type).toBe(RowUpdateType.Insert);
+      expect(events[0].row.id).toBe('2');
+      
+      // Live updates
+      expect(events[1].type).toBe(RowUpdateType.Insert); // item1 enters view
+      expect(events[1].row.id).toBe('1');
+      
+      expect(events[2].type).toBe(RowUpdateType.Delete); // item2 leaves view
+      expect(events[2].row.id).toBe('2');
+      
+      subscription.unsubscribe();
+    });
   });
 
   describe('getRowCount', () => {
