@@ -41,17 +41,24 @@ Handles all interaction with Materialize:
 - Connection pooling and lifecycle management
 - Core subscriber logic returning RxJS Observables
 - COPY protocol parsing for streaming data
-- In-memory state management with primary key indexing
 - Stream buffering and line parsing
 - Automatic connection management and reconnection logic
 
+### Streaming Module (`src/streaming/`)
+Bridges database and GraphQL layers:
+- Management of streaming service instances per source
+- Snapshot replay and live update unification
+- Filtered view creation and lifecycle management
+- Filter expression evaluation on event streams
+- In-memory cache with primary key indexing
+
 ### GraphQL Module (`src/graphql/`)
 Serves the GraphQL API:
-- `SchemaGenerator`: Dynamically generates GraphQL schema from YAML configuration
-- `SubscriptionResolvers`: GraphQL subscription endpoints returning Observables
-- Leverages NestJS GraphQL module for WebSocket handling
+- Dynamic GraphQL schema generation from YAML configuration
+- Subscription endpoints with filtered streaming support
+- WebSocket handling via NestJS GraphQL module
 - Automatic client connection lifecycle management
-- Built-in support for GraphQL filters and transformations
+- Filter expression parsing and validation
 
 ### Configuration & Common (`src/config/` and `src/common/`)
 Shared infrastructure:
@@ -64,24 +71,27 @@ Shared infrastructure:
 ## Data Flow
 
 1. **Initial Connection**
-   - Client connects via GraphQL WebSocket subscription
-   - tycostream creates async iterator for the subscription
-   - MaterializeStreamer connects to database if not already connected
+   - Client connects via GraphQL WebSocket subscription with optional filter
+   - ViewService creates or reuses a View for the source + filter combination
+   - StreamingService connects to database if not already connected
 
 2. **State Synchronization**
    - SUBSCRIBE query captures current source state via COPY protocol
-   - Initial rows populate in-memory cache
-   - Client receives complete current state as individual events
+   - Initial rows populate StreamingService's in-memory cache
+   - View filters cached state based on filter expression
+   - Client receives filtered snapshot as individual events
 
 3. **Live Updates**
    - Materialize sends incremental updates (inserts/updates/deletes)
-   - Updates applied to cache and propagated to subscribers
-   - RxJS ReplaySubject ensures no updates lost during subscription handoff
+   - Updates applied to cache and propagated through unified stream
+   - View transforms events: filtering rows in/out based on expression
+   - Filtered events delivered to subscribed clients
 
 4. **Late Joiner Handling**
-   - New subscribers receive cached state immediately
-   - Timestamp-based filtering prevents duplicate events
+   - New subscribers receive filtered cached state immediately
+   - Timestamp-based deduplication prevents duplicate events
    - Seamless transition from historical to live data
+   - Multiple views can share same underlying stream
 
 ## Key Design Decisions
 
@@ -112,6 +122,6 @@ The architecture supports several evolution paths without major rewrites:
 
 - **Horizontal Scaling**: Add Redis for shared cache across processes
 - **Authentication**: JWT validation in GraphQL middleware
-- **Filtering**: Push-down filters to Materialize WHERE clauses
+- **Advanced Filtering**: Push complex filters to Materialize WHERE clauses for efficiency
 - **Multiple Sources**: Router pattern for source-specific handlers
 - **Monitoring**: OpenTelemetry instrumentation points

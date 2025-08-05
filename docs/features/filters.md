@@ -2,25 +2,24 @@
 
 ## Overview
 
-tycostream needs to support filtering for GraphQL subscriptions, allowing clients to subscribe to subsets of data using Hasura-compatible `where` clauses. This document explores the design options and implementation approach.
+tycostream supports filtering for GraphQL subscriptions, allowing clients to subscribe to subsets of data using Hasura-compatible `where` clauses. This document describes the design and architecture of the filtering system.
 
 ## Table of Contents
 
 1. [User Experience](#user-experience)
 2. [Architectural Decision](#architectural-decision)
 3. [The View Concept](#the-view-concept)
-4. [Implementation Phases](#implementation-phases)
-5. [Technical Implementation](#technical-implementation)
-6. [Performance Optimizations](#performance-optimizations)
-7. [Future Enhancements](#future-enhancements)
+4. [Key Design Principles](#key-design-principles)
+5. [Performance Optimizations](#performance-optimizations)
+6. [Future Enhancements](#future-enhancements)
 
 ## User Experience
 
-tycostream will support Hasura-compatible filtering, allowing users to filter subscriptions using a `where` argument with an intuitive syntax.
+tycostream supports Hasura-compatible filtering, allowing users to filter subscriptions using a `where` argument with an intuitive syntax.
 
-### MVP Scope
+### Supported Operators
 
-The initial implementation supports the most commonly used operators:
+The implementation supports the most commonly used operators:
 
 **Comparison**: `_eq`, `_neq`, `_gt`, `_lt`, `_gte`, `_lte`  
 **List**: `_in`, `_nin`  
@@ -28,8 +27,6 @@ The initial implementation supports the most commonly used operators:
 **Logical**: `_and`, `_or`, `_not`
 
 This covers ~80% of filtering use cases while keeping implementation simple.
-
-**Not in MVP**: Text operators (`_like`, `_ilike`, `_regex`), JSON/JSONB operators, array operators, and nested relationship filtering.
 
 ### Basic Filtering
 
@@ -67,7 +64,7 @@ subscription RecentActiveUsers {
 
 ## Architectural Decision
 
-To support the filtering requirements above, we need to decide where filtering happens. There are two main approaches, each with trade-offs:
+There are two main approaches for implementing filtering, each with trade-offs:
 
 ### Option 1: Push Filters to Materialize (Database-side)
 Create a new Materialize view for each unique `where` clause, letting the database handle all filtering.
@@ -97,9 +94,9 @@ Maintain one shared cache per base view and apply filters in tycostream before s
 - tycostream uses more memory to track view states
 - Additional complexity in tycostream codebase
 
-### Our Choice: Client-Side Filtering
+### The Choice: Client-Side Filtering
 
-We chose Option 2 (client-side filtering) because:
+tycostream implements Option 2 (client-side filtering) for the following reasons:
 
 **Connection Efficiency**: Each unique filter combination would require a separate SUBSCRIBE connection to Materialize. With 1000 users having slightly different filters, this would create 1000 database connections, each with cursor and memory overhead.
 
@@ -111,691 +108,64 @@ We chose Option 2 (client-side filtering) because:
 
 ## The View Concept
 
-With client-side filtering chosen, we need a way to maintain filtered subsets of the main cache for each subscription. This is where "views" come in - lightweight filtered streams that track which rows from the main cache are visible to each client.
+With client-side filtering chosen, the system needs a way to maintain filtered subsets of the main cache for each subscription. This is where "Views" come in - lightweight filtered streams that track which rows from the main cache are visible to each client.
 
 ### Why Views?
 
 Simple filtering (`stream.filter(predicate)`) doesn't work for subscriptions because:
 - Items that stop matching the filter need DELETE events sent to clients
-- Items that start matching the filter need INSERT events
+- Items that start matching the filter need INSERT events  
 - Clients expect a consistent view of their filtered data
 
-### Current Architecture (Phase 2 Complete)
+### View Architecture
 
-We currently have:
-```typescript
-StreamingService (owns cache, handles snapshots, creates views)
-    ↓ creates
-   View (stateful filtering transformer)
+The system follows a clean streaming architecture:
+
 ```
-
-This works but has some limitations:
-- Special handling for snapshots vs live updates
-- StreamingService does many things
-- Two different code paths for filtering
-
-### Proposed Architecture: Unified Streaming
-
-Transform everything into a single streaming pipeline where snapshots are just replayed events:
-
-```typescript
-class StreamingService {
-  // Single method that streams everything
-  getEventStream(): Observable<[RowUpdateEvent, bigint]> {
-    return new Observable(subscriber => {
-      const snapshotTimestamp = this.latestTimestamp;
-      
-      // Replay cache as INSERT events
-      for (const row of this.cache.getAllRows()) {
-        subscriber.next([{
-          type: RowUpdateType.Insert,
-          fields: new Set(Object.keys(row)),
-          row: row
-        }, snapshotTimestamp]);
-      }
-      
-      // Then live updates
-      return this.internalUpdates$.pipe(
-        filter(([event, timestamp]) => timestamp > snapshotTimestamp)
-      ).subscribe(subscriber);
-    });
-  }
-}
-
-class View {
-  // Pure stream transformer - no special snapshot handling!
-  constructor(sourceStream$: Observable<[RowUpdateEvent, bigint]>, filter: Filter) {
-    this.stream$ = sourceStream$.pipe(
-      map(([event, timestamp]) => {
-        const transformed = this.processEvent(event);
-        return transformed ? [transformed, timestamp] : null;
-      }),
-      filter(result => result !== null),
-      share()
-    );
-  }
-}
+StreamingService (provides unified stream of snapshot + live events)
+    ↓
+ViewService (manages filtered views)
+    ↓
+View (stateful filtering transformer)
 ```
-
-Benefits:
-- **One code path**: Snapshots and live events use same filtering logic
-- **True streaming**: Everything is just a stream of events
-- **Simpler View**: No getSnapshot() method, just stream transformation
-- **Composable**: Views become pure stream transformers
 
 ### State Transition Logic
 
-When processing an event:
-1. Apply filter to row data
-2. Check if row was previously in view
-3. Generate appropriate event:
-   - Was in view, still matches → UPDATE (with only changed fields)
-   - Was in view, no longer matches → DELETE  
-   - Wasn't in view, now matches → INSERT
-   - Wasn't in view, still doesn't match → (ignore)
-
-## Implementation Phases
-
-### Phase 1: GraphQL Filter Parsing ✅
-- Add `where` argument to subscription schema
-- Parse GraphQL where clauses to JavaScript expressions
-- Log filter expressions but don't apply them yet
-- Test filter expression generation
-
-### Phase 2: View Infrastructure ✅
-- Create `View` class as a stateful stream transformer
-- View receives events with both changed fields and full row data
-- View tracks visible keys to detect state transitions
-- View is a pure transformer with no cache dependencies
-- StreamingService creates and caches views
-
-### Phase 3: Unified Streaming Architecture (Proposed)
-
-Transform the current architecture to use a single streaming pipeline:
-
-**Step 1: Modify getView() to create views with unified stream**
-```typescript
-private getView(viewFilter: Filter): View {
-  let view = this.viewCache.get(viewFilter.expression);
-  
-  if (!view) {
-    // Create view with source stream that will replay snapshots
-    view = new View(viewFilter, this.sourceDef.primaryKeyField, this.internalUpdates$);
-    this.viewCache.set(viewFilter.expression, view);
-  }
-  
-  return view;
-}
-```
-
-**Step 2: Keep getUpdates() structure, modify helper internals**
-```typescript
-getUpdates(filter?: Filter): Observable<RowUpdateEvent> {
-  // ... existing startup logic ...
-  
-  const view = this.getView(filter);
-  const consumerStream$ = new ReplaySubject<RowUpdateEvent>();
-  const snapshotTimestamp = this.latestTimestamp;
-  
-  // Helper methods now use unified processing!
-  const snapshotCount = this.sendSnapshot(consumerStream$, view, snapshotTimestamp);
-  const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp, view);
-  
-  return this.createCleanupObservable(consumerStream$, subscription);
-}
-
-// Modified helper to process through view
-private sendSnapshot(
-  consumerStream$: ReplaySubject<RowUpdateEvent>, 
-  view: View,
-  timestamp: bigint
-): number {
-  let count = 0;
-  for (const row of this.cache.getAllRows()) {
-    const event: RowUpdateEvent = {
-      type: RowUpdateType.Insert,
-      fields: new Set(Object.keys(row)),
-      row: row
-    };
-    
-    // Process through view for filtering
-    const filtered = view.processEvent(event);
-    if (filtered) {
-      consumerStream$.next(filtered);
-      count++;
-    }
-  }
-  return count;
-}
-```
-
-**Design Rationale:**
-- Each subscriber gets their own snapshot replay (required for late joiners)
-- Views are cached and shared to avoid duplicate filtering work
-- Snapshot events flow through the same `processEvent()` pipeline as live events
-- This ensures consistent filtering behavior and state management
-- View's `visibleKeys` state is built up naturally from the snapshot
-
-**Step 3: Update helper methods to support unified streaming**
-- Modify `sendSnapshot()` to process events through view.processEvent()
-- Keep `subscribeToLiveUpdates()` for live event handling
-- Keep `createCleanupObservable()` for clean lifecycle management
-- The readable, pseudo-code structure remains intact!
-
-**Benefits of this approach:**
-- Minimal changes to existing code
-- Eliminates duplicate filtering logic
-- True streaming architecture
-- Easier to test (one code path)
-- Snapshot and live events use identical processing
-
-**Why This is the Best Approach:**
-
-1. **Conceptual Clarity**: Everything is just a stream of events. No special "snapshot mode" vs "live mode"
-2. **Single Code Path**: Both snapshot and live events go through `view.processEvent()`, ensuring consistent behavior
-3. **Natural State Building**: The View's `visibleKeys` set is built naturally as snapshot events flow through
-4. **Proper Streaming**: This is how streaming systems should work - events flow through transformers
-5. **Testability**: You can test the View with just a stream of events, no special snapshot handling
-6. **Future Proof**: Easy to add more transformations (sorting, pagination, etc.) as just more stream operators
-
-**Performance Considerations:**
-- Snapshot replay happens per subscriber (necessary for late joiners)
-- Filtering computation is shared across subscribers with same filter (via cached View)
-- No redundant work - each event is filtered exactly once per unique filter
-
-### Phase 4: Future Optimizations
-- Memory optimization: View lifecycle management
-- Performance: Async view processing
-- Monitoring: View metrics and health checks
-
-## Technical Implementation
-
-### 1. Converting GraphQL to Filter Functions
-
-```typescript
-// Convert GraphQL where clause to JavaScript expression string
-function whereToExpression(where: any, fieldVar = 'datum'): string {
-  if (where._and) {
-    return where._and.map(w => whereToExpression(w, fieldVar)).join(' && ');
-  }
-  if (where._or) {
-    return where._or.map(w => whereToExpression(w, fieldVar)).join(' || ');
-  }
-  if (where._not) {
-    return `!(${whereToExpression(where._not, fieldVar)})`;
-  }
-  
-  // Handle field comparisons
-  const field = Object.keys(where)[0];
-  const operators = where[field];
-  const op = Object.keys(operators)[0];
-  const value = operators[op];
-  
-  switch (op) {
-    case '_eq': return `${fieldVar}.${field} === ${JSON.stringify(value)}`;
-    case '_neq': return `${fieldVar}.${field} !== ${JSON.stringify(value)}`;
-    case '_gt': return `${fieldVar}.${field} > ${value}`;
-    case '_lt': return `${fieldVar}.${field} < ${value}`;
-    case '_gte': return `${fieldVar}.${field} >= ${value}`;
-    case '_lte': return `${fieldVar}.${field} <= ${value}`;
-    case '_in': return `[${value.map(JSON.stringify).join(',')}].indexOf(${fieldVar}.${field}) !== -1`;
-    case '_is_null': return value ? `${fieldVar}.${field} == null` : `${fieldVar}.${field} != null`;
-    // ... other operators
-  }
-}
-
-// GraphQL layer creates a Filter object with compiled function
-interface Filter {
-  evaluate: (row: any) => boolean;
-  fields: Set<string>;  // Fields used in filter for optimization
-  expression: string;   // For debugging and cache key
-}
-```
-
-### 2. Enhanced StreamingManagerService
-
-```typescript
-// streaming-manager.service.ts
-class StreamingManagerService {
-  getUpdates(sourceName: string, filter?: Filter | null): Observable<RowUpdateEvent> {
-    const sourceDef = this.sourceDefinitions.get(sourceName);
-    if (!sourceDef) throw new Error(`Unknown source: ${sourceName}`);
-    
-    let streamingService = this.streamingServices.get(sourceName);
-    if (!streamingService) {
-      streamingService = this.createStreamingService(sourceDef);
-      this.streamingServices.set(sourceName, streamingService);
-      this.logger.log(`Created streaming service for source: ${sourceName}`);
-    }
-    
-    // Pass filter object through to streaming service
-    return streamingService.getUpdates(filter);
-  }
-}
-
-// streaming.service.ts
-class StreamingService {
-  private viewCache = new Map<string, View>();
-  private internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
-  
-  // Transform internal updates to include fullRow
-  private processUpdate(row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType): void {
-    // ... existing cache update logic ...
-    
-    // Emit event with both changed fields and full row
-    const event: RowUpdateEvent = {
-      type: eventType,
-      fields: eventData,  // Just the changes for UPDATE
-      row: row            // Always the complete row
-    };
-    
-    this.internalUpdates$.next([event, timestamp]);
-  }
-  
-  getUpdates(filter?: Filter | null): Observable<RowUpdateEvent> {
-    // Use filter expression as cache key (empty string for unfiltered)
-    const cacheKey = filter?.expression || '';
-    
-    // Check cache first
-    let view = this.viewCache.get(cacheKey);
-    if (!view) {
-      // Create new view
-      view = new View(
-        this.internalUpdates$,
-        filter,
-        this.sourceDef.primaryKeyField
-      );
-      this.viewCache.set(cacheKey, view);
-      
-      // Send current snapshot through the view
-      const snapshot = this.cache.getAllRows();
-      for (const row of snapshot) {
-        if (!filter || filter.evaluate(row)) {
-          const snapshotEvent: RowUpdateEvent = {
-            type: RowUpdateType.Insert,
-            fields: { ...row },  // INSERT has all fields
-            row: row
-          };
-          // Send through view's input stream
-          view.processSnapshotEvent(snapshotEvent);
-        }
-      }
-    }
-    
-    return view.getUpdates().pipe(
-      share() // Share among multiple subscribers
-    );
-  }
-}
-```
-
-### 3. Subscription Resolver Integration
-
-```typescript
-// GraphQL layer creates Filter object and passes to streaming layer
-function createSourceSubscriptionResolver(
-  sourceName: string,
-  streamingManager: StreamingManagerService
-) {
-  return {
-    subscribe: (parent, args, context, info) => {
-      // Build Filter object from GraphQL where clause
-      const filter = buildFilter(args.where);
-      
-      // Pass filter to streaming layer
-      const observable = streamingManager.getUpdates(sourceName, filter);
-      
-      // Rest remains the same
-      const graphqlUpdates$ = observable.pipe(
-        map((event: RowUpdateEvent) => ({
-          [sourceName]: {
-            operation: ROW_UPDATE_TYPE_STRINGS[event.type],
-            data: event.row
-          }
-        }))
-      );
-      
-      return eachValueFrom(graphqlUpdates$);
-    }
-  };
-}
-```
-
-## Performance Optimizations
-
-### 1. Filter Compilation Caching
-
-Compiled filters are cached by expression string to avoid re-parsing identical filters across views.
-
-### 2. View State Management
-
-- Store only primary keys in views, not full row copies
-- Reference main cache for row data
-- Use efficient data structures (Sets) for O(1) visibility checks
-
-### 3. Field-Level Update Optimization
-
-tycostream already sends only changed fields for UPDATE operations. Views can leverage this to skip processing when irrelevant fields change:
-
-```typescript
-class View {
-  private shouldBeInView(event: RowUpdateEvent, wasInView: boolean): boolean {
-    // Optimization: For UPDATE events where filter fields haven't changed
-    if (event.type === RowUpdateType.Update && this.filter && wasInView) {
-      const changedFields = Object.keys(event.fields);
-      const hasRelevantChanges = changedFields.some(field => this.filter!.fields.has(field));
-      
-      if (!hasRelevantChanges) {
-        return wasInView; // Filter result can't have changed
-      }
-    }
-    
-    // Evaluate filter using full row data
-    return this.filter ? this.filter.evaluate(event.row) : true;
-  }
-}
-```
-
-## Design Decisions
-
-**Filter Format**: Expression string approach
-- GraphQL layer converts `where` to expression string
-- Simple interface between layers
-- Expression string serves as both executable code and cache key
-- Human-readable for debugging
-- Can later use Vega to parse back to AST for dependency tracking
-- Avoids coupling GraphQL AST format to database layer
-
-**Always Create View**: Even without filter
-- Ensures consistent async behavior
-- Prevents sync updates blocking main thread
-- Simplifies code paths
-
-### Missing Pieces
-
-- **View Lifecycle**: Clean up views when no subscribers (similar to database streams)
-- **Error Handling**: Invalid filter syntax, runtime evaluation errors
-- **Memory Limits**: Prevent unbounded view growth
-- **Metrics**: Filter performance, view sizes, cache hit rates
-
-## Phase 5: ViewService Architecture (Proposed)
-
-### Motivation
-
-The current architecture has StreamingService managing both caching and view filtering. This couples two distinct concerns. A cleaner 3-tier architecture would separate:
-
-1. **ViewService** (filtering) - Filter management, view lifecycle, subscriber metrics
-2. **SourceCacheService** (routing) - Manages multiple SourceCache instances
-3. **SourceCache** (caching) - Cache management, snapshot/live coordination
-4. **DatabaseStream** (protocol) - Database streaming and protocol handling
-
-### Current Architecture
-
-```
-GraphQL → StreamingManagerService → StreamingService (cache + views) → DatabaseSubscriber
-```
-
-### Proposed Architecture
-
-```
-GraphQL → ViewService → SourceCacheService → SourceCache → DatabaseStream
-         (filtering)    (routing)           (caching)     (protocol)
-```
-
-### Benefits
-
-1. **Clear Separation of Concerns**
-   - ViewService: Manages filtered views and subscriber lifecycle
-   - SourceCache: Focuses purely on cache management
-   - Each layer has a single responsibility
-
-2. **Better Metrics Placement**
-   - View-level metrics (subscribers per filter, filter performance) in ViewService
-   - Cache-level metrics (cache size, hit rate) in SourceCache
-   - Connection metrics (bytes transferred, health) in DatabaseSubscriber
-
-3. **Cleaner GraphQL API**
-   - GraphQL only interacts with ViewService
-   - ViewService provides a clean subscription API
-   - Hides streaming/caching complexity
-
-4. **Easier to Extend**
-   - Add filter optimization in ViewService
-   - Add cache strategies in SourceCache
-   - Add protocol features in DatabaseSubscriber
-
-### Implementation Steps
-
-#### Step 1: Create ViewService
-```typescript
-@Injectable()
-export class ViewService {
-  private viewCache = new Map<string, View>();
-  
-  constructor(private sourceCacheService: SourceCacheService) {}
-  
-  getFilteredStream(sourceName: string, filter: Filter): Observable<RowUpdateEvent> {
-    // Initially delegate to existing behavior
-    return this.sourceCacheService.getUpdates(sourceName, filter);
-  }
-}
-```
-
-#### Step 2: Update GraphQL Layer
-- Add ViewService to GraphQL module providers
-- Change subscription resolvers to inject ViewService
-- Update resolver to call `viewService.getFilteredStream()`
-
-#### Step 3: Move View Management to ViewService
-```typescript
-getFilteredStream(sourceName: string, filter: Filter): Observable<RowUpdateEvent> {
-  const cacheKey = `${sourceName}:${filter.expression}`;
-  let view = this.viewCache.get(cacheKey);
-  
-  if (!view) {
-    // Get raw stream and metadata from SourceCache
-    const sourceCache = this.sourceCacheService.getSourceCache(sourceName);
-    const sourceStream$ = sourceCache.getRawStream();
-    const primaryKey = sourceCache.getPrimaryKeyField();
-    
-    view = new View(filter, primaryKey, sourceStream$);
-    this.viewCache.set(cacheKey, view);
-  }
-  
-  // ViewManager handles snapshot + live coordination
-  return this.createFilteredStream(view, sourceName);
-}
-```
-
-#### Step 4: Simplify SourceCache
-```typescript
-class SourceCache {
-  // Expose raw stream for ViewService
-  getRawStream(): Observable<[RowUpdateEvent, bigint]> {
-    return this.internalUpdates$;
-  }
-  
-  // Expose snapshot for ViewService
-  getSnapshot(): Array<any> {
-    return this.cache.getAllRows();
-  }
-  
-  // Expose metadata
-  getLatestTimestamp(): bigint {
-    return this.latestTimestamp;
-  }
-  
-  getPrimaryKeyField(): string {
-    return this.sourceDef.primaryKeyField;
-  }
-  
-  // Remove all view-related code!
-}
-```
-
-#### Step 5: ViewService Handles Snapshot + Live
-```typescript
-private createFilteredStream(view: View, sourceName: string): Observable<RowUpdateEvent> {
-  return new Observable(subscriber => {
-    const sourceCache = this.sourceCacheService.getSourceCache(sourceName);
-    const snapshotTimestamp = sourceCache.getLatestTimestamp();
-    
-    // Send filtered snapshot
-    for (const row of sourceCache.getSnapshot()) {
-      const event: RowUpdateEvent = {
-        type: RowUpdateType.Insert,
-        fields: new Set(Object.keys(row)),
-        row: row
-      };
-      const filtered = view.processEvent(event);
-      if (filtered) {
-        subscriber.next(filtered);
-      }
-    }
-    
-    // Subscribe to filtered live updates
-    const subscription = view.stream.pipe(
-      filter(([event, timestamp]) => timestamp > snapshotTimestamp),
-      map(([event]) => event)
-    ).subscribe(subscriber);
-    
-    // Cleanup
-    return () => {
-      subscription.unsubscribe();
-      // TODO: Consider view cleanup when no subscribers
-    };
-  });
-}
-```
-
-#### Step 6: Update SourceCacheService
-```typescript
-class SourceCacheService {
-  // Expose SourceCache instances for ViewService
-  getSourceCache(sourceName: string): SourceCache {
-    let sourceCache = this.sourceCaches.get(sourceName);
-    if (!sourceCache) {
-      const sourceDef = this.sourceDefinitions.get(sourceName);
-      sourceCache = this.createSourceCache(sourceDef);
-      this.sourceCaches.set(sourceName, sourceCache);
-    }
-    return sourceCache;
-  }
-}
-```
-
-#### Step 7: Add Metrics to ViewService
-```typescript
-class ViewService {
-  private subscriberCounts = new Map<string, number>();
-  
-  getMetrics() {
-    return {
-      totalViews: this.viewCache.size,
-      viewDetails: Array.from(this.viewCache.entries()).map(([key, view]) => ({
-        filter: key,
-        subscribers: this.subscriberCounts.get(key) || 0
-      }))
-    };
-  }
-}
-```
-
-### Key Design Principles
-
-1. **No Circular Dependencies**: Each layer depends only on layers below it
-2. **Single Responsibility**: Each service has one clear purpose
-3. **Clean Interfaces**: Each layer exposes only what the layer above needs
-4. **Shared Views**: Multiple subscribers with same filter share one View instance
-5. **Isolated Snapshots**: Each subscriber gets their own point-in-time snapshot
-
-### Migration Strategy
-
-1. Create ViewService that initially delegates to existing code
-2. Incrementally move view-related logic from StreamingService to ViewService
-3. Update tests to cover new architecture
-4. Remove deprecated code from StreamingService
-5. Add metrics and monitoring to ViewService
-6. Rename classes and files to match new responsibilities
-
-This architecture provides better separation of concerns while maintaining the efficiency of shared filtering and individual snapshots per subscriber.
-
-### Naming Considerations
-
-After thorough analysis, the current naming doesn't reflect actual responsibilities and patterns. Here's the comprehensive renaming plan:
-
-#### Naming Principles
-
-1. **Services manage instances of what they're named after**: ViewService manages View instances, SourceCacheService manages SourceCache instances
-2. **Only @Injectable classes use "Service" suffix**: This follows NestJS conventions
-3. **Component names reflect their purpose**: Clear, descriptive names for non-service classes
-
-#### Final Architecture and Naming
-
-```
-GraphQL Layer
-    │
-    ├── ViewService (@Injectable) [new]
-    │   Purpose: Manages View instances for filtering
-    │   Creates: View instances
-    │
-    └── SourceCacheService (@Injectable) [was StreamingManagerService]
-        Purpose: Manages SourceCache instances (one per data source)
-        Creates: SourceCache instances
-        │
-        └── SourceCache [was StreamingService - NOT @Injectable]
-            Purpose: Caches data for one source, provides snapshots
-            Creates: SimpleCache, DatabaseStream instances
-            │
-            ├── View [unchanged]
-            │   Purpose: Filters and transforms data based on where clauses
-            │
-            ├── SimpleCache [unchanged]
-            │   Purpose: In-memory row storage
-            │   Implements: Cache interface
-            │
-            └── DatabaseStream [was DatabaseSubscriber]
-                Purpose: Streams data from database for this source
-                Uses: DatabaseConnectionService
-                │
-                └── DatabaseConnectionService (@Injectable) [unchanged]
-                    Purpose: Manages PostgreSQL connections
-```
-
-#### Complete Renaming Table
-
-| Current Class | New Class | Current File | New File | Rationale |
-|--------------|-----------|--------------|----------|-----------|
-| - | ViewService | - | view.service.ts | New service to manage views |
-| StreamingManagerService | SourceCacheService | manager.service.ts | source-cache.service.ts | Manages SourceCache instances |
-| StreamingService | SourceCache | streaming.service.ts | source-cache.ts | Not a service, just a cache |
-| View | View | view.ts | view.ts | Keep as is |
-| SimpleCache | SimpleCache | cache.ts | cache.ts | Keep as is |
-| DatabaseSubscriber | DatabaseStream | subscriber.ts | database-stream.ts | Better describes purpose |
-| DatabaseConnectionService | DatabaseConnectionService | connection.service.ts | connection.service.ts | Already well-named |
-
-#### Why These Names Work
-
-1. **ViewService** → View: Service manages instances of Views
-2. **SourceCacheService** → SourceCache: Service manages instances of SourceCaches
-3. **SourceCache**: Clearly indicates it caches data for a source (not a service)
-4. **DatabaseStream**: Describes what it does - streams from database
-5. **No "Manager" suffix**: Cleaner, follows "Service" pattern consistently
-
-#### Implementation Order
-
-1. Create ViewService as new file
-2. Rename StreamingManagerService → SourceCacheService
-3. Rename StreamingService → SourceCache (and remove @Injectable references)
-4. Rename DatabaseSubscriber → DatabaseStream
-5. Update all imports and references
-6. Update file names to match class names
+When processing an event, the View:
+1. Applies filter to row data
+2. Checks if row was previously visible
+3. Generates appropriate event:
+   - Was visible, still matches → UPDATE (with only changed fields)
+   - Was visible, no longer matches → DELETE  
+   - Wasn't visible, now matches → INSERT
+   - Wasn't visible, still doesn't match → (ignore)
+
+## Key Design Principles
+
+### Unified Streaming
+
+Everything is treated as a stream of events. Snapshots are replayed as INSERT events through the same filtering pipeline as live updates. This ensures:
+- Consistent filtering behavior
+- Single code path to test and maintain
+- Natural state building as events flow through
+
+### Separation of Concerns
+
+- **StreamingService**: Manages cache and provides unified event stream
+- **ViewService**: Creates and manages filtered views with subscriber tracking
+- **View**: Pure stream transformer that applies filter expressions
+
+### Performance Optimizations
+
+1. **Filter Compilation Caching**: Compiled filters are cached by expression string to avoid re-parsing
+2. **View Sharing**: Multiple subscribers with the same filter share one View instance
+3. **Field-Level Optimization**: Skip filter evaluation when changed fields don't affect filter predicates
+4. **Efficient State Tracking**: Views store only primary keys, not full row copies
 
 ## Future Enhancements
 
-1. **Additional Operators**: Text search, JSON/JSONB, arrays (see MVP scope)
-2. **Advanced Field-Level Optimizations**: Skip filter evaluation when changed fields don't affect filter predicates
-3. **Filter Validation**: Compile-time validation against source schema
-4. **Entitlements**: Row-level security as additional filter predicates
-5. **View Lifecycle Management**: Automatic cleanup of unused views
-6. **Filter Query Optimization**: Analyze and optimize complex filter expressions
+1. **Additional Operators**: Text search (`_like`, `_ilike`), JSON/JSONB, arrays
+2. **Filter Push-Down**: For simple filters, push to Materialize WHERE clauses
+3. **Row-Level Security**: Add user context to filter expressions
+4. **View Lifecycle Management**: Automatic cleanup of unused views when last subscriber disconnects
+5. **Filter Query Optimization**: Analyze and optimize complex filter expressions
