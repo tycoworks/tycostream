@@ -8,7 +8,7 @@ import { generateSchema } from './schema';
 import type { SourceDefinition } from '../config/source.types';
 import { buildSubscriptionResolvers } from './subscriptions';
 import { StreamingModule } from '../streaming/streaming.module';
-import { StreamingManagerService } from '../streaming/manager.service';
+import { ViewService } from '../streaming/view.service';
 
 /**
  * GraphQL module configures Apollo Server with dynamic schema generation
@@ -24,7 +24,7 @@ import { StreamingManagerService } from '../streaming/manager.service';
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
        */
-      useFactory: async (configService: ConfigService, streamingManager: StreamingManagerService) => {
+      useFactory: async (configService: ConfigService, viewService: ViewService) => {
         const logger = new Logger('GraphQLModule');
         
         // Get source definitions from config
@@ -37,7 +37,7 @@ import { StreamingManagerService } from '../streaming/manager.service';
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
         
         // Build subscription resolvers
-        const subscriptionResolvers = buildSubscriptionResolvers(sources, streamingManager);
+        const subscriptionResolvers = buildSubscriptionResolvers(sources, viewService);
         
         const graphqlConfig = configService.get('graphql');
         
@@ -74,7 +74,7 @@ import { StreamingManagerService } from '../streaming/manager.service';
           }),
         };
       },
-      inject: [ConfigService, StreamingManagerService],
+      inject: [ConfigService, ViewService],
     }),
   ],
   providers: [],

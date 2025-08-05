@@ -1,15 +1,14 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
-import { Observable, Subject, ReplaySubject, filter, Subscription, map, share } from 'rxjs';
+import { Observable, Subject, ReplaySubject, filter, Subscription, map } from 'rxjs';
 import { DatabaseConnectionService } from '../database/connection.service';
 import { DatabaseSubscriber } from '../database/subscriber';
 import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
 import type { SourceDefinition } from '../config/source.types';
-import { RowUpdateType, type RowUpdateEvent, type Filter } from './types';
+import { RowUpdateType, type RowUpdateEvent } from './types';
 import type { Cache } from './cache.types';
 import { SimpleCache } from './cache';
 import { truncateForLog } from '../common/logging.utils';
-import { View } from './view';
 
 /**
  * Database streaming service for a single source
@@ -24,7 +23,6 @@ export class StreamingService implements OnModuleDestroy {
   private latestTimestamp = BigInt(0);
   private _consumerCount = 0;
   private isShuttingDown = false;
-  private readonly viewCache = new Map<string, View>();
 
   constructor(
     private connectionService: DatabaseConnectionService,
@@ -42,9 +40,9 @@ export class StreamingService implements OnModuleDestroy {
 
   /**
    * Get a stream of updates with late joiner support
-   * This is the main interface that will be used by GraphQL subscriptions
+   * Returns unfiltered stream of all updates from this source
    */
-  getUpdates(viewFilter: Filter): Observable<RowUpdateEvent> {
+  getUpdates(): Observable<RowUpdateEvent> {
     if (this.isShuttingDown) {
       throw new Error('Database subscriber is shutting down, cannot accept new subscriptions');
     }
@@ -61,21 +59,18 @@ export class StreamingService implements OnModuleDestroy {
     // Increment consumer count
     this._consumerCount++;
 
-    // Get or create view
-    const view = this.getView(viewFilter);
-
     // Create a replayable stream for this consumer
     const consumerStream$ = new ReplaySubject<RowUpdateEvent>();
     
     // Take snapshot before subscribing to avoid race condition
     const snapshotTimestamp = this.latestTimestamp;
     
-    // Send snapshot to consumer
-    const snapshotCount = this.sendSnapshot(consumerStream$, view);
+    // Send snapshot to consumer (unfiltered)
+    const snapshotCount = this.sendSnapshot(consumerStream$);
     this.logger.debug(`Sending cached data to consumer - source: ${this.sourceName}, cachedRows: ${snapshotCount}, activeConsumers: ${this._consumerCount}`);
     
-    // Subscribe to live updates after snapshot
-    const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp, view);
+    // Subscribe to live updates after snapshot (unfiltered)
+    const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp);
     
     this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}, activeConsumers: ${this._consumerCount}`);
 
@@ -88,6 +83,14 @@ export class StreamingService implements OnModuleDestroy {
    */
   getRowCount(): number {
     return this.cache.size;
+  }
+
+
+  /**
+   * Get the primary key field for this source
+   */
+  getPrimaryKeyField(): string {
+    return this.sourceDef.primaryKeyField;
   }
 
   /**
@@ -125,13 +128,6 @@ export class StreamingService implements OnModuleDestroy {
     
     // Complete internal streams
     this.internalUpdates$.complete();
-    
-    // Dispose all cached views
-    const disposePromises = Array.from(this.viewCache.values()).map(
-      view => Promise.resolve(view.dispose())
-    );
-    await Promise.all(disposePromises);
-    this.viewCache.clear();
   }
 
   /**
@@ -283,8 +279,8 @@ export class StreamingService implements OnModuleDestroy {
    * Processes through view for unified streaming pipeline
    * Returns count for logging/metrics
    */
-  private sendSnapshot(consumerStream$: ReplaySubject<RowUpdateEvent>, view: View): number {
-    // Emit snapshot as insert events, processing through view
+  private sendSnapshot(consumerStream$: ReplaySubject<RowUpdateEvent>): number {
+    // Emit snapshot as insert events (unfiltered)
     let snapshotCount = 0;
     for (const row of this.cache.getAllRows()) {
       const event: RowUpdateEvent = {
@@ -293,12 +289,8 @@ export class StreamingService implements OnModuleDestroy {
         row: row
       };
       
-      // Process through view for stateful filtering
-      const processed = view.processEvent(event);
-      if (processed) {
-        consumerStream$.next(processed);
-        snapshotCount++;
-      }
+      consumerStream$.next(event);
+      snapshotCount++;
     }
     
     return snapshotCount;
@@ -308,12 +300,9 @@ export class StreamingService implements OnModuleDestroy {
    * Subscribe to live updates filtering by timestamp
    * Prevents duplicates by filtering events older than snapshot
    */
-  private subscribeToLiveUpdates(consumerStream$: ReplaySubject<RowUpdateEvent>, snapshotTimestamp: bigint, view: View): Subscription {
-    // Get the stream from the view
-    const viewStream$ = view.stream;
-    
-    // Subscribe with timestamp filter
-    return viewStream$.pipe(
+  private subscribeToLiveUpdates(consumerStream$: ReplaySubject<RowUpdateEvent>, snapshotTimestamp: bigint): Subscription {
+    // Subscribe to unfiltered updates with timestamp filter
+    return this.internalUpdates$.pipe(
       filter(([event, timestamp]) => timestamp > snapshotTimestamp),
       map(([event]) => event)
     ).subscribe(event => {
@@ -347,20 +336,4 @@ export class StreamingService implements OnModuleDestroy {
   }
 
 
-  /**
-   * Get or create a view for the given filter
-   */
-  private getView(viewFilter: Filter): View {
-    let view = this.viewCache.get(viewFilter.expression);
-    
-    if (!view) {
-      // Create new view with source stream
-      view = new View(viewFilter, this.sourceDef.primaryKeyField, this.internalUpdates$);
-      
-      // Cache the view
-      this.viewCache.set(viewFilter.expression, view);
-    }
-    
-    return view;
-  }
 }

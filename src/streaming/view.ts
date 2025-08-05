@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Observable, filter, map, share } from 'rxjs';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
+import type { StreamingService } from './streaming.service';
 
 /**
  * View represents a filtered subset of a data stream
@@ -10,21 +11,20 @@ import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 export class View {
   private readonly logger = new Logger(`View`);
   private readonly visibleKeys = new Set<string | number>();
-  private readonly stream$: Observable<[RowUpdateEvent, bigint]>;
+  private readonly stream$: Observable<RowUpdateEvent>;
+  private readonly primaryKeyField: string;
   
   constructor(
     private readonly viewFilter: Filter,
-    private readonly primaryKeyField: string,
-    sourceStream$: Observable<[RowUpdateEvent, bigint]>
+    private readonly streamingService: StreamingService
   ) {
-    // Create the filtered stream
-    this.stream$ = sourceStream$.pipe(
-      map(([event, timestamp]): [RowUpdateEvent, bigint] | null => {
-        const transformed = this.processEvent(event);
-        return transformed ? [transformed, timestamp] : null;
-      }),
-      filter((result): result is [RowUpdateEvent, bigint] => result !== null),
-      share()  // Share among all subscribers
+    this.primaryKeyField = streamingService.getPrimaryKeyField();
+    
+    // Create the filtered stream from the unified stream (snapshot + live)
+    this.stream$ = streamingService.getUpdates().pipe(
+      map(event => this.processEvent(event)),
+      filter((event): event is RowUpdateEvent => event !== null),
+      share()  // Share among all subscribers to this view
     );
   }
   
@@ -115,9 +115,9 @@ export class View {
   }
   
   /**
-   * Get the filtered stream for this view
+   * Get filtered updates from this view
    */
-  get stream(): Observable<[RowUpdateEvent, bigint]> {
+  getUpdates(): Observable<RowUpdateEvent> {
     return this.stream$;
   }
   

@@ -1,20 +1,9 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Observable } from 'rxjs';
 import { StreamingService } from './streaming.service';
 import { DatabaseConnectionService } from '../database/connection.service';
 import { MaterializeProtocolHandler } from '../database/materialize';
 import type { SourceDefinition } from '../config/source.types';
-import type { RowUpdateEvent, Filter } from './types';
-
-/**
- * Empty filter that matches all rows
- */
-const EMPTY_FILTER: Filter = {
-  expression: '',
-  fields: new Set<string>(),
-  evaluate: () => true
-};
 
 /**
  * Manages multiple StreamingService instances for different sources
@@ -84,16 +73,15 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Get streaming updates for a specific source
-   * Creates the streaming service lazily on first request
+   * Get the streaming service instance for a source
+   * Used by ViewService to access raw streams
    */
-  getUpdates(sourceName: string, filter?: Filter | null): Observable<RowUpdateEvent> {
+  getStreamingService(sourceName: string): StreamingService {
     const sourceDef = this.sourceDefinitions.get(sourceName);
     if (!sourceDef) {
       throw new Error(`Unknown source: ${sourceName}. Available sources: ${this.getAvailableSources().join(', ')}`);
     }
 
-    // Get or create streaming service for this source
     let streamingService = this.streamingServices.get(sourceName);
     if (!streamingService) {
       streamingService = this.createStreamingService(sourceDef);
@@ -102,9 +90,8 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Created streaming service for source: ${sourceName}`);
     }
 
-    return streamingService.getUpdates(filter || EMPTY_FILTER);
+    return streamingService;
   }
-
 
   /**
    * Stop streaming for a specific source

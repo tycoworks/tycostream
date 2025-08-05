@@ -1,7 +1,7 @@
 import { map, tap, of } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
 import { Logger } from '@nestjs/common';
-import { StreamingManagerService } from '../streaming/manager.service';
+import { ViewService } from '../streaming/view.service';
 import type { SourceDefinition } from '../config/source.types';
 import type { RowUpdateEvent, Filter } from '../streaming/types';
 import { RowUpdateType } from '../streaming/types';
@@ -55,7 +55,7 @@ const logger = new Logger('GraphQLSubscriptions');
  */
 function createSourceSubscriptionResolver(
   sourceName: string,
-  streamingManager: StreamingManagerService
+  viewService: ViewService
 ) {
   return {
     subscribe: (parent: any, args: any, context: any, info: any) => {
@@ -65,8 +65,8 @@ function createSourceSubscriptionResolver(
         logger.log(`Subscription for ${sourceName} with filter: ${filter.expression}`);
       }
       
-      // Pass filter to streamingManager if provided
-      const observable = streamingManager.getUpdates(sourceName, filter).pipe(
+      // Pass filter to viewService
+      const observable = viewService.getUpdates(sourceName, filter).pipe(
         map((event: RowUpdateEvent) => {
           const operation = ROW_UPDATE_TYPE_MAP[event.type];
           
@@ -100,12 +100,12 @@ function createSourceSubscriptionResolver(
  */
 export function buildSubscriptionResolvers(
   sources: Map<string, SourceDefinition>,
-  streamingManager: StreamingManagerService
+  viewService: ViewService
 ): Record<string, SubscriptionResolver> {
   const resolvers: Record<string, SubscriptionResolver> = {};
   
   sources.forEach((_, sourceName) => {
-    resolvers[sourceName] = createSourceSubscriptionResolver(sourceName, streamingManager);
+    resolvers[sourceName] = createSourceSubscriptionResolver(sourceName, viewService);
   });
   
   return resolvers;
