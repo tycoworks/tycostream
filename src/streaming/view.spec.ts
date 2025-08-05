@@ -15,65 +15,6 @@ describe('View', () => {
   beforeEach(() => {
     mockSourceStream$ = new Subject<[RowUpdateEvent, bigint]>();
   });
-  describe('getSnapshot', () => {
-    it('should return all rows when empty filter is provided', () => {
-      const view = new View(EMPTY_FILTER, 'id', mockSourceStream$);
-      const rows = [
-        { id: 1, name: 'Test1' },
-        { id: 2, name: 'Test2' }
-      ];
-      
-      const snapshot = view.getSnapshot(rows);
-      expect(snapshot).toEqual(rows);
-    });
-    
-    it('should filter rows based on filter expression', () => {
-      const filter: Filter = {
-        evaluate: (row) => row.active === true,
-        fields: new Set(['active']),
-        expression: 'datum.active === true'
-      };
-      
-      const view = new View(filter, 'id', mockSourceStream$);
-      const rows = [
-        { id: 1, name: 'Test1', active: true },
-        { id: 2, name: 'Test2', active: false },
-        { id: 3, name: 'Test3', active: true }
-      ];
-      
-      const snapshot = view.getSnapshot(rows);
-      expect(snapshot).toHaveLength(2);
-      expect(snapshot).toEqual([
-        { id: 1, name: 'Test1', active: true },
-        { id: 3, name: 'Test3', active: true }
-      ]);
-    });
-    
-    it('should use cached visibility on subsequent calls', () => {
-      const evaluateMock = jest.fn((row) => row.active === true);
-      const filter: Filter = {
-        evaluate: evaluateMock,
-        fields: new Set(['active']),
-        expression: 'datum.active === true'
-      };
-      
-      const view = new View(filter, 'id', mockSourceStream$);
-      const rows = [
-        { id: 1, name: 'Test1', active: true },
-        { id: 2, name: 'Test2', active: false }
-      ];
-      
-      // First call should evaluate filter
-      view.getSnapshot(rows);
-      expect(evaluateMock).toHaveBeenCalledTimes(2);
-      
-      // Second call should use cached visibility
-      evaluateMock.mockClear();
-      view.getSnapshot(rows);
-      expect(evaluateMock).not.toHaveBeenCalled();
-    });
-  });
-  
   describe('processEvent', () => {
     it('should pass through events when empty filter is provided', () => {
       const view = new View(EMPTY_FILTER, 'id', mockSourceStream$);

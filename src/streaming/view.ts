@@ -10,7 +10,6 @@ import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 export class View {
   private readonly logger = new Logger(`View`);
   private readonly visibleKeys = new Set<string | number>();
-  private initialized = false;
   private readonly stream$: Observable<[RowUpdateEvent, bigint]>;
   
   constructor(
@@ -34,39 +33,6 @@ export class View {
    */
   private hasFilter(): boolean {
     return this.viewFilter.expression !== '';
-  }
-  
-  /**
-   * Get filtered snapshot, building visibleKeys if needed
-   */
-  getSnapshot(allRows: Record<string, any>[]): Record<string, any>[] {
-    // Fast path for empty filter
-    if (!this.hasFilter()) {
-      return allRows;
-    }
-    
-    let result: Record<string, any>[];
-    
-    if (!this.initialized) {
-      // First time - build visibleKeys while filtering
-      result = [];
-      for (const row of allRows) {
-        if (this.viewFilter.evaluate(row)) {
-          const key = row[this.primaryKeyField];
-          this.visibleKeys.add(key);
-          result.push(row);
-        }
-      }
-      this.initialized = true;
-    } else {
-      // Already initialized - use visibleKeys for O(1) lookups
-      result = allRows.filter(row => {
-        const key = row[this.primaryKeyField];
-        return this.visibleKeys.has(key);
-      });
-    }
-    
-    return result;
   }
   
   /**
@@ -112,11 +78,6 @@ export class View {
       this.visibleKeys.add(key);
     } else {
       this.visibleKeys.delete(key);
-    }
-    
-    // Mark as initialized if not already
-    if (!this.initialized) {
-      this.initialized = true;
     }
     
     return outputEvent;
