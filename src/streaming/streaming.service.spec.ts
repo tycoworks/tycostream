@@ -377,14 +377,19 @@ describe('StreamingService', () => {
     it('should track consumer count', () => {
       expect(service.consumerCount).toBe(0);
       
-      service.getUpdates(EMPTY_FILTER);
+      const sub1 = service.getUpdates(EMPTY_FILTER).subscribe();
       expect(service.consumerCount).toBe(1);
       
-      service.getUpdates(EMPTY_FILTER);
+      const sub2 = service.getUpdates(EMPTY_FILTER).subscribe();
       expect(service.consumerCount).toBe(2);
       
-      service.getUpdates(EMPTY_FILTER);
+      const sub3 = service.getUpdates(EMPTY_FILTER).subscribe();
       expect(service.consumerCount).toBe(3);
+      
+      // Clean up
+      sub1.unsubscribe();
+      sub2.unsubscribe();
+      sub3.unsubscribe();
     });
 
     it('should decrement consumer count on unsubscribe', () => {

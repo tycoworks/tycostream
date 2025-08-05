@@ -120,45 +120,73 @@ Simple filtering (`stream.filter(predicate)`) doesn't work for subscriptions bec
 - Items that start matching the filter need INSERT events
 - Clients expect a consistent view of their filtered data
 
-### View Abstraction
+### Current Architecture (Phase 2 Complete)
 
-Each subscription maintains a "view" - a stateful transformer that tracks which rows are visible to a filtered subscription:
+We currently have:
+```typescript
+StreamingService (owns cache, handles snapshots, creates views)
+    ↓ creates
+   View (stateful filtering transformer)
+```
+
+This works but has some limitations:
+- Special handling for snapshots vs live updates
+- StreamingService does many things
+- Two different code paths for filtering
+
+### Proposed Architecture: Unified Streaming
+
+Transform everything into a single streaming pipeline where snapshots are just replayed events:
 
 ```typescript
-class View {
-  // Track visibility state only
-  private visibleKeys = new Set<string | number>();
-  
-  constructor(
-    source$: Observable<[RowUpdateEvent, bigint]>,
-    filter: Filter | null,  // null for unfiltered views
-    primaryKeyField: string
-  ) {
-    // Subscribe to source and transform events
-    // No snapshot logic here - StreamingService handles that
+class StreamingService {
+  // Single method that streams everything
+  getEventStream(): Observable<[RowUpdateEvent, bigint]> {
+    return new Observable(subscriber => {
+      const snapshotTimestamp = this.latestTimestamp;
+      
+      // Replay cache as INSERT events
+      for (const row of this.cache.getAllRows()) {
+        subscriber.next([{
+          type: RowUpdateType.Insert,
+          fields: new Set(Object.keys(row)),
+          row: row
+        }, snapshotTimestamp]);
+      }
+      
+      // Then live updates
+      return this.internalUpdates$.pipe(
+        filter(([event, timestamp]) => timestamp > snapshotTimestamp)
+      ).subscribe(subscriber);
+    });
   }
-  
-  // Return filtered stream of events
-  getUpdates(): Observable<RowUpdateEvent>;
 }
 
-interface RowUpdateEvent {
-  type: RowUpdateType;
-  fields: Record<string, any>;  // Changed fields for UPDATE, all fields for INSERT, key only for DELETE
-  row: Record<string, any>;     // Always contains all fields (needed for filter evaluation)
+class View {
+  // Pure stream transformer - no special snapshot handling!
+  constructor(sourceStream$: Observable<[RowUpdateEvent, bigint]>, filter: Filter) {
+    this.stream$ = sourceStream$.pipe(
+      map(([event, timestamp]) => {
+        const transformed = this.processEvent(event);
+        return transformed ? [transformed, timestamp] : null;
+      }),
+      filter(result => result !== null),
+      share()
+    );
+  }
 }
 ```
 
-The View is a pure stream transformer - it receives events from StreamingService and:
-1. Evaluates the filter using `row` (full data)
-2. Tracks visibility state in `visibleKeys`
-3. Generates appropriate INSERT/UPDATE/DELETE events based on state transitions
-4. Strips `row` before emitting to clients (they only get `fields`)
+Benefits:
+- **One code path**: Snapshots and live events use same filtering logic
+- **True streaming**: Everything is just a stream of events
+- **Simpler View**: No getSnapshot() method, just stream transformation
+- **Composable**: Views become pure stream transformers
 
 ### State Transition Logic
 
-When processing an update:
-1. Apply filter to new row data
+When processing an event:
+1. Apply filter to row data
 2. Check if row was previously in view
 3. Generate appropriate event:
    - Was in view, still matches → UPDATE (with only changed fields)
@@ -168,53 +196,117 @@ When processing an update:
 
 ## Implementation Phases
 
-Now that we've decided on client-side filtering with views, here's how we'll implement it:
-
-### Phase 1: GraphQL Filter Parsing
+### Phase 1: GraphQL Filter Parsing ✅
 - Add `where` argument to subscription schema
 - Parse GraphQL where clauses to JavaScript expressions
 - Log filter expressions but don't apply them yet
 - Test filter expression generation
 
-### Phase 2: View Infrastructure
+### Phase 2: View Infrastructure ✅
 - Create `View` class as a stateful stream transformer
-- View receives enriched events with both changed fields and full row data
+- View receives events with both changed fields and full row data
 - View tracks visible keys to detect state transitions
 - View is a pure transformer with no cache dependencies
+- StreamingService creates and caches views
 
-### Phase 3: Filter Implementation
-- Update StreamingManagerService.getUpdates() to accept Filter object
-- StreamingService enriches events with fullRow data
-- StreamingService maintains a cache of Views by filter expression
-- StreamingService handles snapshot replay into new Views
-- Views process enriched events and generate INSERT/UPDATE/DELETE based on state transitions
-- All subscriptions (filtered or unfiltered) use Views for consistency
-- Optimize: skip re-evaluation when changed fields don't affect filter
+### Phase 3: Unified Streaming Architecture (Proposed)
 
-**Implementation approach:**
-1. Update StreamingService to emit EnrichedRowEvent with both `row` and `fullRow`
-2. Create View as a pure stream transformer (no cache access needed)
-3. StreamingService manages view cache:
-   ```typescript
-   getUpdates(filter?: Filter): Observable<RowUpdateEvent> {
-     const cacheKey = filter?.expression || '';
-     let view = this.viewCache.get(cacheKey);
-     if (!view) {
-       view = new View(this.enrichedUpdates$, filter, this.primaryKeyField);
-       this.viewCache.set(cacheKey, view);
-       // Send snapshot through the view
-       this.sendSnapshotToView(view, filter);
-     }
-     return view.getUpdates();
-   }
-   ```
-4. StreamingService sends snapshot events into the View after creation
-5. View reference counting for cleanup when no subscribers
+Transform the current architecture to use a single streaming pipeline:
 
-### Phase 4: Optimizations
-- Skip evaluation when unchanged fields (leveraging field-level updates)
-- Async view processing (update cache synchronously, process views async)
-- Memory optimization strategies
+**Step 1: Modify getView() to create views with unified stream**
+```typescript
+private getView(viewFilter: Filter): View {
+  let view = this.viewCache.get(viewFilter.expression);
+  
+  if (!view) {
+    // Create view with source stream that will replay snapshots
+    view = new View(viewFilter, this.sourceDef.primaryKeyField, this.internalUpdates$);
+    this.viewCache.set(viewFilter.expression, view);
+  }
+  
+  return view;
+}
+```
+
+**Step 2: Keep getUpdates() structure, modify helper internals**
+```typescript
+getUpdates(filter?: Filter): Observable<RowUpdateEvent> {
+  // ... existing startup logic ...
+  
+  const view = this.getView(filter);
+  const consumerStream$ = new ReplaySubject<RowUpdateEvent>();
+  const snapshotTimestamp = this.latestTimestamp;
+  
+  // Helper methods now use unified processing!
+  const snapshotCount = this.sendSnapshot(consumerStream$, view, snapshotTimestamp);
+  const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp, view);
+  
+  return this.createCleanupObservable(consumerStream$, subscription);
+}
+
+// Modified helper to process through view
+private sendSnapshot(
+  consumerStream$: ReplaySubject<RowUpdateEvent>, 
+  view: View,
+  timestamp: bigint
+): number {
+  let count = 0;
+  for (const row of this.cache.getAllRows()) {
+    const event: RowUpdateEvent = {
+      type: RowUpdateType.Insert,
+      fields: new Set(Object.keys(row)),
+      row: row
+    };
+    
+    // Process through view for filtering
+    const filtered = view.processEvent(event);
+    if (filtered) {
+      consumerStream$.next(filtered);
+      count++;
+    }
+  }
+  return count;
+}
+```
+
+**Design Rationale:**
+- Each subscriber gets their own snapshot replay (required for late joiners)
+- Views are cached and shared to avoid duplicate filtering work
+- Snapshot events flow through the same `processEvent()` pipeline as live events
+- This ensures consistent filtering behavior and state management
+- View's `visibleKeys` state is built up naturally from the snapshot
+
+**Step 3: Update helper methods to support unified streaming**
+- Modify `sendSnapshot()` to process events through view.processEvent()
+- Keep `subscribeToLiveUpdates()` for live event handling
+- Keep `createCleanupObservable()` for clean lifecycle management
+- The readable, pseudo-code structure remains intact!
+
+**Benefits of this approach:**
+- Minimal changes to existing code
+- Eliminates duplicate filtering logic
+- True streaming architecture
+- Easier to test (one code path)
+- Snapshot and live events use identical processing
+
+**Why This is the Best Approach:**
+
+1. **Conceptual Clarity**: Everything is just a stream of events. No special "snapshot mode" vs "live mode"
+2. **Single Code Path**: Both snapshot and live events go through `view.processEvent()`, ensuring consistent behavior
+3. **Natural State Building**: The View's `visibleKeys` set is built naturally as snapshot events flow through
+4. **Proper Streaming**: This is how streaming systems should work - events flow through transformers
+5. **Testability**: You can test the View with just a stream of events, no special snapshot handling
+6. **Future Proof**: Easy to add more transformations (sorting, pagination, etc.) as just more stream operators
+
+**Performance Considerations:**
+- Snapshot replay happens per subscriber (necessary for late joiners)
+- Filtering computation is shared across subscribers with same filter (via cached View)
+- No redundant work - each event is filtered exactly once per unique filter
+
+### Phase 4: Future Optimizations
+- Memory optimization: View lifecycle management
+- Performance: Async view processing
+- Monitoring: View metrics and health checks
 
 ## Technical Implementation
 
