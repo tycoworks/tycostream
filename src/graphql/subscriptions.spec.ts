@@ -1,6 +1,6 @@
 import { of } from 'rxjs';
 import { buildSubscriptionResolvers } from './subscriptions';
-import { StreamingManagerService } from '../streaming/manager.service';
+import { ViewService } from '../streaming/view.service';
 import type { SourceDefinition } from '../config/source.types';
 import { RowUpdateType } from '../streaming/types';
 
@@ -22,10 +22,10 @@ jest.mock('rxjs-for-await', () => ({
 }));
 
 describe('buildSubscriptionResolvers', () => {
-  let mockStreamingManager: jest.Mocked<StreamingManagerService>;
+  let mockViewService: jest.Mocked<ViewService>;
 
   beforeEach(() => {
-    mockStreamingManager = {
+    mockViewService = {
       getUpdates: jest.fn(),
     } as any;
   });
@@ -44,7 +44,7 @@ describe('buildSubscriptionResolvers', () => {
       }],
     ]);
 
-    const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
+    const resolvers = buildSubscriptionResolvers(sources, mockViewService);
 
     expect(resolvers).toHaveProperty('trades');
     expect(resolvers).toHaveProperty('orders');
@@ -68,9 +68,9 @@ describe('buildSubscriptionResolvers', () => {
       timestamp: BigInt(1234567890000),
     };
 
-    mockStreamingManager.getUpdates.mockReturnValue(of(mockEvent));
+    mockViewService.getUpdates.mockReturnValue(of(mockEvent));
 
-    const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
+    const resolvers = buildSubscriptionResolvers(sources, mockViewService);
     const asyncIterator = await resolvers.trades.subscribe({}, {}, {}, {});
     
     // Get first value from async iterator
@@ -103,9 +103,9 @@ describe('buildSubscriptionResolvers', () => {
         timestamp: BigInt(1234567890000),
       };
 
-      mockStreamingManager.getUpdates.mockReturnValue(of(mockEvent));
+      mockViewService.getUpdates.mockReturnValue(of(mockEvent));
       
-      const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
+      const resolvers = buildSubscriptionResolvers(sources, mockViewService);
       const asyncIterator = await resolvers.trades.subscribe({}, {}, {}, {});
       
       // Get first value from async iterator
@@ -124,7 +124,7 @@ describe('buildSubscriptionResolvers', () => {
       }],
     ]);
 
-    const resolvers = buildSubscriptionResolvers(sources, mockStreamingManager);
+    const resolvers = buildSubscriptionResolvers(sources, mockViewService);
     
     // Pass an invalid where clause with unknown operator
     const args = {
