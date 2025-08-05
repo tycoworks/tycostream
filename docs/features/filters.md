@@ -518,9 +518,284 @@ class View {
 - **Memory Limits**: Prevent unbounded view growth
 - **Metrics**: Filter performance, view sizes, cache hit rates
 
+## Phase 5: ViewService Architecture (Proposed)
+
+### Motivation
+
+The current architecture has StreamingService managing both caching and view filtering. This couples two distinct concerns. A cleaner 3-tier architecture would separate:
+
+1. **ViewService** (filtering) - Filter management, view lifecycle, subscriber metrics
+2. **SourceCacheService** (routing) - Manages multiple SourceCache instances
+3. **SourceCache** (caching) - Cache management, snapshot/live coordination
+4. **DatabaseStream** (protocol) - Database streaming and protocol handling
+
+### Current Architecture
+
+```
+GraphQL → StreamingManagerService → StreamingService (cache + views) → DatabaseSubscriber
+```
+
+### Proposed Architecture
+
+```
+GraphQL → ViewService → SourceCacheService → SourceCache → DatabaseStream
+         (filtering)    (routing)           (caching)     (protocol)
+```
+
+### Benefits
+
+1. **Clear Separation of Concerns**
+   - ViewService: Manages filtered views and subscriber lifecycle
+   - SourceCache: Focuses purely on cache management
+   - Each layer has a single responsibility
+
+2. **Better Metrics Placement**
+   - View-level metrics (subscribers per filter, filter performance) in ViewService
+   - Cache-level metrics (cache size, hit rate) in SourceCache
+   - Connection metrics (bytes transferred, health) in DatabaseSubscriber
+
+3. **Cleaner GraphQL API**
+   - GraphQL only interacts with ViewService
+   - ViewService provides a clean subscription API
+   - Hides streaming/caching complexity
+
+4. **Easier to Extend**
+   - Add filter optimization in ViewService
+   - Add cache strategies in SourceCache
+   - Add protocol features in DatabaseSubscriber
+
+### Implementation Steps
+
+#### Step 1: Create ViewService
+```typescript
+@Injectable()
+export class ViewService {
+  private viewCache = new Map<string, View>();
+  
+  constructor(private sourceCacheService: SourceCacheService) {}
+  
+  getFilteredStream(sourceName: string, filter: Filter): Observable<RowUpdateEvent> {
+    // Initially delegate to existing behavior
+    return this.sourceCacheService.getUpdates(sourceName, filter);
+  }
+}
+```
+
+#### Step 2: Update GraphQL Layer
+- Add ViewService to GraphQL module providers
+- Change subscription resolvers to inject ViewService
+- Update resolver to call `viewService.getFilteredStream()`
+
+#### Step 3: Move View Management to ViewService
+```typescript
+getFilteredStream(sourceName: string, filter: Filter): Observable<RowUpdateEvent> {
+  const cacheKey = `${sourceName}:${filter.expression}`;
+  let view = this.viewCache.get(cacheKey);
+  
+  if (!view) {
+    // Get raw stream and metadata from SourceCache
+    const sourceCache = this.sourceCacheService.getSourceCache(sourceName);
+    const sourceStream$ = sourceCache.getRawStream();
+    const primaryKey = sourceCache.getPrimaryKeyField();
+    
+    view = new View(filter, primaryKey, sourceStream$);
+    this.viewCache.set(cacheKey, view);
+  }
+  
+  // ViewManager handles snapshot + live coordination
+  return this.createFilteredStream(view, sourceName);
+}
+```
+
+#### Step 4: Simplify SourceCache
+```typescript
+class SourceCache {
+  // Expose raw stream for ViewService
+  getRawStream(): Observable<[RowUpdateEvent, bigint]> {
+    return this.internalUpdates$;
+  }
+  
+  // Expose snapshot for ViewService
+  getSnapshot(): Array<any> {
+    return this.cache.getAllRows();
+  }
+  
+  // Expose metadata
+  getLatestTimestamp(): bigint {
+    return this.latestTimestamp;
+  }
+  
+  getPrimaryKeyField(): string {
+    return this.sourceDef.primaryKeyField;
+  }
+  
+  // Remove all view-related code!
+}
+```
+
+#### Step 5: ViewService Handles Snapshot + Live
+```typescript
+private createFilteredStream(view: View, sourceName: string): Observable<RowUpdateEvent> {
+  return new Observable(subscriber => {
+    const sourceCache = this.sourceCacheService.getSourceCache(sourceName);
+    const snapshotTimestamp = sourceCache.getLatestTimestamp();
+    
+    // Send filtered snapshot
+    for (const row of sourceCache.getSnapshot()) {
+      const event: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(Object.keys(row)),
+        row: row
+      };
+      const filtered = view.processEvent(event);
+      if (filtered) {
+        subscriber.next(filtered);
+      }
+    }
+    
+    // Subscribe to filtered live updates
+    const subscription = view.stream.pipe(
+      filter(([event, timestamp]) => timestamp > snapshotTimestamp),
+      map(([event]) => event)
+    ).subscribe(subscriber);
+    
+    // Cleanup
+    return () => {
+      subscription.unsubscribe();
+      // TODO: Consider view cleanup when no subscribers
+    };
+  });
+}
+```
+
+#### Step 6: Update SourceCacheService
+```typescript
+class SourceCacheService {
+  // Expose SourceCache instances for ViewService
+  getSourceCache(sourceName: string): SourceCache {
+    let sourceCache = this.sourceCaches.get(sourceName);
+    if (!sourceCache) {
+      const sourceDef = this.sourceDefinitions.get(sourceName);
+      sourceCache = this.createSourceCache(sourceDef);
+      this.sourceCaches.set(sourceName, sourceCache);
+    }
+    return sourceCache;
+  }
+}
+```
+
+#### Step 7: Add Metrics to ViewService
+```typescript
+class ViewService {
+  private subscriberCounts = new Map<string, number>();
+  
+  getMetrics() {
+    return {
+      totalViews: this.viewCache.size,
+      viewDetails: Array.from(this.viewCache.entries()).map(([key, view]) => ({
+        filter: key,
+        subscribers: this.subscriberCounts.get(key) || 0
+      }))
+    };
+  }
+}
+```
+
+### Key Design Principles
+
+1. **No Circular Dependencies**: Each layer depends only on layers below it
+2. **Single Responsibility**: Each service has one clear purpose
+3. **Clean Interfaces**: Each layer exposes only what the layer above needs
+4. **Shared Views**: Multiple subscribers with same filter share one View instance
+5. **Isolated Snapshots**: Each subscriber gets their own point-in-time snapshot
+
+### Migration Strategy
+
+1. Create ViewService that initially delegates to existing code
+2. Incrementally move view-related logic from StreamingService to ViewService
+3. Update tests to cover new architecture
+4. Remove deprecated code from StreamingService
+5. Add metrics and monitoring to ViewService
+6. Rename classes and files to match new responsibilities
+
+This architecture provides better separation of concerns while maintaining the efficiency of shared filtering and individual snapshots per subscriber.
+
+### Naming Considerations
+
+After thorough analysis, the current naming doesn't reflect actual responsibilities and patterns. Here's the comprehensive renaming plan:
+
+#### Naming Principles
+
+1. **Services manage instances of what they're named after**: ViewService manages View instances, SourceCacheService manages SourceCache instances
+2. **Only @Injectable classes use "Service" suffix**: This follows NestJS conventions
+3. **Component names reflect their purpose**: Clear, descriptive names for non-service classes
+
+#### Final Architecture and Naming
+
+```
+GraphQL Layer
+    │
+    ├── ViewService (@Injectable) [new]
+    │   Purpose: Manages View instances for filtering
+    │   Creates: View instances
+    │
+    └── SourceCacheService (@Injectable) [was StreamingManagerService]
+        Purpose: Manages SourceCache instances (one per data source)
+        Creates: SourceCache instances
+        │
+        └── SourceCache [was StreamingService - NOT @Injectable]
+            Purpose: Caches data for one source, provides snapshots
+            Creates: SimpleCache, DatabaseStream instances
+            │
+            ├── View [unchanged]
+            │   Purpose: Filters and transforms data based on where clauses
+            │
+            ├── SimpleCache [unchanged]
+            │   Purpose: In-memory row storage
+            │   Implements: Cache interface
+            │
+            └── DatabaseStream [was DatabaseSubscriber]
+                Purpose: Streams data from database for this source
+                Uses: DatabaseConnectionService
+                │
+                └── DatabaseConnectionService (@Injectable) [unchanged]
+                    Purpose: Manages PostgreSQL connections
+```
+
+#### Complete Renaming Table
+
+| Current Class | New Class | Current File | New File | Rationale |
+|--------------|-----------|--------------|----------|-----------|
+| - | ViewService | - | view.service.ts | New service to manage views |
+| StreamingManagerService | SourceCacheService | manager.service.ts | source-cache.service.ts | Manages SourceCache instances |
+| StreamingService | SourceCache | streaming.service.ts | source-cache.ts | Not a service, just a cache |
+| View | View | view.ts | view.ts | Keep as is |
+| SimpleCache | SimpleCache | cache.ts | cache.ts | Keep as is |
+| DatabaseSubscriber | DatabaseStream | subscriber.ts | database-stream.ts | Better describes purpose |
+| DatabaseConnectionService | DatabaseConnectionService | connection.service.ts | connection.service.ts | Already well-named |
+
+#### Why These Names Work
+
+1. **ViewService** → View: Service manages instances of Views
+2. **SourceCacheService** → SourceCache: Service manages instances of SourceCaches
+3. **SourceCache**: Clearly indicates it caches data for a source (not a service)
+4. **DatabaseStream**: Describes what it does - streams from database
+5. **No "Manager" suffix**: Cleaner, follows "Service" pattern consistently
+
+#### Implementation Order
+
+1. Create ViewService as new file
+2. Rename StreamingManagerService → SourceCacheService
+3. Rename StreamingService → SourceCache (and remove @Injectable references)
+4. Rename DatabaseSubscriber → DatabaseStream
+5. Update all imports and references
+6. Update file names to match class names
+
 ## Future Enhancements
 
 1. **Additional Operators**: Text search, JSON/JSONB, arrays (see MVP scope)
 2. **Advanced Field-Level Optimizations**: Skip filter evaluation when changed fields don't affect filter predicates
 3. **Filter Validation**: Compile-time validation against source schema
 4. **Entitlements**: Row-level security as additional filter predicates
+5. **View Lifecycle Management**: Automatic cleanup of unused views
+6. **Filter Query Optimization**: Analyze and optimize complex filter expressions
