@@ -7,6 +7,18 @@ import { RowUpdateType, type RowUpdateEvent } from './types';
 import { take, toArray } from 'rxjs/operators';
 import { firstValueFrom } from 'rxjs';
 
+// Mock DatabaseSubscriber before importing StreamingService
+jest.mock('../database/subscriber', () => {
+  return {
+    DatabaseSubscriber: jest.fn().mockImplementation(() => ({
+      connect: jest.fn().mockResolvedValue(undefined),
+      end: jest.fn(),
+      onModuleDestroy: jest.fn().mockResolvedValue(undefined),
+      streaming: false
+    }))
+  };
+});
+
 describe('StreamingService', () => {
   let service: StreamingService;
   let connectionService: DatabaseConnectionService;
@@ -44,9 +56,6 @@ describe('StreamingService', () => {
       'test_source',
       mockProtocolHandler
     );
-    
-    // Mock the startStreaming method to prevent actual database connection
-    jest.spyOn(service as any, 'startStreaming').mockResolvedValue(undefined);
   });
 
   afterEach(() => {

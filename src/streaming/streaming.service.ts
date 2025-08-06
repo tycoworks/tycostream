@@ -22,6 +22,7 @@ export class StreamingService implements OnModuleDestroy {
   private readonly databaseSubscriber: DatabaseSubscriber;
   private latestTimestamp = BigInt(0);
   private isShuttingDown = false;
+  private activeSubscribers = 0;
 
   constructor(
     private connectionService: DatabaseConnectionService,
@@ -35,6 +36,13 @@ export class StreamingService implements OnModuleDestroy {
       sourceName,
       protocolHandler
     );
+    
+    // Start streaming immediately since we're created on-demand
+    this.startStreaming().catch(error => {
+      this.logger.error(`Failed to start streaming for ${this.sourceName}`, error);
+      // Database connection errors are unrecoverable - trigger application shutdown
+      this.handleFatalError(error);
+    });
   }
 
   /**
@@ -44,15 +52,6 @@ export class StreamingService implements OnModuleDestroy {
   getUpdates(): Observable<RowUpdateEvent> {
     if (this.isShuttingDown) {
       throw new Error('Database subscriber is shutting down, cannot accept new subscriptions');
-    }
-
-    // Start streaming if not already started
-    if (!this.databaseSubscriber.streaming && !this.isShuttingDown) {
-      this.startStreaming().catch(error => {
-        this.logger.error(`Failed to start streaming for ${this.sourceName}`);
-        // Database connection errors are unrecoverable - trigger application shutdown
-        this.handleFatalError(error);
-      });
     }
 
     // Take snapshot timestamp before any async operations
@@ -74,14 +73,28 @@ export class StreamingService implements OnModuleDestroy {
       }))
     );
     
-    this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}`);
+    // Track subscriber
+    this.activeSubscribers++;
+    this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}, subscribers: ${this.activeSubscribers}`);
     
     // Concat: First emit all snapshot events, then emit buffered live events
     return concat(snapshot$, buffer$).pipe(
       finalize(() => {
-        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}`);
+        this.activeSubscribers--;
+        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}, subscribers: ${this.activeSubscribers}`);
         subscription.unsubscribe();
         buffer$.complete();
+        
+        // Dispose when last subscriber disconnects
+        if (this.activeSubscribers === 0 && !this.isShuttingDown) {
+          this.logger.log(`No more subscribers for ${this.sourceName}, disposing resources`);
+          // Use setTimeout to avoid disposing while still in the observable chain
+          setTimeout(() => {
+            if (this.activeSubscribers === 0) {
+              this.dispose();
+            }
+          }, 0);
+        }
       })
     );
   }
@@ -96,17 +109,14 @@ export class StreamingService implements OnModuleDestroy {
 
   /**
    * Cleanup on module destroy
-   * Completes streams and shuts down database subscriber gracefully
+   * Delegates to dispose() for actual cleanup
    */
   async onModuleDestroy() {
     this.logger.log('Shutting down stream...');
-    this.isShuttingDown = true;
+    this.dispose();
     
-    // Clean up database subscriber
+    // Also ensure database subscriber cleans up properly
     await this.databaseSubscriber.onModuleDestroy();
-    
-    // Complete internal streams
-    this.internalUpdates$.complete();
   }
 
   /**
@@ -115,8 +125,8 @@ export class StreamingService implements OnModuleDestroy {
    */
   private async startStreaming(): Promise<void> {
     try {
-      // Start database streaming with callback for updates and errors
-      await this.databaseSubscriber.startStreaming(
+      // Connect to database and start streaming with callbacks
+      await this.databaseSubscriber.connect(
         (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => {
           this.processUpdate(row, timestamp, updateType);
         },
@@ -251,6 +261,32 @@ export class StreamingService implements OnModuleDestroy {
     setTimeout(() => {
       throw error; // Throw the original error to preserve stack trace
     }, 0);
+  }
+
+  /**
+   * Dispose resources when no subscribers remain
+   * Clears cache and stops database subscriber
+   */
+  private dispose(): void {
+    if (this.isShuttingDown) {
+      return; // Already shutting down
+    }
+    
+    this.isShuttingDown = true;
+    this.logger.log(`Disposing StreamingService for ${this.sourceName}`);
+    
+    // Clear the cache
+    this.cache.clear();
+    this.logger.debug(`Cache cleared for ${this.sourceName}`);
+    
+    // End the database subscriber connection
+    if (this.databaseSubscriber) {
+      this.databaseSubscriber.end();
+      this.logger.debug(`Database subscriber connection ended for ${this.sourceName}`);
+    }
+    
+    // Complete the internal updates subject
+    this.internalUpdates$.complete();
   }
 
 }

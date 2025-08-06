@@ -56,7 +56,7 @@ describe('DatabaseSubscriber', () => {
     });
   });
 
-  describe('startStreaming', () => {
+  describe('connect', () => {
     it('should connect to database and create subscribe query', async () => {
       const mockUpdateCallback = jest.fn();
       const mockErrorCallback = jest.fn();
@@ -67,7 +67,7 @@ describe('DatabaseSubscriber', () => {
       };
       mockClient.query.mockReturnValue(mockStream);
 
-      await subscriber.startStreaming(mockUpdateCallback, mockErrorCallback);
+      await subscriber.connect(mockUpdateCallback, mockErrorCallback);
 
       expect(mockConnectionService.connect).toHaveBeenCalled();
       expect(mockProtocolHandler.createSubscribeQuery).toHaveBeenCalled();
@@ -83,11 +83,11 @@ describe('DatabaseSubscriber', () => {
       // First call
       const mockStream = { on: jest.fn() };
       mockClient.query.mockReturnValue(mockStream);
-      await subscriber.startStreaming(mockUpdateCallback);
+      await subscriber.connect(mockUpdateCallback);
 
       // Second call should not connect again
       mockConnectionService.connect.mockClear();
-      await subscriber.startStreaming(mockUpdateCallback);
+      await subscriber.connect(mockUpdateCallback);
 
       expect(mockConnectionService.connect).not.toHaveBeenCalled();
     });
@@ -98,7 +98,7 @@ describe('DatabaseSubscriber', () => {
       
       mockConnectionService.connect.mockRejectedValue(connectionError);
 
-      await expect(subscriber.startStreaming(mockUpdateCallback)).rejects.toThrow('Connection failed');
+      await expect(subscriber.connect(mockUpdateCallback)).rejects.toThrow('Connection failed');
       // Note: streaming might be briefly true before error occurs, depending on timing
     });
   });
@@ -110,7 +110,7 @@ describe('DatabaseSubscriber', () => {
       // Start streaming
       const mockStream = { on: jest.fn() };
       mockClient.query.mockReturnValue(mockStream);
-      await subscriber.startStreaming(mockUpdateCallback);
+      await subscriber.connect(mockUpdateCallback);
 
       // Destroy
       await subscriber.onModuleDestroy();
@@ -124,7 +124,7 @@ describe('DatabaseSubscriber', () => {
       // Start streaming
       const mockStream = { on: jest.fn() };
       mockClient.query.mockReturnValue(mockStream);
-      await subscriber.startStreaming(mockUpdateCallback);
+      await subscriber.connect(mockUpdateCallback);
 
       // Mock disconnect error
       mockConnectionService.disconnect.mockRejectedValue(new Error('Disconnect failed'));
@@ -156,7 +156,7 @@ describe('DatabaseSubscriber', () => {
         updateType: DatabaseRowUpdateType.Upsert
       });
 
-      await subscriber.startStreaming(mockUpdateCallback);
+      await subscriber.connect(mockUpdateCallback);
 
       // Simulate receiving data
       const chunk = Buffer.from('test line\n');
@@ -189,7 +189,7 @@ describe('DatabaseSubscriber', () => {
         updateType: DatabaseRowUpdateType.Delete
       });
 
-      await subscriber.startStreaming(mockUpdateCallback);
+      await subscriber.connect(mockUpdateCallback);
 
       const chunk = Buffer.from('delete line\n');
       dataCallback!(chunk);
@@ -217,7 +217,7 @@ describe('DatabaseSubscriber', () => {
       // Mock parsing failure
       mockProtocolHandler.parseLine.mockReturnValue(null);
 
-      await subscriber.startStreaming(mockUpdateCallback);
+      await subscriber.connect(mockUpdateCallback);
 
       const chunk = Buffer.from('invalid line\n');
       dataCallback!(chunk);
@@ -241,7 +241,7 @@ describe('DatabaseSubscriber', () => {
       };
       mockClient.query.mockReturnValue(mockStream);
 
-      await subscriber.startStreaming(mockUpdateCallback, mockErrorCallback);
+      await subscriber.connect(mockUpdateCallback, mockErrorCallback);
 
       // Simulate stream error
       const error = new Error('Database connection lost');
@@ -265,7 +265,7 @@ describe('DatabaseSubscriber', () => {
       };
       mockClient.query.mockReturnValue(mockStream);
 
-      await subscriber.startStreaming(mockUpdateCallback, mockErrorCallback);
+      await subscriber.connect(mockUpdateCallback, mockErrorCallback);
 
       // Simulate unexpected stream end
       endCallback!();

@@ -15,7 +15,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
   private readonly buffer = new StreamBuffer();
   private client: Client | null = null;
   private isShuttingDown = false;
-  private isStreaming = false;
+  private connected = false;
   private updateCallback?: (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => void;
   private errorCallback?: (error: Error) => void;
 
@@ -26,22 +26,22 @@ export class DatabaseSubscriber implements OnModuleDestroy {
   ) {}
 
   /**
-   * Start streaming with callback for updates and errors
-   * Connects to database and begins COPY stream for continuous updates
+   * Connect to database and begin COPY stream for continuous updates
+   * Follows pg client naming convention
    */
-  async startStreaming(
+  async connect(
     onUpdate: (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => void,
     onError?: (error: Error) => void
   ): Promise<void> {
-    if (this.isStreaming) {
-      this.logger.warn('Stream already active');
+    if (this.connected) {
+      this.logger.warn('Already connected');
       return;
     }
 
     this.updateCallback = onUpdate;
     this.errorCallback = onError;
-    this.isStreaming = true;
-    this.logger.log(`Starting stream for source: ${this.sourceName}`);
+    this.connected = true;
+    this.logger.log(`Connecting to source: ${this.sourceName}`);
 
     // Connect to database
     this.client = await this.connectionService.connect();
@@ -68,7 +68,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
 
       copyStream.on('error', (error) => {
         this.logger.error('Stream error');
-        this.isStreaming = false;
+        this.connected = false;
         
         // Notify parent of runtime error
         if (this.errorCallback) {
@@ -77,7 +77,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
       });
 
       copyStream.on('end', () => {
-        this.isStreaming = false;
+        this.connected = false;
         
         // Only warn about unexpected stream end
         if (!this.isShuttingDown) {
@@ -90,7 +90,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
         }
       });
     } catch (error) {
-      this.isStreaming = false;
+      this.connected = false;
       if (this.client) {
         await this.connectionService.disconnect(this.client);
       }
@@ -99,27 +99,37 @@ export class DatabaseSubscriber implements OnModuleDestroy {
   }
 
   /**
-   * Check if streaming is active
+   * Check if streaming is active (backward compatibility)
    */
   get streaming(): boolean {
-    return this.isStreaming;
+    return this.connected;
+  }
+
+  /**
+   * End the connection and clean up resources
+   * Follows pg client naming convention
+   */
+  end(): void {
+    this.logger.debug(`Ending connection for ${this.sourceName}`);
+    this.isShuttingDown = true;
+    
+    if (this.connected && this.client) {
+      // Disconnect asynchronously without waiting
+      this.connectionService.disconnect(this.client).catch(error => {
+        this.logger.error('Error disconnecting client during end', error);
+      });
+      this.connected = false;
+      this.client = null;
+    }
   }
 
   /**
    * Cleanup on module destroy
-   * Ensures graceful shutdown of database connections
+   * Delegates to end() for cleanup
    */
   async onModuleDestroy() {
     this.logger.log('Shutting down database subscriber...');
-    this.isShuttingDown = true;
-    
-    if (this.isStreaming && this.client) {
-      try {
-        await this.connectionService.disconnect(this.client);
-      } catch (error) {
-        this.logger.error('Error disconnecting client');
-      }
-    }
+    this.end();
   }
 
   /**
