@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { Observable, filter, map, share } from 'rxjs';
+import { Observable, filter, map } from 'rxjs';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 import type { StreamingService } from './streaming.service';
 
@@ -21,10 +21,10 @@ export class View {
     this.primaryKeyField = streamingService.getPrimaryKeyField();
     
     // Create the filtered stream from the unified stream (snapshot + live)
+    
     this.stream$ = streamingService.getUpdates().pipe(
       map(event => this.processEvent(event)),
-      filter((event): event is RowUpdateEvent => event !== null),
-      share()  // Share among all subscribers to this view
+      filter((event): event is RowUpdateEvent => event !== null)
     );
   }
   
