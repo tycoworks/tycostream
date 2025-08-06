@@ -1,5 +1,5 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
-import { Observable, Subject, ReplaySubject, filter, Subscription, map } from 'rxjs';
+import { Observable, Subject, ReplaySubject, filter, map, concat, from, finalize } from 'rxjs';
 import { DatabaseConnectionService } from '../database/connection.service';
 import { DatabaseSubscriber } from '../database/subscriber';
 import type { ProtocolHandler } from '../database/types';
@@ -55,24 +55,35 @@ export class StreamingService implements OnModuleDestroy {
       });
     }
 
-
-    // Create a replayable stream for this consumer
-    const consumerStream$ = new ReplaySubject<RowUpdateEvent>();
-    
-    // Take snapshot before subscribing to avoid race condition
+    // Take snapshot timestamp before any async operations
     const snapshotTimestamp = this.latestTimestamp;
     
-    // Send snapshot to consumer (unfiltered)
-    const snapshotCount = this.sendSnapshot(consumerStream$);
-    this.logger.debug(`Sending cached data to consumer - source: ${this.sourceName}, cachedRows: ${snapshotCount}`);
+    // Create per-client buffer and immediately start buffering live events
+    const buffer$ = new ReplaySubject<RowUpdateEvent>();
+    const subscription = this.internalUpdates$.pipe(
+      filter(([event, timestamp]) => timestamp > snapshotTimestamp),
+      map(([event]) => event)
+    ).subscribe(buffer$);
     
-    // Subscribe to live updates after snapshot (unfiltered)
-    const subscription = this.subscribeToLiveUpdates(consumerStream$, snapshotTimestamp);
+    // Create snapshot observable from cache
+    const snapshot$ = from(this.cache.getAllRows()).pipe(
+      map(row => ({
+        type: RowUpdateType.Insert,
+        fields: new Set(Object.keys(row)),
+        row
+      }))
+    );
     
     this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}`);
-
-    // Return observable that handles cleanup on unsubscribe
-    return this.createCleanupObservable(consumerStream$, subscription);
+    
+    // Concat: First emit all snapshot events, then emit buffered live events
+    return concat(snapshot$, buffer$).pipe(
+      finalize(() => {
+        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}`);
+        subscription.unsubscribe();
+        buffer$.complete();
+      })
+    );
   }
 
   /**
@@ -241,64 +252,5 @@ export class StreamingService implements OnModuleDestroy {
       throw error; // Throw the original error to preserve stack trace
     }, 0);
   }
-
-  /**
-   * Send cached snapshot data as INSERT events to a new consumer
-   * Processes through view for unified streaming pipeline
-   * Returns count for logging/metrics
-   */
-  private sendSnapshot(consumerStream$: ReplaySubject<RowUpdateEvent>): number {
-    // Emit snapshot as insert events (unfiltered)
-    let snapshotCount = 0;
-    for (const row of this.cache.getAllRows()) {
-      const event: RowUpdateEvent = {
-        type: RowUpdateType.Insert,
-        fields: new Set(Object.keys(row)),
-        row: row
-      };
-      
-      consumerStream$.next(event);
-      snapshotCount++;
-    }
-    
-    return snapshotCount;
-  }
-
-  /**
-   * Subscribe to live updates filtering by timestamp
-   * Prevents duplicates by filtering events older than snapshot
-   */
-  private subscribeToLiveUpdates(consumerStream$: ReplaySubject<RowUpdateEvent>, snapshotTimestamp: bigint): Subscription {
-    // Subscribe to unfiltered updates with timestamp filter
-    return this.internalUpdates$.pipe(
-      filter(([event, timestamp]) => timestamp > snapshotTimestamp),
-      map(([event]) => event)
-    ).subscribe(event => {
-      consumerStream$.next(event);
-    });
-  }
-
-
-  /**
-   * Create observable with cleanup logic for graceful disconnection
-   * Ensures proper cleanup: decrements count, unsubscribes, prevents leaks
-   */
-  private createCleanupObservable(consumerStream$: ReplaySubject<RowUpdateEvent>, subscription: Subscription): Observable<RowUpdateEvent> {
-    // Return observable that handles cleanup on unsubscribe
-    return new Observable<RowUpdateEvent>(subscriber => {
-      const proxySubscription = consumerStream$.subscribe(subscriber);
-      
-      // Return teardown logic
-      return () => {
-        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}`);
-        
-        // Clean up subscriptions
-        subscription.unsubscribe();
-        proxySubscription.unsubscribe();
-        consumerStream$.complete();
-      };
-    });
-  }
-
 
 }
