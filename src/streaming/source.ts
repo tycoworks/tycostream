@@ -43,6 +43,13 @@ export class Source implements OnModuleDestroy {
   }
 
   /**
+   * Check if this source has been disposed
+   */
+  get isDisposed(): boolean {
+    return this.isShuttingDown;
+  }
+
+  /**
    * Get a stream of updates with late joiner support
    * Returns unfiltered stream of all updates from this source
    */
