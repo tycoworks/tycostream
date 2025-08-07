@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
-import { StreamingManagerService } from './manager.service';
+import { SourceService } from './manager.service';
 import { ViewService } from './view.service';
 
 /**
@@ -10,7 +10,7 @@ import { ViewService } from './view.service';
 @Module({
   imports: [DatabaseModule],
   providers: [
-    StreamingManagerService,
+    SourceService,
     ViewService
   ],
   exports: [

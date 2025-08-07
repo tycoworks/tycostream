@@ -11,12 +11,12 @@ import { SimpleCache } from './cache';
 import { truncateForLog } from '../common/logging.utils';
 
 /**
- * Database streaming service for a single source
- * Handles Observable-based streaming with late joiner support
- * Uses DatabaseProtocolHandler for database connection management
+ * Represents a cached data source with streaming updates
+ * Domain object that manages cache and database streaming for a single source
+ * Not injectable - created and managed by SourceService
  */
-export class StreamingService implements OnModuleDestroy {
-  private readonly logger = new Logger(StreamingService.name);
+export class Source implements OnModuleDestroy {
+  private readonly logger = new Logger(Source.name);
   private readonly cache: Cache;
   private readonly internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
   private readonly databaseStream: DatabaseStream;
@@ -268,7 +268,7 @@ export class StreamingService implements OnModuleDestroy {
     }
     
     this.isShuttingDown = true;
-    this.logger.log(`Disposing StreamingService for ${this.sourceName}`);
+    this.logger.log(`Disposing Source for ${this.sourceName}`);
     
     // Clear the cache
     this.cache.clear();

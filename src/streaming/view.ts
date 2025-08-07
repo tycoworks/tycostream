@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Observable, filter, map } from 'rxjs';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
-import type { StreamingService } from './streaming.service';
+import type { Source } from './streaming.service';
 
 /**
  * View represents a filtered subset of a data stream
@@ -16,13 +16,13 @@ export class View {
   
   constructor(
     private readonly viewFilter: Filter,
-    private readonly streamingService: StreamingService
+    private readonly source: Source
   ) {
-    this.primaryKeyField = streamingService.getPrimaryKeyField();
+    this.primaryKeyField = source.getPrimaryKeyField();
     
     // Create the filtered stream from the unified stream (snapshot + live)
     
-    this.stream$ = streamingService.getUpdates().pipe(
+    this.stream$ = source.getUpdates().pipe(
       map(event => this.processEvent(event)),
       filter((event): event is RowUpdateEvent => event !== null)
     );

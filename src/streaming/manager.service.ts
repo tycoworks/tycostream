@@ -1,18 +1,18 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { StreamingService } from './streaming.service';
+import { Source } from './streaming.service';
 import { DatabaseStreamService } from '../database/stream.service';
 import { MaterializeProtocolHandler } from '../database/materialize';
 import type { SourceDefinition } from '../config/source.types';
 
 /**
- * Manages multiple StreamingService instances for different sources
+ * Manages multiple Source instances for different data sources
  * Provides a unified interface for streaming database updates
  */
 @Injectable()
-export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(StreamingManagerService.name);
-  private readonly streamingServices = new Map<string, StreamingService>();
+export class SourceService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(SourceService.name);
+  private readonly sources = new Map<string, Source>();
   private readonly sourceDefinitions = new Map<string, SourceDefinition>();
 
   constructor(
@@ -41,53 +41,53 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Clean up all active streaming services on shutdown
+   * Clean up all active sources on shutdown
    */
   async onModuleDestroy() {
-    this.logger.log('Shutting down streaming manager...');
+    this.logger.log('Shutting down source service...');
     
-    // Clean up all streaming services
-    // Note: We call onModuleDestroy() directly because these services
+    // Clean up all sources
+    // Note: We call onModuleDestroy() directly because these sources
     // are dynamically created and not managed by NestJS DI container
-    const cleanupPromises = Array.from(this.streamingServices.values()).map(
-      service => service.onModuleDestroy()
+    const cleanupPromises = Array.from(this.sources.values()).map(
+      source => source.onModuleDestroy()
     );
     
     await Promise.all(cleanupPromises);
-    this.streamingServices.clear();
-    this.logger.log('Streaming manager shutdown complete');
+    this.sources.clear();
+    this.logger.log('Source service shutdown complete');
   }
 
   /**
-   * Get the streaming service instance for a source
+   * Get the source instance for a data source
    * Used by ViewService to access raw streams
    */
-  getStreamingService(sourceName: string): StreamingService {
+  getSource(sourceName: string): Source {
     const sourceDef = this.sourceDefinitions.get(sourceName);
     if (!sourceDef) {
       throw new Error(`Unknown source: ${sourceName}. Available sources: ${Array.from(this.sourceDefinitions.keys()).join(', ')}`);
     }
 
-    let streamingService = this.streamingServices.get(sourceName);
-    if (!streamingService) {
-      streamingService = this.createStreamingService(sourceDef);
-      this.streamingServices.set(sourceName, streamingService);
+    let source = this.sources.get(sourceName);
+    if (!source) {
+      source = this.createSource(sourceDef);
+      this.sources.set(sourceName, source);
       
-      this.logger.log(`Created streaming service for source: ${sourceName}`);
+      this.logger.log(`Created source for: ${sourceName}`);
     }
 
-    return streamingService;
+    return source;
   }
 
   /**
-   * Create a streaming service with protocol handler for a source
+   * Create a source with protocol handler for a data source
    */
-  private createStreamingService(sourceDef: SourceDefinition): StreamingService {
+  private createSource(sourceDef: SourceDefinition): Source {
     // Create protocol handler for this source
     const protocolHandler = new MaterializeProtocolHandler(sourceDef, sourceDef.name);
     
-    // Create streaming service
-    return new StreamingService(
+    // Create source
+    return new Source(
       this.streamService,
       sourceDef,
       sourceDef.name,

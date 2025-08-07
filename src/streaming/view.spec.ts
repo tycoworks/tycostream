@@ -1,7 +1,7 @@
 import { View } from './view';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 import { Subject, Observable } from 'rxjs';
-import type { StreamingService } from './streaming.service';
+import type { Source } from './streaming.service';
 
 // Empty filter that matches all rows
 const EMPTY_FILTER: Filter = {
@@ -11,13 +11,13 @@ const EMPTY_FILTER: Filter = {
 };
 
 describe('View', () => {
-  let mockStreamingService: jest.Mocked<StreamingService>;
+  let mockSource: jest.Mocked<Source>;
   let mockUpdates$: Subject<RowUpdateEvent>;
   
   beforeEach(() => {
     mockUpdates$ = new Subject<RowUpdateEvent>();
     
-    mockStreamingService = {
+    mockSource = {
       getPrimaryKeyField: jest.fn().mockReturnValue('id'),
       getUpdates: jest.fn().mockReturnValue(mockUpdates$),
       onModuleDestroy: jest.fn()
@@ -25,7 +25,7 @@ describe('View', () => {
   });
   describe('processEvent', () => {
     it('should pass through events when empty filter is provided', () => {
-      const view = new View(EMPTY_FILTER, mockStreamingService);
+      const view = new View(EMPTY_FILTER, mockSource);
       
       const insertEvent: RowUpdateEvent = {
         type: RowUpdateType.Insert,
@@ -44,7 +44,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockStreamingService);
+      const view = new View(filter, mockSource);
       
       const event: RowUpdateEvent = {
         type: RowUpdateType.Update,
@@ -65,7 +65,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockStreamingService);
+      const view = new View(filter, mockSource);
       
       // First, add row to view
       view.processEvent({
@@ -94,7 +94,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockStreamingService);
+      const view = new View(filter, mockSource);
       
       // First, add row to view
       view.processEvent({
@@ -121,7 +121,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockStreamingService);
+      const view = new View(filter, mockSource);
       
       const event: RowUpdateEvent = {
         type: RowUpdateType.Insert,
@@ -134,7 +134,7 @@ describe('View', () => {
     });
     
     it('should handle DELETE events correctly', () => {
-      const view = new View(EMPTY_FILTER, mockStreamingService);
+      const view = new View(EMPTY_FILTER, mockSource);
       
       // First insert a row
       view.processEvent({
@@ -162,7 +162,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockStreamingService);
+      const view = new View(filter, mockSource);
       
       // First insert to establish visibility
       view.processEvent({
@@ -194,7 +194,7 @@ describe('View', () => {
         fields: new Set(['value']),
         evaluate: (row) => row.value > 10
       };
-      const view = new View(filter, mockStreamingService);
+      const view = new View(filter, mockSource);
       
       // Subscribe to the view's updates
       const receivedEvents: RowUpdateEvent[] = [];

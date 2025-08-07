@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { StreamingManagerService } from './manager.service';
+import { SourceService } from './manager.service';
 import { View } from './view';
 import type { RowUpdateEvent, Filter } from './types';
 
@@ -23,7 +23,7 @@ export class ViewService implements OnModuleDestroy {
   private readonly logger = new Logger(ViewService.name);
 
   constructor(
-    private streamingManager: StreamingManagerService
+    private sourceService: SourceService
   ) {}
 
   /**
@@ -33,11 +33,11 @@ export class ViewService implements OnModuleDestroy {
     // Normalize null/undefined filters to EMPTY_FILTER
     const viewFilter = filter || EMPTY_FILTER;
     
-    // Get the streaming service for this source
-    const streamingService = this.streamingManager.getStreamingService(sourceName);
+    // Get the source for this data source
+    const source = this.sourceService.getSource(sourceName);
     
     // Create a new view for each subscriber (no caching)
-    const view = new View(viewFilter, streamingService);
+    const view = new View(viewFilter, source);
     
     this.logger.debug(`Created new view for source: ${sourceName}, filter: ${viewFilter.expression || '(empty)'}`);
     
