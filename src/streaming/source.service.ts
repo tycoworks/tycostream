@@ -69,6 +69,13 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
     }
 
     let source = this.sources.get(sourceName);
+    
+    // Check if existing source is disposed and needs recreation
+    if (source && source.isDisposed) {
+      this.logger.debug(`Source ${sourceName} is disposed, already cleaned up`);
+      source = undefined;
+    }
+    
     if (!source) {
       source = this.createSource(sourceDef);
       this.sources.set(sourceName, source);
@@ -86,13 +93,30 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
     // Create protocol handler for this source
     const protocolHandler = new MaterializeProtocolHandler(sourceDef, sourceDef.name);
     
-    // Create source
+    // Get or create the database stream
+    const databaseStream = this.streamService.getStream(sourceDef.name, protocolHandler);
+    
+    // Create source with the stream instance and cleanup callback
     return new Source(
-      this.streamService,
+      databaseStream,
       sourceDef,
-      sourceDef.name,
-      protocolHandler
+      () => this.removeSource(sourceDef.name)
     );
+  }
+
+  /**
+   * Remove a source when it's no longer needed
+   * Called by Source when disposing itself
+   */
+  removeSource(sourceName: string): void {
+    const source = this.sources.get(sourceName);
+    if (source) {
+      this.logger.log(`Removing source: ${sourceName}`);
+      // Remove from sources map
+      this.sources.delete(sourceName);
+      // Remove the associated database stream
+      this.streamService.removeStream(sourceName);
+    }
   }
 
 }

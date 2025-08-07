@@ -1,8 +1,6 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable, Subject, ReplaySubject, filter, map, concat, from, finalize } from 'rxjs';
-import { DatabaseStreamService } from '../database/stream.service';
 import { DatabaseStream } from '../database/stream';
-import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
 import type { SourceDefinition } from '../config/source.types';
 import { RowUpdateType, type RowUpdateEvent } from './types';
@@ -19,24 +17,20 @@ export class Source implements OnModuleDestroy {
   private readonly logger = new Logger(Source.name);
   private readonly cache: Cache;
   private readonly internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
-  private readonly databaseStream: DatabaseStream;
   private latestTimestamp = BigInt(0);
   private isShuttingDown = false;
   private activeSubscribers = 0;
 
   constructor(
-    private streamService: DatabaseStreamService,
+    private readonly databaseStream: DatabaseStream,
     private readonly sourceDef: SourceDefinition,
-    private readonly sourceName: string,
-    private readonly protocolHandler: ProtocolHandler
+    private readonly onDispose: () => void
   ) {
     this.cache = new SimpleCache(sourceDef.primaryKeyField);
-    // Get the database stream from the stream service
-    this.databaseStream = streamService.getStream(sourceName, protocolHandler);
     
     // Start streaming immediately since we're created on-demand
     this.startStreaming().catch(error => {
-      this.logger.error(`Failed to start streaming for ${this.sourceName}`, error);
+      this.logger.error(`Failed to start streaming for ${this.sourceDef.name}`, error);
       // Database connection errors are unrecoverable - trigger application shutdown
       this.handleFatalError(error);
     });
@@ -79,19 +73,19 @@ export class Source implements OnModuleDestroy {
     
     // Track subscriber
     this.activeSubscribers++;
-    this.logger.debug(`Consumer connected - source: ${this.sourceName}, cacheSize: ${this.cache.size}, subscribers: ${this.activeSubscribers}`);
+    this.logger.debug(`Consumer connected - source: ${this.sourceDef.name}, cacheSize: ${this.cache.size}, subscribers: ${this.activeSubscribers}`);
     
     // Concat: First emit all snapshot events, then emit buffered live events
     return concat(snapshot$, buffer$).pipe(
       finalize(() => {
         this.activeSubscribers--;
-        this.logger.debug(`Consumer disconnected - source: ${this.sourceName}, subscribers: ${this.activeSubscribers}`);
+        this.logger.debug(`Consumer disconnected - source: ${this.sourceDef.name}, subscribers: ${this.activeSubscribers}`);
         subscription.unsubscribe();
         buffer$.complete();
         
         // Dispose when last subscriber disconnects
         if (this.activeSubscribers === 0 && !this.isShuttingDown) {
-          this.logger.log(`No more subscribers for ${this.sourceName}, disposing resources`);
+          this.logger.log(`No more subscribers for ${this.sourceDef.name}, disposing resources`);
           // Use setTimeout to avoid disposing while still in the observable chain
           setTimeout(() => {
             if (this.activeSubscribers === 0) {
@@ -134,7 +128,7 @@ export class Source implements OnModuleDestroy {
         },
         (error: Error) => {
           // Log runtime database errors
-          this.logger.error(`Database stream error for ${this.sourceName}`);
+          this.logger.error(`Database stream error for ${this.sourceDef.name}`);
           
           // If we're shutting down, don't trigger fail-fast
           if (!this.isShuttingDown) {
@@ -238,7 +232,7 @@ export class Source implements OnModuleDestroy {
       action = eventType === RowUpdateType.Insert ? 'Added to' : 'Updated in';
     }
     
-    this.logger.debug(`${action} cache - source: ${this.sourceName}, primaryKey: ${primaryKey}, cacheSize: ${this.cache.size}, data: ${truncateForLog(logData)}`);
+    this.logger.debug(`${action} cache - source: ${this.sourceDef.name}, primaryKey: ${primaryKey}, cacheSize: ${this.cache.size}, data: ${truncateForLog(logData)}`);
   }
 
   /**
@@ -258,6 +252,8 @@ export class Source implements OnModuleDestroy {
    */
   private handleFatalError(error: Error): void {
     this.logger.warn(`Triggering application shutdown due to database error`);
+    // Clean up this broken Source before failing
+    this.dispose();
     // In NestJS, we should throw an unhandled error to trigger shutdown
     // The error will bubble up and cause the application to exit
     setTimeout(() => {
@@ -275,15 +271,18 @@ export class Source implements OnModuleDestroy {
     }
     
     this.isShuttingDown = true;
-    this.logger.log(`Disposing Source for ${this.sourceName}`);
+    this.logger.log(`Disposing Source for ${this.sourceDef.name}`);
     
     // Clear the cache
     this.cache.clear();
-    this.logger.debug(`Cache cleared for ${this.sourceName}`);
+    this.logger.debug(`Cache cleared for ${this.sourceDef.name}`);
     
-    // Notify stream service to remove the stream
-    this.streamService.removeStream(this.sourceName);
-    this.logger.debug(`Database stream removed for ${this.sourceName}`);
+    // Disconnect the database stream
+    this.databaseStream.disconnect();
+    this.logger.debug(`Database stream disconnected for ${this.sourceDef.name}`);
+    
+    // Notify parent to clean up resources
+    this.onDispose();
     
     // Complete the internal updates subject
     this.internalUpdates$.complete();

@@ -120,6 +120,56 @@ describe('SourceService', () => {
         sourceService.getSource('unknown_source');
       }).toThrow('Unknown source: unknown_source. Available sources: trades, live_pnl');
     });
+
+    it('should create fresh source when existing one is disposed', () => {
+      // Get initial source
+      const firstSource = sourceService.getSource('trades');
+      expect(firstSource).toBeDefined();
+      
+      // Mock the source as disposed
+      Object.defineProperty(firstSource, 'isDisposed', {
+        get: jest.fn().mockReturnValue(true),
+        configurable: true
+      });
+      
+      // Get source again - should create a new one
+      const secondSource = sourceService.getSource('trades');
+      
+      // Should be a different instance
+      expect(secondSource).not.toBe(firstSource);
+      expect(secondSource).toBeDefined();
+    });
+  });
+
+  describe('removeSource', () => {
+    beforeEach(async () => {
+      mockConfigService.get.mockReturnValue(mockSourceDefs);
+      await sourceService.onModuleInit();
+    });
+
+    it('should remove source and its database stream', () => {
+      // Create a source first
+      const source = sourceService.getSource('trades');
+      expect(source).toBeDefined();
+      
+      // Remove it
+      sourceService.removeSource('trades');
+      
+      // Verify database stream was removed
+      expect(mockConnectionService.removeStream).toHaveBeenCalledWith('trades');
+      
+      // Getting the source again should create a new one
+      const newSource = sourceService.getSource('trades');
+      expect(newSource).not.toBe(source);
+    });
+
+    it('should handle removing non-existent source gracefully', () => {
+      // Should not throw
+      expect(() => sourceService.removeSource('non_existent')).not.toThrow();
+      
+      // Should not call removeStream for non-existent source
+      expect(mockConnectionService.removeStream).not.toHaveBeenCalled();
+    });
   });
 
   describe('lifecycle management', () => {

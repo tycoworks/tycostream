@@ -35,7 +35,7 @@ export class DatabaseStreamService implements OnModuleDestroy {
 
   /**
    * Remove a stream when it's no longer needed
-   * Called by StreamingService when disposing
+   * Called by SourceService when disposing a Source
    */
   removeStream(sourceName: string): void {
     const stream = this.streams.get(sourceName);

@@ -1,7 +1,5 @@
 import { Source } from './source';
-import { DatabaseStreamService } from '../database/stream.service';
 import type { SourceDefinition } from '../config/source.types';
-import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
 import { RowUpdateType, type RowUpdateEvent } from './types';
 import { take, toArray } from 'rxjs/operators';
@@ -23,7 +21,6 @@ jest.mock('../database/stream', () => {
 
 describe('Source', () => {
   let source: Source;
-  let streamService: DatabaseStreamService;
 
   const mockSourceDef: SourceDefinition = {
     name: 'test_source',
@@ -40,25 +37,15 @@ describe('Source', () => {
     end: jest.fn()
   };
 
-  const mockStreamService = {
-    connect: jest.fn().mockResolvedValue(mockClient),
-    disconnect: jest.fn().mockResolvedValue(undefined),
-    getStream: jest.fn().mockReturnValue(mockDatabaseStream),
-    removeStream: jest.fn()
-  };
-
-  const mockProtocolHandler: ProtocolHandler = {
-    createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE TO test_source'),
-    parseLine: jest.fn()
-  };
-
   beforeEach(() => {
-    streamService = mockStreamService as any;
+    // Reset mock database stream
+    mockDatabaseStream.connect.mockClear();
+    mockDatabaseStream.disconnect.mockClear();
+    
     source = new Source(
-      streamService as any,
+      mockDatabaseStream as any,
       mockSourceDef,
-      'test_source',
-      mockProtocolHandler
+      jest.fn()  // Required callback
     );
   });
 
@@ -197,6 +184,21 @@ describe('Source', () => {
       await source.onModuleDestroy();
       
       expect(() => source.getUpdates()).toThrow('shutting down');
+    });
+
+    it('should call disposal callback when disposed', async () => {
+      const onDispose = jest.fn();
+      const sourceWithCallback = new Source(
+        mockDatabaseStream as any,
+        mockSourceDef,
+        onDispose
+      );
+      
+      // Trigger disposal via onModuleDestroy
+      await sourceWithCallback.onModuleDestroy();
+      
+      expect(onDispose).toHaveBeenCalled();
+      expect(mockDatabaseStream.disconnect).toHaveBeenCalled();
     });
   });
 });
