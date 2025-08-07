@@ -7,54 +7,127 @@ import { createClient } from 'graphql-ws';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-const columnConfig = getColumnConfig();
-const fields = Object.keys(columnConfig);
+// State for currently selected instrument
+let selectedInstrumentId = null;
+let tradesSubscription = null;
 
-const subscription = gql`
+// Setup positions grid
+const positionsColumnConfig = getPositionsColumnConfig();
+const positionsFields = Object.keys(positionsColumnConfig);
+
+// GraphQL query strings
+const POSITIONS_SUBSCRIPTION = `
   subscription LivePnlSubscription {
     live_pnl {
       operation
       data {
-        ${fields.join('\n        ')}
+        ${positionsFields.join('\n        ')}
       }
       fields
     }
   }
 `;
 
-const gridApi = createPnlGrid();
+const positionsGridApi = createPositionsGrid();
 
+// Setup trades grid
+const tradesColumnConfig = getTradesColumnConfig();
+const tradesFields = Object.keys(tradesColumnConfig);
+
+const TRADES_SUBSCRIPTION = `
+  subscription TradesSubscription {
+    trades(where: {instrument_id: {_eq: $instrumentId}}) {
+      operation
+      data {
+        ${tradesFields.join('\n        ')}
+      }
+      fields
+    }
+  }
+`;
+
+const tradesGridApi = createTradesGrid();
+
+// Setup Apollo client
+const wsClient = createClient({ url: 'ws://localhost:4000/graphql' });
 const client = new ApolloClient({
-  link: new GraphQLWsLink(createClient({ url: 'ws://localhost:4000/graphql' })),
+  link: new GraphQLWsLink(wsClient),
   cache: new InMemoryCache()
 });
 
-client.subscribe({ query: subscription }).subscribe(({ data }) => {
-  if (!data?.live_pnl) return;
-  
-  const { operation, data: rowData, fields: changedFields } = data.live_pnl;
-  if (!rowData) return;
-  
+// Subscribe to positions
+subscribeToPositions();
+
+function subscribeToPositions() {
+  client.subscribe({ query: gql(POSITIONS_SUBSCRIPTION) }).subscribe(({ data }) => {
+    if (!data?.live_pnl) return;
+    
+    const { operation, data: rowData, fields: changedFields } = data.live_pnl;
+    if (!rowData) return;
+    
+    handleGridUpdate(positionsGridApi, operation, rowData, changedFields, 'instrument_id');
+    
+    // If deleted position was selected, clear trades
+    if (operation === 'DELETE' && rowData.instrument_id === selectedInstrumentId) {
+      selectPosition(null);
+    }
+  });
+}
+
+function handleGridUpdate(gridApi, operation, rowData, changedFields, idField, addIndex) {
   switch (operation) {
     case 'DELETE':
       gridApi.applyTransaction({ remove: [rowData] });
       break;
     case 'UPDATE':
-      const updatedRow = mergeWithExistingRow(rowData, changedFields);
+      const updatedRow = mergeWithExistingRow(gridApi, rowData, changedFields, idField);
       if (updatedRow) {
         gridApi.applyTransaction({ update: [updatedRow] });
       } else {
-        console.warn(`UPDATE received for non-existent row with instrument_id=${rowData.instrument_id}`);
+        console.warn(`UPDATE received for non-existent row with ${idField}=${rowData[idField]}`);
       }
       break;
     case 'INSERT':
-      gridApi.applyTransaction({ add: [rowData] });
+      const options = addIndex !== undefined 
+        ? { add: [rowData], addIndex }
+        : { add: [rowData] };
+      gridApi.applyTransaction(options);
       break;
   }
-});
+}
 
-function mergeWithExistingRow(deltaData, changedFields) {
-  const rowNode = gridApi.getRowNode(String(deltaData.instrument_id));
+function selectPosition(instrumentId) {
+  // Unsubscribe from previous trades subscription
+  if (tradesSubscription) {
+    tradesSubscription.unsubscribe();
+    tradesSubscription = null;
+  }
+  
+  selectedInstrumentId = instrumentId;
+  
+  // Clear trades grid
+  const allRows = [];
+  tradesGridApi.forEachNode(node => allRows.push(node.data));
+  tradesGridApi.applyTransaction({ remove: allRows });
+  
+  // If no position selected, we're done
+  if (!instrumentId) return;
+  
+  // Subscribe to trades for this instrument
+  const tradesQuery = TRADES_SUBSCRIPTION.replace('$instrumentId', instrumentId);
+  tradesSubscription = client.subscribe({ query: gql(tradesQuery) }).subscribe(({ data }) => {
+    if (!data?.trades) return;
+    
+    const { operation, data: rowData, fields: changedFields } = data.trades;
+    if (!rowData) return;
+    
+    // Add at the top for newest trades first
+    handleGridUpdate(tradesGridApi, operation, rowData, changedFields, 'id', 0);
+  });
+}
+
+function mergeWithExistingRow(gridApi, deltaData, changedFields, idField) {
+  const rowNode = gridApi.getRowNode(String(deltaData[idField]));
   if (!rowNode?.data) return null;
   
   // Start with existing row data
@@ -72,7 +145,7 @@ function mergeWithExistingRow(deltaData, changedFields) {
   return merged;
 }
 
-function getColumnConfig() {
+function getPositionsColumnConfig() {
   return {
     instrument_id: { hide: true },
     symbol: { headerName: 'Symbol' },
@@ -103,6 +176,32 @@ function getColumnConfig() {
   };
 }
 
+function getTradesColumnConfig() {
+  return {
+    executed_at: { 
+      headerName: 'Executed At',
+      width: 200,
+      valueFormatter: params => {
+        if (!params.value) return '';
+        const date = new Date(params.value);
+        return date.toLocaleString();
+      }
+    },
+    id: { hide: true },
+    instrument_id: { hide: true },
+    quantity: { 
+      headerName: 'Quantity',
+      width: 120,
+      valueFormatter: params => params.value != null ? Number(params.value).toLocaleString() : ''
+    },
+    price: { 
+      headerName: 'Price',
+      width: 120,
+      valueFormatter: params => params.value != null ? Number(params.value).toFixed(2) : ''
+    }
+  };
+}
+
 function getPnlColumnConfig() {
   return {
     valueFormatter: params => params.value != null 
@@ -114,10 +213,31 @@ function getPnlColumnConfig() {
   };
 }
 
-function createPnlGrid() {
-  return createGrid(document.querySelector('#grid'), {
-    columnDefs: fields.map(field => ({ field, ...columnConfig[field] })),
+function createPositionsGrid() {
+  const gridApi = createGrid(document.querySelector('#positions-grid'), {
+    theme: 'legacy',
+    columnDefs: positionsFields.map(field => ({ field, ...positionsColumnConfig[field] })),
     rowData: [],
-    getRowId: params => String(params.data.instrument_id)
+    getRowId: params => String(params.data.instrument_id),
+    rowSelection: { mode: 'singleRow' },
+    onRowClicked: (event) => {
+      const instrumentId = event.data.instrument_id;
+      selectPosition(instrumentId);
+    }
+  });
+  
+  return gridApi;
+}
+
+function createTradesGrid() {
+  return createGrid(document.querySelector('#trades-grid'), {
+    theme: 'legacy',
+    columnDefs: tradesFields.map(field => ({ field, ...tradesColumnConfig[field] })),
+    rowData: [],
+    getRowId: params => String(params.data.id),
+    defaultColDef: {
+      sortable: true,
+      resizable: true
+    }
   });
 }

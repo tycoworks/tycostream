@@ -2,12 +2,34 @@
 <html>
 <head>
   <style>
-    body { margin: 0; }
-    #grid { height: 100vh; width: 100vw; }
+    body { 
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #positions-grid { 
+      height: 50vh; 
+      width: 100vw;
+      border-bottom: 2px solid #ccc;
+    }
+    #trades-grid { 
+      height: 50vh; 
+      width: 100vw;
+    }
+    .grid-title {
+      padding: 8px;
+      background: #f0f0f0;
+      font-weight: bold;
+      border-bottom: 1px solid #ddd;
+    }
   </style>
 </head>
 <body>
-  <div id="grid" class="ag-theme-alpine"></div>
+  <div class="grid-title">Positions</div>
+  <div id="positions-grid" class="ag-theme-alpine"></div>
+  <div class="grid-title">Trades</div>
+  <div id="trades-grid" class="ag-theme-alpine"></div>
   <script type="module" src="/main.js"></script>
 </body>
 </html>

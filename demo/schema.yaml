@@ -9,3 +9,12 @@ sources:
       market_value: double precision
       realized_pnl: double precision
       unrealized_pnl: double precision
+  
+  trades:
+    primary_key: id
+    columns:
+      id: integer
+      instrument_id: integer
+      quantity: integer
+      price: numeric
+      executed_at: timestamp without time zone
