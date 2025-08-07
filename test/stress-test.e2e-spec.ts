@@ -10,10 +10,18 @@ enum Status {
   Pending = 'pending'
 }
 
+enum Department {
+  Sales = 'sales',
+  Engineering = 'engineering',
+  Operations = 'operations',
+  Finance = 'finance'
+}
+
 interface StressTestData {
   id: number;
   value: number;
   status: Status;
+  department: string;
 }
 
 // Define updatable fields (excluding primary key)
@@ -29,6 +37,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   const INSERT_DELAY_MS = process.env.STRESS_TEST_DELAY ? parseInt(process.env.STRESS_TEST_DELAY) : 5;
   const CLIENT_LIVENESS_TIMEOUT_MS = 120000; // 120 seconds without messages = stalled
   const TEST_TIMEOUT_MS = 600000; // 10 minutes total test timeout
+  const DEPARTMENTS = Object.values(Department);
 
   beforeAll(async () => {
     console.log(`Starting stress test with ${NUM_ROWS} rows and ${NUM_CLIENTS} concurrent clients`);
@@ -45,7 +54,8 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       CREATE TABLE IF NOT EXISTS stress_test (
         id INTEGER NOT NULL,
         value NUMERIC NOT NULL,
-        status VARCHAR(10) NOT NULL
+        status VARCHAR(10) NOT NULL,
+        department VARCHAR(20) NOT NULL
       )
     `);
   }, 300000); // 5 minute timeout for beforeAll
@@ -60,10 +70,15 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     
     // Generate test operations
     console.log(`Generating ${NUM_ROWS} rows worth of operations...`);
-    const { operations, expectedState } = generateTestOperations(NUM_ROWS);
+    const { operations, expectedStates } = generateTestOperations(NUM_ROWS);
     const operationCount = operations.length;
     
-    console.log(`Expected final state: ${expectedState.size} rows, ${operationCount} total operations`);
+    let totalRows = 0;
+    expectedStates.forEach((state, dept) => totalRows += state.size);
+    console.log(`Expected final state: ${totalRows} rows, ${operationCount} total operations`);
+    expectedStates.forEach((state, dept) => {
+      console.log(`  ${dept}: ${state.size} rows`);
+    });
     
     // Create client manager
     const clientManager = new TestClientManager(testEnv.port, CLIENT_LIVENESS_TIMEOUT_MS);
@@ -82,27 +97,41 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       console.log('Creating clients at staggered intervals...');
       const clientSpawnInterval = Math.floor((NUM_ROWS * INSERT_DELAY_MS * 2.5) / NUM_CLIENTS);
       
-      await clientManager.startClients(NUM_CLIENTS, clientSpawnInterval, {
-        query: `
-          subscription {
-            stress_test {
-              operation
-              data {
-                id
-                value
-                status
+      // Start clients with department filters
+      for (let i = 0; i < NUM_CLIENTS; i++) {
+        const clientDepartment = DEPARTMENTS[i % DEPARTMENTS.length];
+        const departmentExpectedState = expectedStates.get(clientDepartment)!;
+        
+        console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
+        
+        await clientManager.startClient({
+          query: `
+            subscription {
+              stress_test(where: {department: {_eq: "${clientDepartment}"}}) {
+                operation
+                data {
+                  id
+                  value
+                  status
+                  department
+                }
+                fields
               }
-              fields
             }
+          `,
+          expectedState: departmentExpectedState,
+          dataPath: 'stress_test',
+          idField: 'id',
+          onOperation: (operation, data) => {
+            console.log(`Client received ${operation} for id ${data?.id || 'unknown'}`);            // Silent - we log summary at the end
           }
-        `,
-        expectedState,
-        dataPath: 'stress_test',
-        idField: 'id',
-        onOperation: (operation, data) => {
-          console.log(`Client received ${operation} for id ${data?.id || 'unknown'}`);
+        });
+        
+        // Stagger client creation to avoid thundering herd
+        if (i < NUM_CLIENTS - 1) {
+          await new Promise(resolve => setTimeout(resolve, clientSpawnInterval));
         }
-      });
+      }
       
       // Wait for all operations to complete
       await operationsPromise;
@@ -113,7 +142,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       // Wait for either all clients to finish or timeout
       await clientManager.waitForCompletion();
       
-      console.log(`Stress test completed successfully. All ${NUM_CLIENTS} clients received identical data.`);
+      console.log(`Stress test completed successfully. All ${NUM_CLIENTS} clients received their department-filtered data.`);
       
       // Log final stats
       const stats = clientManager.stats;
@@ -143,10 +172,11 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
 // Helper function to generate test operations
 function generateTestOperations(numRows: number): {
   operations: Array<{ sql: string, params: any[] }>,
-  expectedState: Map<number, StressTestData>
+  expectedStates: Map<Department, Map<number, StressTestData>>
 } {
   const expectedState = new Map<number, StressTestData>();
   const operations: Array<{ sql: string, params: any[] }> = [];
+  const departments = Object.values(Department);
   
   // Use deterministic random for reproducible results
   let seed = 12345;
@@ -162,11 +192,13 @@ function generateTestOperations(numRows: number): {
     // INSERT
     const insertValue = Math.floor(random() * 1000);
     const insertStatus = statusValues[i % statusValues.length];
+    const insertDepartment = departments[i % departments.length];
     operations.push({ 
-      sql: 'INSERT INTO stress_test (id, value, status) VALUES ($1, $2, $3)',
-      params: [i, insertValue, insertStatus]
+      sql: 'INSERT INTO stress_test (id, value, status, department) VALUES ($1, $2, $3, $4)',
+      params: [i, insertValue, insertStatus, insertDepartment]
     });
-    expectedState.set(i, { id: i, value: insertValue, status: insertStatus });
+    const row = { id: i, value: insertValue, status: insertStatus, department: insertDepartment };
+    expectedState.set(i, row);
     
     // UPDATE (only update existing rows)
     if (i > 10) {
@@ -207,7 +239,19 @@ function generateTestOperations(numRows: number): {
     }
   }
   
-  return { operations, expectedState };
+  // Filter final state by department
+  const expectedStates = new Map<Department, Map<number, StressTestData>>();
+  for (const dept of departments) {
+    const deptState = new Map<number, StressTestData>();
+    expectedState.forEach((row, id) => {
+      if (row.department === dept) {
+        deptState.set(id, row);
+      }
+    });
+    expectedStates.set(dept, deptState);
+  }
+  
+  return { operations, expectedStates };
 }
 
 // Helper to build partial UPDATE statements based on bit pattern
