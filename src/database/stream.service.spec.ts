@@ -118,6 +118,24 @@ describe('DatabaseStreamService', () => {
       // Each stream is created with its respective source name (verified via mock calls)
     });
 
+    it('should create fresh stream when existing one is disposed', () => {
+      const firstStream = service.getStream('test_source', mockProtocolHandler);
+      expect(firstStream).toBeDefined();
+      
+      // Mock the stream as disposed
+      Object.defineProperty(firstStream, 'isDisposed', {
+        get: jest.fn().mockReturnValue(true),
+        configurable: true
+      });
+      
+      // Get stream again - should create a new one
+      const secondStream = service.getStream('test_source', mockProtocolHandler);
+      
+      // Should be a different instance
+      expect(secondStream).not.toBe(firstStream);
+      expect(DatabaseStream).toHaveBeenCalledTimes(2);
+    });
+
     it('should handle multiple protocol handlers for same source', () => {
       const protocolHandler1: ProtocolHandler = {
         createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE 1'),

@@ -21,16 +21,25 @@ export class DatabaseStreamService implements OnModuleDestroy {
    * Manages the lifecycle of database streams
    */
   getStream(sourceName: string, protocolHandler: ProtocolHandler): DatabaseStream {
-    if (!this.streams.has(sourceName)) {
+    let stream = this.streams.get(sourceName);
+    
+    // Check if existing stream is disposed and needs recreation
+    if (stream && stream.isDisposed) {
+      this.logger.debug(`DatabaseStream ${sourceName} is disposed, creating fresh instance`);
+      this.streams.delete(sourceName);
+      stream = undefined;
+    }
+    
+    if (!stream) {
       this.logger.log(`Creating new database stream for source: ${sourceName}`);
       const config = this.configService.get<DatabaseConfig>('database');
       if (!config) {
         throw new Error('Database configuration not found');
       }
-      const stream = new DatabaseStream(config, sourceName, protocolHandler);
+      stream = new DatabaseStream(config, sourceName, protocolHandler);
       this.streams.set(sourceName, stream);
     }
-    return this.streams.get(sourceName)!;
+    return stream;
   }
 
   /**

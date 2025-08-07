@@ -30,6 +30,13 @@ export class DatabaseStream {
   ) {}
 
   /**
+   * Check if this stream has been disconnected
+   */
+  get isDisposed(): boolean {
+    return this.isShuttingDown;
+  }
+
+  /**
    * Connect to database and begin COPY stream for continuous updates
    * Follows pg client naming convention
    */
