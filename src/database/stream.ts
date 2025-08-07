@@ -71,12 +71,15 @@ export class DatabaseStream implements OnModuleDestroy {
       });
 
       copyStream.on('error', (error) => {
-        this.logger.error('Stream error');
         this.connected = false;
         
-        // Notify parent of runtime error
-        if (this.errorCallback) {
-          this.errorCallback(error);
+        // Only treat as error if not shutting down
+        if (!this.isShuttingDown) {
+          this.logger.error('Stream error');
+          // Notify parent of runtime error
+          if (this.errorCallback) {
+            this.errorCallback(error);
+          }
         }
       });
 
