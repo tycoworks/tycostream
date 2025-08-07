@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Observable, filter, map } from 'rxjs';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
-import type { Source } from './streaming.service';
+import type { Source } from './source';
 
 /**
  * View represents a filtered subset of a data stream

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { SourceService } from './manager.service';
+import { SourceService } from './source.service';
 import { DatabaseStreamService } from '../database/stream.service';
 import type { SourceDefinition } from '../config/source.types';
 

@@ -1,4 +1,4 @@
-import { Source } from './streaming.service';
+import { Source } from './source';
 import { DatabaseStreamService } from '../database/stream.service';
 import type { SourceDefinition } from '../config/source.types';
 import type { ProtocolHandler } from '../database/types';

@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { SourceService } from './manager.service';
+import { SourceService } from './source.service';
 import { View } from './view';
 import type { RowUpdateEvent, Filter } from './types';
 

@@ -1,7 +1,7 @@
 import { View } from './view';
 import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 import { Subject, Observable } from 'rxjs';
-import type { Source } from './streaming.service';
+import type { Source } from './source';
 
 // Empty filter that matches all rows
 const EMPTY_FILTER: Filter = {

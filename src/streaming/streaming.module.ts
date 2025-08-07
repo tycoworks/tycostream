@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
-import { SourceService } from './manager.service';
+import { SourceService } from './source.service';
 import { ViewService } from './view.service';
 
 /**
