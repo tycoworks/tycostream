@@ -122,7 +122,7 @@ Simple filtering (`stream.filter(predicate)`) doesn't work for subscriptions bec
 The system follows a clean streaming architecture:
 
 ```
-StreamingService (provides unified stream of snapshot + live events)
+Source (provides unified stream of snapshot + live events)
     ↓
 ViewService (manages filtered views)
     ↓
@@ -151,14 +151,14 @@ Everything is treated as a stream of events. Snapshots are replayed as INSERT ev
 
 ### Separation of Concerns
 
-- **StreamingService**: Manages cache and provides unified event stream
-- **ViewService**: Creates and manages filtered views with subscriber tracking
-- **View**: Pure stream transformer that applies filter expressions
+- **Source**: Manages cache and provides unified event stream
+- **ViewService**: Creates filtered views for each subscription
+- **View**: Stateful stream transformer that applies filter expressions and tracks visible keys
 
 ### Performance Optimizations
 
 1. **Filter Compilation Caching**: Compiled filters are cached by expression string to avoid re-parsing
-2. **View Sharing**: Multiple subscribers with the same filter share one View instance
+2. **Separate Views Per Subscriber**: Each subscriber gets their own View instance (future optimization: share views with identical filters)
 3. **Field-Level Optimization**: Skip filter evaluation when changed fields don't affect filter predicates
 4. **Efficient State Tracking**: Views store only primary keys, not full row copies
 

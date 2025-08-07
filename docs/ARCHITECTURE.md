@@ -46,7 +46,7 @@ Handles all interaction with Materialize:
 
 ### Streaming Module (`src/streaming/`)
 Bridges database and GraphQL layers:
-- Management of streaming service instances per source
+- Management of Source instances per data source
 - Snapshot replay and live update unification
 - Filtered view creation and lifecycle management
 - Filter expression evaluation on event streams
@@ -73,11 +73,11 @@ Shared infrastructure:
 1. **Initial Connection**
    - Client connects via GraphQL WebSocket subscription with optional filter
    - ViewService creates or reuses a View for the source + filter combination
-   - StreamingService connects to database if not already connected
+   - Source connects to database if not already connected
 
 2. **State Synchronization**
    - SUBSCRIBE query captures current source state via COPY protocol
-   - Initial rows populate StreamingService's in-memory cache
+   - Initial rows populate Source's in-memory cache
    - View filters cached state based on filter expression
    - Client receives filtered snapshot as individual events
 
