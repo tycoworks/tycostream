@@ -47,10 +47,8 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Shutting down source service...');
     
     // Clean up all sources
-    // Note: We call onModuleDestroy() directly because these sources
-    // are dynamically created and not managed by NestJS DI container
     const cleanupPromises = Array.from(this.sources.values()).map(
-      source => source.onModuleDestroy()
+      source => source.dispose()
     );
     
     await Promise.all(cleanupPromises);

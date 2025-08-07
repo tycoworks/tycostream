@@ -9,7 +9,6 @@ import { firstValueFrom } from 'rxjs';
 const mockDatabaseStream = {
   connect: jest.fn().mockResolvedValue(undefined),
   disconnect: jest.fn(),
-  onModuleDestroy: jest.fn().mockResolvedValue(undefined),
   streaming: false
 };
 
@@ -180,8 +179,8 @@ describe('Source', () => {
   });
 
   describe('lifecycle', () => {
-    it('should reject new subscriptions after shutdown', async () => {
-      await source.onModuleDestroy();
+    it('should reject new subscriptions after shutdown', () => {
+      source.dispose();
       
       expect(() => source.getUpdates()).toThrow('shutting down');
     });
@@ -194,8 +193,8 @@ describe('Source', () => {
         onDispose
       );
       
-      // Trigger disposal via onModuleDestroy
-      await sourceWithCallback.onModuleDestroy();
+      // Trigger disposal
+      sourceWithCallback.dispose();
       
       expect(onDispose).toHaveBeenCalled();
       expect(mockDatabaseStream.disconnect).toHaveBeenCalled();

@@ -184,8 +184,8 @@ describe('SourceService', () => {
       const pnlService = sourceService.getSource('live_pnl');
       
       // Spy on their cleanup methods
-      const tradesCleanup = jest.spyOn(tradesService, 'onModuleDestroy');
-      const pnlCleanup = jest.spyOn(pnlService, 'onModuleDestroy');
+      const tradesCleanup = jest.spyOn(tradesService, 'dispose');
+      const pnlCleanup = jest.spyOn(pnlService, 'dispose');
       
       // Destroy module
       await sourceService.onModuleDestroy();

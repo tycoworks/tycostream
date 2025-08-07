@@ -14,7 +14,7 @@ import type { DatabaseConfig } from '../config/database.config';
 const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
 const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
 
-export class DatabaseStream implements OnModuleDestroy {
+export class DatabaseStream {
   private readonly logger = new Logger(DatabaseStream.name);
   private readonly buffer = new StreamBuffer();
   private client: Client | null = null;
@@ -132,14 +132,6 @@ export class DatabaseStream implements OnModuleDestroy {
     }
   }
 
-  /**
-   * Cleanup on module destroy
-   * Delegates to disconnect() for cleanup
-   */
-  async onModuleDestroy() {
-    this.logger.log('Shutting down database stream...');
-    this.disconnect();
-  }
 
   /**
    * Create a new database client

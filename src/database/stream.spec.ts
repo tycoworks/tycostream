@@ -135,7 +135,7 @@ describe('DatabaseStream', () => {
       await stream.connect(mockUpdateCallback);
 
       // Destroy
-      await stream.onModuleDestroy();
+      stream.disconnect();
 
       expect(mockClient.end).toHaveBeenCalled();
     });
@@ -152,7 +152,7 @@ describe('DatabaseStream', () => {
       mockClient.end.mockRejectedValue(new Error('Disconnect failed'));
 
       // Should not throw
-      await expect(stream.onModuleDestroy()).resolves.toBeUndefined();
+      expect(() => stream.disconnect()).not.toThrow();
     });
   });
 

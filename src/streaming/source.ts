@@ -1,4 +1,4 @@
-import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { Observable, Subject, ReplaySubject, filter, map, concat, from, finalize } from 'rxjs';
 import { DatabaseStream } from '../database/stream';
 import { DatabaseRowUpdateType } from '../database/types';
@@ -13,7 +13,7 @@ import { truncateForLog } from '../common/logging.utils';
  * Domain object that manages cache and database streaming for a single source
  * Not injectable - created and managed by SourceService
  */
-export class Source implements OnModuleDestroy {
+export class Source {
   private readonly logger = new Logger(Source.name);
   private readonly cache: Cache;
   private readonly internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
@@ -105,15 +105,6 @@ export class Source implements OnModuleDestroy {
   }
 
 
-  /**
-   * Cleanup on module destroy
-   * Delegates to dispose() for actual cleanup
-   */
-  async onModuleDestroy() {
-    this.logger.log('Shutting down stream...');
-    this.dispose();
-    // dispose() already calls streamService.removeStream() which disconnects the stream
-  }
 
   /**
    * Start streaming from the database if not already active
@@ -265,7 +256,7 @@ export class Source implements OnModuleDestroy {
    * Dispose resources when no subscribers remain
    * Clears cache and stops database subscriber
    */
-  private dispose(): void {
+  dispose(): void {
     if (this.isShuttingDown) {
       return; // Already shutting down
     }
