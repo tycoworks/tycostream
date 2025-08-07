@@ -249,6 +249,33 @@ describe('DatabaseStream', () => {
   });
 
   describe('error propagation', () => {
+    it('should suppress errors during shutdown', async () => {
+      const mockUpdateCallback = jest.fn();
+      const mockErrorCallback = jest.fn();
+      
+      let errorCallback: (error: Error) => void;
+      const mockStream = {
+        on: jest.fn((event, callback) => {
+          if (event === 'error') {
+            errorCallback = callback;
+          }
+        })
+      };
+      mockClient.query.mockReturnValue(mockStream);
+
+      await stream.connect(mockUpdateCallback, mockErrorCallback);
+      
+      // Start shutdown
+      stream.disconnect();
+      
+      // Simulate error during shutdown - should be suppressed
+      const error = new Error('Connection lost during shutdown');
+      errorCallback!(error);
+      
+      // Error callback should NOT be called during shutdown
+      expect(mockErrorCallback).not.toHaveBeenCalled();
+    });
+
     it('should call error callback on stream error', async () => {
       const mockUpdateCallback = jest.fn();
       const mockErrorCallback = jest.fn();

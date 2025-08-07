@@ -178,6 +178,7 @@ describe('Source', () => {
     });
   });
 
+
   describe('lifecycle', () => {
     it('should reject new subscriptions after shutdown', () => {
       source.dispose();
