@@ -1,7 +1,7 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable, Subject, ReplaySubject, filter, map, concat, from, finalize } from 'rxjs';
-import { DatabaseConnectionService } from '../database/connection.service';
-import { DatabaseSubscriber } from '../database/subscriber';
+import { DatabaseStreamService } from '../database/connection.service';
+import { DatabaseStream } from '../database/subscriber';
 import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
 import type { SourceDefinition } from '../config/source.types';
@@ -19,23 +19,20 @@ export class StreamingService implements OnModuleDestroy {
   private readonly logger = new Logger(StreamingService.name);
   private readonly cache: Cache;
   private readonly internalUpdates$ = new Subject<[RowUpdateEvent, bigint]>();
-  private readonly databaseSubscriber: DatabaseSubscriber;
+  private readonly databaseStream: DatabaseStream;
   private latestTimestamp = BigInt(0);
   private isShuttingDown = false;
   private activeSubscribers = 0;
 
   constructor(
-    private connectionService: DatabaseConnectionService,
+    private streamService: DatabaseStreamService,
     private readonly sourceDef: SourceDefinition,
     private readonly sourceName: string,
     private readonly protocolHandler: ProtocolHandler
   ) {
     this.cache = new SimpleCache(sourceDef.primaryKeyField);
-    this.databaseSubscriber = new DatabaseSubscriber(
-      connectionService,
-      sourceName,
-      protocolHandler
-    );
+    // Get the database stream from the stream service
+    this.databaseStream = streamService.getStream(sourceName, protocolHandler);
     
     // Start streaming immediately since we're created on-demand
     this.startStreaming().catch(error => {
@@ -51,7 +48,7 @@ export class StreamingService implements OnModuleDestroy {
    */
   getUpdates(): Observable<RowUpdateEvent> {
     if (this.isShuttingDown) {
-      throw new Error('Database subscriber is shutting down, cannot accept new subscriptions');
+      throw new Error('Database stream is shutting down, cannot accept new subscriptions');
     }
 
     // Take snapshot timestamp before any async operations
@@ -114,9 +111,7 @@ export class StreamingService implements OnModuleDestroy {
   async onModuleDestroy() {
     this.logger.log('Shutting down stream...');
     this.dispose();
-    
-    // Also ensure database subscriber cleans up properly
-    await this.databaseSubscriber.onModuleDestroy();
+    // dispose() already calls streamService.removeStream() which disconnects the stream
   }
 
   /**
@@ -126,7 +121,7 @@ export class StreamingService implements OnModuleDestroy {
   private async startStreaming(): Promise<void> {
     try {
       // Connect to database and start streaming with callbacks
-      await this.databaseSubscriber.connect(
+      await this.databaseStream.connect(
         (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => {
           this.processUpdate(row, timestamp, updateType);
         },
@@ -279,11 +274,9 @@ export class StreamingService implements OnModuleDestroy {
     this.cache.clear();
     this.logger.debug(`Cache cleared for ${this.sourceName}`);
     
-    // End the database subscriber connection
-    if (this.databaseSubscriber) {
-      this.databaseSubscriber.end();
-      this.logger.debug(`Database subscriber connection ended for ${this.sourceName}`);
-    }
+    // Notify stream service to remove the stream
+    this.streamService.removeStream(this.sourceName);
+    this.logger.debug(`Database stream removed for ${this.sourceName}`);
     
     // Complete the internal updates subject
     this.internalUpdates$.complete();

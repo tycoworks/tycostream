@@ -1,17 +1,21 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { to as copyTo } from 'pg-copy-streams';
-import type { Client } from 'pg';
-import { DatabaseConnectionService } from './connection.service';
+import { Client } from 'pg';
 import { StreamBuffer } from './buffer';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
+import type { DatabaseConfig } from '../config/database.config';
 
 /**
- * Manages database subscription and streaming for a single source
- * Delegates to parent service for update processing
+ * Represents a streaming connection to a database source
+ * Handles the COPY protocol and event streaming
  */
-export class DatabaseSubscriber implements OnModuleDestroy {
-  private readonly logger = new Logger(DatabaseSubscriber.name);
+// Component-specific database configuration
+const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
+const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
+
+export class DatabaseStream implements OnModuleDestroy {
+  private readonly logger = new Logger(DatabaseStream.name);
   private readonly buffer = new StreamBuffer();
   private client: Client | null = null;
   private isShuttingDown = false;
@@ -20,7 +24,7 @@ export class DatabaseSubscriber implements OnModuleDestroy {
   private errorCallback?: (error: Error) => void;
 
   constructor(
-    private connectionService: DatabaseConnectionService,
+    private readonly config: DatabaseConfig,
     private readonly sourceName: string,
     private readonly protocolHandler: ProtocolHandler
   ) {}
@@ -43,8 +47,8 @@ export class DatabaseSubscriber implements OnModuleDestroy {
     this.connected = true;
     this.logger.log(`Connecting to source: ${this.sourceName}`);
 
-    // Connect to database
-    this.client = await this.connectionService.connect();
+    // Create and connect client directly
+    this.client = await this.createClient();
 
     try {
       // Create COPY query that wraps the SUBSCRIBE
@@ -92,7 +96,9 @@ export class DatabaseSubscriber implements OnModuleDestroy {
     } catch (error) {
       this.connected = false;
       if (this.client) {
-        await this.connectionService.disconnect(this.client);
+        // Close the client directly
+        await this.client.end();
+        this.client = null;
       }
       throw error;
     }
@@ -106,17 +112,17 @@ export class DatabaseSubscriber implements OnModuleDestroy {
   }
 
   /**
-   * End the connection and clean up resources
-   * Follows pg client naming convention
+   * Disconnect and clean up resources
+   * Connection-like objects use connect/disconnect pattern
    */
-  end(): void {
+  disconnect(): void {
     this.logger.debug(`Ending connection for ${this.sourceName}`);
     this.isShuttingDown = true;
     
     if (this.connected && this.client) {
-      // Disconnect asynchronously without waiting
-      this.connectionService.disconnect(this.client).catch(error => {
-        this.logger.error('Error disconnecting client during end', error);
+      // Close the client directly
+      this.client.end().catch(error => {
+        this.logger.error('Error closing client during disconnect', error);
       });
       this.connected = false;
       this.client = null;
@@ -125,11 +131,46 @@ export class DatabaseSubscriber implements OnModuleDestroy {
 
   /**
    * Cleanup on module destroy
-   * Delegates to end() for cleanup
+   * Delegates to disconnect() for cleanup
    */
   async onModuleDestroy() {
-    this.logger.log('Shutting down database subscriber...');
-    this.end();
+    this.logger.log('Shutting down database stream...');
+    this.disconnect();
+  }
+
+  /**
+   * Create a new database client
+   * Returns a connected client with streaming-optimized settings
+   */
+  private async createClient(): Promise<Client> {
+    if (!this.config) {
+      throw new Error('Database configuration not found');
+    }
+
+    this.logger.log(`Creating database client for ${this.sourceName}`);
+
+    const client = new Client({
+      host: this.config.host,
+      port: this.config.port,
+      database: this.config.database,
+      user: this.config.user,
+      password: this.config.password,
+      // Connection timeout and keep-alive settings
+      connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
+      query_timeout: 0, // No timeout for streaming queries
+      keepAlive: true,
+      keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
+    });
+
+    try {
+      await client.connect();
+      this.logger.log('Connected to streaming database');
+      return client;
+    } catch (error) {
+      this.logger.error('Failed to connect to streaming database');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Database connection failed: ${errorMessage}`);
+    }
   }
 
   /**

@@ -1,75 +1,48 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client } from 'pg';
 import type { DatabaseConfig } from '../config/database.config';
-
-// Component-specific database configuration
-const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
-const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
+import { DatabaseStream } from './subscriber';
+import type { ProtocolHandler } from './types';
 
 /**
- * Database connection management service
- * Handles PostgreSQL client connections for streaming operations
+ * Database stream management service
+ * Manages DatabaseStream instances and their underlying connections
  */
 @Injectable()
-export class DatabaseConnectionService implements OnModuleDestroy {
-  private readonly logger = new Logger(DatabaseConnectionService.name);
-  private clients: Set<Client> = new Set();
+export class DatabaseStreamService implements OnModuleDestroy {
+  private readonly logger = new Logger(DatabaseStreamService.name);
+  private streams = new Map<string, DatabaseStream>();
 
   constructor(private configService: ConfigService) {}
 
+
   /**
-   * Connect to streaming database
-   * Creates a new client connection with streaming-optimized settings
+   * Get or create a DatabaseStream for a specific source
+   * Manages the lifecycle of database streams
    */
-  async connect(): Promise<Client> {
-    const config = this.configService.get<DatabaseConfig>('database');
-    
-    if (!config) {
-      throw new Error('Database configuration not found');
+  getStream(sourceName: string, protocolHandler: ProtocolHandler): DatabaseStream {
+    if (!this.streams.has(sourceName)) {
+      this.logger.log(`Creating new database stream for source: ${sourceName}`);
+      const config = this.configService.get<DatabaseConfig>('database');
+      if (!config) {
+        throw new Error('Database configuration not found');
+      }
+      const stream = new DatabaseStream(config, sourceName, protocolHandler);
+      this.streams.set(sourceName, stream);
     }
-
-    this.logger.log(`Connecting to streaming database at ${config.host}:${config.port}/${config.database}`);
-
-    const client = new Client({
-      host: config.host,
-      port: config.port,
-      database: config.database,
-      user: config.user,
-      password: config.password,
-      // Connection timeout and keep-alive settings
-      connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
-      query_timeout: 0, // No timeout for streaming queries
-      keepAlive: true,
-      keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
-    });
-
-    try {
-      await client.connect();
-      this.clients.add(client);
-      this.logger.log('Connected to streaming database');
-      return client;
-    } catch (error) {
-      this.logger.error('Failed to connect to streaming database');
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Database connection failed: ${errorMessage}`);
-    }
+    return this.streams.get(sourceName)!;
   }
 
   /**
-   * Disconnect a specific client
-   * Removes client from tracked set and closes connection gracefully
+   * Remove a stream when it's no longer needed
+   * Called by StreamingService when disposing
    */
-  async disconnect(client: Client): Promise<void> {
-    try {
-      await client.end();
-      this.clients.delete(client);
-      this.logger.log('Database connection closed');
-    } catch (error) {
-      this.logger.error('Error during disconnect');
-      // Still remove from set even if disconnect fails
-      this.clients.delete(client);
-      throw error;
+  removeStream(sourceName: string): void {
+    const stream = this.streams.get(sourceName);
+    if (stream) {
+      this.logger.log(`Removing database stream for source: ${sourceName}`);
+      stream.disconnect();
+      this.streams.delete(sourceName);
     }
   }
 
@@ -77,14 +50,13 @@ export class DatabaseConnectionService implements OnModuleDestroy {
    * Cleanup all connections on module destroy
    */
   async onModuleDestroy() {
-    this.logger.log(`Closing ${this.clients.size} database connections`);
+    this.logger.log(`Closing ${this.streams.size} database streams`);
     
-    const disconnectPromises = Array.from(this.clients).map(client =>
-      this.disconnect(client).catch(error => 
-        this.logger.error('Error closing connection during shutdown')
-      )
-    );
-    
-    await Promise.all(disconnectPromises);
+    // Disconnect all streams
+    for (const [sourceName, stream] of this.streams) {
+      this.logger.debug(`Disconnecting stream for ${sourceName}`);
+      stream.disconnect();
+    }
+    this.streams.clear();
   }
 }

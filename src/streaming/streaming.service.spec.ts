@@ -1,5 +1,5 @@
 import { StreamingService } from './streaming.service';
-import { DatabaseConnectionService } from '../database/connection.service';
+import { DatabaseStreamService } from '../database/connection.service';
 import type { SourceDefinition } from '../config/source.types';
 import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
@@ -7,21 +7,23 @@ import { RowUpdateType, type RowUpdateEvent } from './types';
 import { take, toArray } from 'rxjs/operators';
 import { firstValueFrom } from 'rxjs';
 
-// Mock DatabaseSubscriber before importing StreamingService
+// Mock DatabaseStream before importing StreamingService
+const mockDatabaseStream = {
+  connect: jest.fn().mockResolvedValue(undefined),
+  disconnect: jest.fn(),
+  onModuleDestroy: jest.fn().mockResolvedValue(undefined),
+  streaming: false
+};
+
 jest.mock('../database/subscriber', () => {
   return {
-    DatabaseSubscriber: jest.fn().mockImplementation(() => ({
-      connect: jest.fn().mockResolvedValue(undefined),
-      end: jest.fn(),
-      onModuleDestroy: jest.fn().mockResolvedValue(undefined),
-      streaming: false
-    }))
+    DatabaseStream: jest.fn().mockImplementation(() => mockDatabaseStream)
   };
 });
 
 describe('StreamingService', () => {
   let service: StreamingService;
-  let connectionService: DatabaseConnectionService;
+  let streamService: DatabaseStreamService;
 
   const mockSourceDef: SourceDefinition = {
     name: 'test_source',
@@ -38,9 +40,11 @@ describe('StreamingService', () => {
     end: jest.fn()
   };
 
-  const mockConnectionService = {
+  const mockStreamService = {
     connect: jest.fn().mockResolvedValue(mockClient),
-    disconnect: jest.fn().mockResolvedValue(undefined)
+    disconnect: jest.fn().mockResolvedValue(undefined),
+    getStream: jest.fn().mockReturnValue(mockDatabaseStream),
+    removeStream: jest.fn()
   };
 
   const mockProtocolHandler: ProtocolHandler = {
@@ -49,9 +53,9 @@ describe('StreamingService', () => {
   };
 
   beforeEach(() => {
-    connectionService = mockConnectionService as any;
+    streamService = mockStreamService as any;
     service = new StreamingService(
-      connectionService as any,
+      streamService as any,
       mockSourceDef,
       'test_source',
       mockProtocolHandler

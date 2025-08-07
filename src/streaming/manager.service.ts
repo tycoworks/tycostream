@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { StreamingService } from './streaming.service';
-import { DatabaseConnectionService } from '../database/connection.service';
+import { DatabaseStreamService } from '../database/connection.service';
 import { MaterializeProtocolHandler } from '../database/materialize';
 import type { SourceDefinition } from '../config/source.types';
 
@@ -17,7 +17,7 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private configService: ConfigService,
-    private connectionService: DatabaseConnectionService
+    private streamService: DatabaseStreamService
   ) {}
 
   /**
@@ -88,7 +88,7 @@ export class StreamingManagerService implements OnModuleInit, OnModuleDestroy {
     
     // Create streaming service
     return new StreamingService(
-      this.connectionService,
+      this.streamService,
       sourceDef,
       sourceDef.name,
       protocolHandler

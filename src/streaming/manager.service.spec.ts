@@ -1,13 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { StreamingManagerService } from './manager.service';
-import { DatabaseConnectionService } from '../database/connection.service';
+import { DatabaseStreamService } from '../database/connection.service';
 import type { SourceDefinition } from '../config/source.types';
 
 describe('StreamingManagerService', () => {
   let managerService: StreamingManagerService;
   let mockConfigService: jest.Mocked<ConfigService>;
-  let mockConnectionService: jest.Mocked<DatabaseConnectionService>;
+  let mockConnectionService: jest.Mocked<DatabaseStreamService>;
   let mockClient: any;
 
   const mockSourceDefs = new Map<string, SourceDefinition>([
@@ -44,14 +44,19 @@ describe('StreamingManagerService', () => {
     } as any;
 
     mockConnectionService = {
-      getClient: jest.fn().mockResolvedValue(mockClient),
+      getStream: jest.fn().mockReturnValue({
+        connect: jest.fn().mockResolvedValue(undefined),
+        disconnect: jest.fn(),
+        streaming: false
+      }),
+      removeStream: jest.fn()
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StreamingManagerService,
         { provide: ConfigService, useValue: mockConfigService },
-        { provide: DatabaseConnectionService, useValue: mockConnectionService },
+        { provide: DatabaseStreamService, useValue: mockConnectionService },
       ],
     }).compile();
 
