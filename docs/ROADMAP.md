@@ -17,7 +17,7 @@
 - ✅ Simple YAML config defining sources and schema
 - ✅ GraphQL schema auto-generated from YAML
 - ✅ Support for custom GraphQL types and fields
-- 🔄 Hasura-style filters (next phase)
+- ✅ Hasura-style filters
 - 🔄 Nested queries based on relational joins (next phase)
 - ✅ Multiple sources per database
 - ✅ Multiple concurrent clients supported
