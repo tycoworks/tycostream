@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseStreamService } from './connection.service';
+import { DatabaseStreamService } from './stream.service';
 import { Client } from 'pg';
 
 // Mock pg module

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { StreamingManagerService } from './manager.service';
-import { DatabaseStreamService } from '../database/connection.service';
+import { DatabaseStreamService } from '../database/stream.service';
 import type { SourceDefinition } from '../config/source.types';
 
 describe('StreamingManagerService', () => {

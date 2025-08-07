@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { StreamingService } from './streaming.service';
-import { DatabaseStreamService } from '../database/connection.service';
+import { DatabaseStreamService } from '../database/stream.service';
 import { MaterializeProtocolHandler } from '../database/materialize';
 import type { SourceDefinition } from '../config/source.types';
 

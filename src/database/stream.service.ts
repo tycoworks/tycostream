@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { DatabaseConfig } from '../config/database.config';
-import { DatabaseStream } from './subscriber';
+import { DatabaseStream } from './stream';
 import type { ProtocolHandler } from './types';
 
 /**

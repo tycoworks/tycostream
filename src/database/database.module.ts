@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { DatabaseStreamService } from './connection.service';
+import { DatabaseStreamService } from './stream.service';
 
 /**
  * Database module provides database infrastructure services

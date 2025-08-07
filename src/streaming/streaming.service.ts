@@ -1,7 +1,7 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable, Subject, ReplaySubject, filter, map, concat, from, finalize } from 'rxjs';
-import { DatabaseStreamService } from '../database/connection.service';
-import { DatabaseStream } from '../database/subscriber';
+import { DatabaseStreamService } from '../database/stream.service';
+import { DatabaseStream } from '../database/stream';
 import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
 import type { SourceDefinition } from '../config/source.types';

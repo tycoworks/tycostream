@@ -1,5 +1,5 @@
 import { StreamingService } from './streaming.service';
-import { DatabaseStreamService } from '../database/connection.service';
+import { DatabaseStreamService } from '../database/stream.service';
 import type { SourceDefinition } from '../config/source.types';
 import type { ProtocolHandler } from '../database/types';
 import { DatabaseRowUpdateType } from '../database/types';
@@ -15,7 +15,7 @@ const mockDatabaseStream = {
   streaming: false
 };
 
-jest.mock('../database/subscriber', () => {
+jest.mock('../database/stream', () => {
   return {
     DatabaseStream: jest.fn().mockImplementation(() => mockDatabaseStream)
   };

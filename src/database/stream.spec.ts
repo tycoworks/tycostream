@@ -1,4 +1,4 @@
-import { DatabaseStream } from './subscriber';
+import { DatabaseStream } from './stream';
 import type { DatabaseConfig } from '../config/database.config';
 import type { SourceDefinition } from '../config/source.types';
 import type { ProtocolHandler } from './types';
