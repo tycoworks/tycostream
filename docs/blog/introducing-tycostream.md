@@ -8,9 +8,9 @@ There’s a lot of work ahead before it's production-ready, but the core functio
 
 ## 2. How It Works
 
-tycostream works a bit like [Hasura](https://hasura.io/), but for streaming databases (currently Materialize). You define the tables and views to expose, and tycostream generates typed GraphQL subscriptions from their schema. Clients can then subscribe to real-time updates using any GraphQL library such as [Apollo Client](https://github.com/apollographql/apollo-client).
+tycostream works a bit like [Hasura](https://hasura.io/), but for streaming databases (currently Materialize). You define the tables and views to expose, and tycostream generates typed GraphQL subscriptions from their schema. Clients can then subscribe to real-time updates using any GraphQL library such as [Apollo Client](https://github.com/apollographql/apollo-client), with optional `where` clauses for filtering the data stream.
 
-Under the hood, tycostream connects to Materialize using a standard Postgres connection. When the first request for a table or view comes in, tycostream opens a `SUBSCRIBE` query and starts maintaining a shared cache. New requests for the same data are served from the cache, along with live updates of only changed fields to reduce overhead.
+Under the hood, tycostream connects to Materialize using a standard Postgres connection. When the first request for a table or view comes in, tycostream opens a `SUBSCRIBE` query and starts maintaining a shared cache. New requests for the same data are served from the cache, along with live updates of only changed fields to reduce overhead. Where requests have `where` clauses, tycostream compiles them into JavaScript functions to filter each row as it streams through.
 
 This design is inspired by view servers such as [Finos Vuu](https://vuu.finos.org/) or the [Genesis Data Server](https://docs.genesis.global/docs/develop/server-capabilities/real-time-queries-data-server/), which are common components of financial markets applications. These components excel at streaming ticking prices, positions, and orders to thousands of connected UIs with fine-grained permissions and filtering. I wanted to build something similar but using open standards: GraphQL for the API and Postgres wire protocol for the database connection.
 
@@ -24,8 +24,6 @@ This would enable anyone to build reactive applications quickly and safely. Imag
 
 ## 4. Try It Out
 
-Want to see tycostream in action? I've put together a [demo](https://github.com/tycoworks/tycostream?tab=readme-ov-file#demo) that shows how to stream real-time positions to a data grid. It simulates trades and market prices for a realistic environment, and includes a Materialize emulator so you can get up and running with a single command.
+Want to see tycostream in action? I've put together a [demo](https://github.com/tycoworks/tycostream#demo) that shows how to stream real-time positions to a data grid. It simulates trades and market prices for a realistic environment, and includes a Materialize emulator so you can get up and running with a single command. Next, I'll explore building complete applications with tycostream + Hasura or Supabase, showing how reactive apps can be as easy to build as traditional CRUD apps.
 
-The next big features on my list are [filtered subscriptions / views](https://github.com/tycoworks/tycostream/issues/1), and exploring how to build complete applications with tycostream + Hasura or Supabase. The complete roadmap is [here](https://github.com/tycoworks/tycostream/blob/main/docs/ROADMAP.md) - I hope you'll follow along.
-
-If you're building real-time applications with SQL and GraphQL, I'd love to hear from you. What problems are you solving? What would make this useful for your use case? Drop me a line here or at chris@tycoworks.com - feedback welcome!
+If you're building real-time applications with SQL and GraphQL, I'd love to hear from you. What problems are you solving? What would make this useful for your use case? Check out the [roadmap](https://github.com/tycoworks/tycostream/blob/main/docs/ROADMAP.md) to see what's coming, or drop me a line here or at chris@tycoworks.com - I hope you'll follow along!
