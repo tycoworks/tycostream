@@ -1,8 +1,8 @@
 ## 1. Introducing tycostream
 
-In my last two posts ([Part 1](https://www.tycoworks.com/p/can-a-stream-processor-power-a-trading) and [Part 2](https://www.tycoworks.com/p/can-a-stream-processor-power-a-trading-196)), I explored whether streaming databases like Materialize could power a trading desk UI. The answer was a cautious yes: creating the backend logic was straightforward, but getting data into the frontend was surprisingly hard. I ended up building a custom WebSocket relay for the last mile which worked, but felt too brittle and difficult to maintain in the long term.
+In my last two posts ([Part 1](https://www.tycoworks.com/p/can-a-stream-processor-power-a-trading) and [Part 2](https://www.tycoworks.com/p/can-a-stream-processor-power-a-trading-196)), I explored whether streaming databases like [Materialize](https://materialize.com/) could power a trading desk UI. The answer was a cautious yes: creating the backend logic was straightforward, but getting data into the frontend was surprisingly hard. I ended up building a custom WebSocket relay for the last mile which worked, but felt too brittle and difficult to maintain in the long term.
 
-I wanted a better way, and so I've started working on a new project: **[tycostream](https://github.com/tycoworks/tycostream)**. It turns streaming databases into real-time GraphQL APIs, ready to use with agents, dashboards, or anything that speaks GraphQL. The goal is to make it easier to build reactive applications and agents, without needing custom infrastructure or glue code.
+I wanted a better way, and so I've started working on a new project: **[tycostream](https://github.com/tycoworks/tycostream)**. It turns Materialize views into real-time GraphQL APIs, ready to use with agents, dashboards, or anything that speaks GraphQL. The goal is to make it easier to build reactive applications and agents, without needing custom infrastructure or glue code.
 
 There’s a lot of work ahead before it's production-ready, but the core functionality is ready for feedback. Let's take a look.
 
