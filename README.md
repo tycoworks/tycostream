@@ -1,13 +1,13 @@
 # tycostream
 
-tycostream turns your streaming database into a real-time GraphQL API.
+tycostream turns [Materialize](https://materialize.com/) into a real-time GraphQL API.
 
 ---
 
 ## Features
 
+* Works with Materialize Views and Tables
 * Streams live updates (diffs) over GraphQL subscriptions (WebSockets)
-* Works with [Materialize](https://materialize.com/) views and tables
 * Supports filtering subscriptions with Hasura-like 'where' clauses
 * Works with standard GraphQL clients (e.g. Apollo)
 
