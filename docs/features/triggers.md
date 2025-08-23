@@ -209,6 +209,7 @@ This keeps tycostream truly stateless - it's just a router between streams and w
 ### Implementation Steps
 
 1. **Extend views with match/unmatch logic (internal foundation)**
+   - Move filter compilation (`buildFilter`) from `src/graphql/filters.ts` to shared module for reuse
    - Modify View class to accept optional separate match/unmatch conditions
    - Update visibility logic: row exits only when unmatch condition is met (not when match condition becomes false)
    - Keep this internal - GraphQL continues using simple `where` clauses
