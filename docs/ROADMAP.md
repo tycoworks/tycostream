@@ -7,22 +7,28 @@
 
 - ✅ NestJS modular architecture: GraphQL + stream ingestion with dependency injection
 - ✅ Snapshot + incremental live updates via Materialize `SUBSCRIBE`
-- ✅ WebSocket-based GraphQL Subscriptions using @nestjs/graphql
-- ✅ Compatible with Apollo Client and other standard GraphQL clients
 - ✅ RxJS Observables throughout for reactive streaming
 - ✅ Sends updates for changed fields only
 
-### 📝 Schema & Configuration
+### 📊 GraphQL Subscriptions
 
+- ✅ WebSocket-based GraphQL Subscriptions using @nestjs/graphql
+- ✅ Compatible with Apollo Client and other standard GraphQL clients
 - ✅ Simple YAML config defining sources and schema
 - ✅ GraphQL schema auto-generated from YAML
 - ✅ Support for custom GraphQL types and fields
 - ✅ Hasura-style filters
-- 🔄 Nested queries based on relational joins (next phase)
 - ✅ Multiple sources per database
 - ✅ Multiple concurrent clients supported
+- Nested queries based on relational joins
 
-### 🚀 Dev Experience
+### 🔔 Event Triggers
+
+- Webhook delivery on data conditions
+- Different match/unmatch thresholds
+- Hasura-compatible API
+
+### 🚀 Developer Experience
 
 - ✅ Start with a single npm run command
 - ✅ Hot reload with NestJS development mode
@@ -42,6 +48,8 @@
 - JWT-based authentication
 - Role-based access control (RBAC) for GraphQL operations
 - Row-level entitlements for secure data access per user
+- Query complexity analysis to prevent expensive operations
+- Field-level middleware for auth and logging
 
 ### 🩺 Observability
 
@@ -58,6 +66,12 @@
 - Stream health monitoring and self-healing
 - Runtime source existence validation
 
+### 🔔 Trigger Reliability
+
+- Webhook delivery guarantees with retries and dead letter queue
+- Cooldown periods and rate limiting
+- Parameterized conditions with runtime variables
+
 ### 🧠 Server Resilience
 
 - Graceful error handling for GraphQL server failures
@@ -66,6 +80,7 @@
 - Standardized error codes for all failure modes
 - Graceful shutdown with client notification before disconnect
 - Exception filters for consistent error handling across the application
+- Production NestJS modules (throttler, cache-manager, terminus, etc.)
 
 ### 🔄 Subscription Lifecycle & Reliability
 
