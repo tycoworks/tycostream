@@ -1,5 +1,5 @@
 import { View } from './view';
-import { RowUpdateEvent, RowUpdateType, Filter } from './types';
+import { RowUpdateEvent, RowUpdateType, Expression } from './types';
 import { Subject, Observable } from 'rxjs';
 import type { Source } from './source';
 
@@ -31,7 +31,7 @@ describe('View', () => {
     });
     
     it('should handle row entering view', () => {
-      const filter: Filter = {
+      const filter: Expression = {
         evaluate: (row) => row.active === true,
         fields: new Set(['active']),
         expression: 'datum.active === true'
@@ -52,7 +52,7 @@ describe('View', () => {
     });
     
     it('should handle row leaving view', () => {
-      const filter: Filter = {
+      const filter: Expression = {
         evaluate: (row) => row.active === true,
         fields: new Set(['active']),
         expression: 'datum.active === true'
@@ -81,7 +81,7 @@ describe('View', () => {
     });
     
     it('should handle row updating within view', () => {
-      const filter: Filter = {
+      const filter: Expression = {
         evaluate: (row) => row.active === true,
         fields: new Set(['active']),
         expression: 'datum.active === true'
@@ -108,7 +108,7 @@ describe('View', () => {
     });
     
     it('should filter out rows not matching filter', () => {
-      const filter: Filter = {
+      const filter: Expression = {
         evaluate: (row) => row.active === true,
         fields: new Set(['active']),
         expression: 'datum.active === true'
@@ -149,7 +149,7 @@ describe('View', () => {
     
     it('should skip filter evaluation for UPDATE when fields dont affect filter', () => {
       const evaluateMock = jest.fn((row) => row.active === true);
-      const filter: Filter = {
+      const filter: Expression = {
         evaluate: evaluateMock,
         fields: new Set(['active']),
         expression: 'datum.active === true'
@@ -182,7 +182,7 @@ describe('View', () => {
   
   describe('getUpdates', () => {
     it('should emit transformed events that pass the filter', (done) => {
-      const filter: Filter = {
+      const filter: Expression = {
         expression: 'value > 10',
         fields: new Set(['value']),
         evaluate: (row) => row.value > 10

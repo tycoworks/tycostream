@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Observable, filter, map } from 'rxjs';
-import { RowUpdateEvent, RowUpdateType, Filter } from './types';
+import { RowUpdateEvent, RowUpdateType, Expression } from './types';
 import type { Source } from './source';
 
 /**
@@ -16,7 +16,7 @@ export class View {
   
   constructor(
     private readonly source: Source,
-    private readonly viewFilter?: Filter
+    private readonly viewFilter?: Expression
   ) {
     this.primaryKeyField = source.getPrimaryKeyField();
     

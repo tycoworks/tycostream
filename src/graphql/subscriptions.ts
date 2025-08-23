@@ -3,10 +3,10 @@ import { eachValueFrom } from 'rxjs-for-await';
 import { Logger } from '@nestjs/common';
 import { ViewService } from '../streaming/view.service';
 import type { SourceDefinition } from '../config/source.types';
-import type { RowUpdateEvent, Filter } from '../streaming/types';
+import type { RowUpdateEvent } from '../streaming/types';
 import { RowUpdateType } from '../streaming/types';
 import { truncateForLog } from '../common/logging.utils';
-import { buildFilter } from '../common/filters';
+import { buildExpression } from '../common/expressions';
 
 /**
  * GraphQL row operation types
@@ -60,7 +60,7 @@ function createSourceSubscriptionResolver(
   return {
     subscribe: (parent: any, args: any, context: any, info: any) => {
       // Parse and compile filter if provided
-      const filter = args.where ? buildFilter(args.where) : undefined;
+      const filter = args.where ? buildExpression(args.where) : undefined;
       logger.log(`Subscription for ${sourceName}${filter ? ` with filter: ${filter.expression}` : ' (unfiltered)'}`);
       
       // Pass filter to viewService

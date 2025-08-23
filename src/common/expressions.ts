@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
-import { Filter } from '../streaming/types';
+import { Expression } from '../streaming/types';
 
-const logger = new Logger('Filters');
+const logger = new Logger('Expressions');
 
 /**
  * GraphQL/Hasura-style where clause types
@@ -28,17 +28,17 @@ export type FieldComparison = {
 };
 
 /**
- * Builds a Filter object from a GraphQL where clause
+ * Builds an Expression object from a GraphQL where clause
  * This includes the compiled function and metadata for optimization
  * Throws error for empty where clauses
  */
-export function buildFilter(where: WhereClause): Filter {
+export function buildExpression(where: WhereClause): Expression {
   if (Object.keys(where).length === 0) {
-    throw new Error('Cannot build filter from empty where clause');
+    throw new Error('Cannot build expression from empty where clause');
   }
   
   const fields = new Set<string>();
-  const expression = buildExpression(where, 'datum', fields);
+  const expression = buildExpressionString(where, 'datum', fields);
   
   try {
     const evaluate = new Function('datum', `return ${expression}`) as (row: any) => boolean;
@@ -56,21 +56,21 @@ export function buildFilter(where: WhereClause): Filter {
 /**
  * Internal helper that builds expression string and collects fields
  */
-function buildExpression(where: WhereClause, fieldVar: string, fields: Set<string>): string {
+function buildExpressionString(where: WhereClause, fieldVar: string, fields: Set<string>): string {
 
   // Handle logical operators
   if (where._and) {
-    const expressions = where._and.map(w => buildExpression(w, fieldVar, fields));
+    const expressions = where._and.map(w => buildExpressionString(w, fieldVar, fields));
     return `(${expressions.join(' && ')})`;
   }
   
   if (where._or) {
-    const expressions = where._or.map(w => buildExpression(w, fieldVar, fields));
+    const expressions = where._or.map(w => buildExpressionString(w, fieldVar, fields));
     return `(${expressions.join(' || ')})`;
   }
   
   if (where._not) {
-    return `!(${buildExpression(where._not, fieldVar, fields)})`;
+    return `!(${buildExpressionString(where._not, fieldVar, fields)})`;
   }
 
   // Handle field comparisons

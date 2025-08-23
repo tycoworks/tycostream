@@ -23,11 +23,11 @@ export interface RowUpdateEvent {
 }
 
 /**
- * Filter for subscriptions
+ * Expression for evaluating row conditions
  * Created by GraphQL layer, executed by streaming layer
  */
-export interface Filter {
+export interface Expression {
   evaluate: (row: any) => boolean;
-  fields: Set<string>;  // Fields used in the filter for optimization
-  expression: string;   // The filter expression for debugging/logging
+  fields: Set<string>;  // Fields used in the expression for optimization
+  expression: string;   // The expression string for debugging/logging
 }
