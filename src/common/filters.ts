@@ -1,15 +1,40 @@
 import { Logger } from '@nestjs/common';
 import { Filter } from '../streaming/types';
 
-const logger = new Logger('GraphQLFilters');
+const logger = new Logger('Filters');
+
+/**
+ * GraphQL/Hasura-style where clause types
+ */
+export type WhereClause = {
+  _and?: WhereClause[];
+  _or?: WhereClause[];
+  _not?: WhereClause;
+} & {
+  [field: string]: FieldComparison | undefined;
+};
+
+export type FieldComparison = {
+  _eq?: any;
+  _neq?: any;
+  _gt?: any;
+  _lt?: any;
+  _gte?: any;
+  _lte?: any;
+  _in?: any;  // Runtime validates this should be an array
+  _nin?: any;  // Runtime validates this should be an array
+  _is_null?: boolean;
+  [key: string]: any;  // Allow unknown operators for error handling
+};
 
 /**
  * Builds a Filter object from a GraphQL where clause
  * This includes the compiled function and metadata for optimization
+ * Throws error for empty where clauses
  */
-export function buildFilter(where: any): Filter | null {
-  if (!where || Object.keys(where).length === 0) {
-    return null;
+export function buildFilter(where: WhereClause): Filter {
+  if (Object.keys(where).length === 0) {
+    throw new Error('Cannot build filter from empty where clause');
   }
   
   const fields = new Set<string>();
@@ -31,16 +56,16 @@ export function buildFilter(where: any): Filter | null {
 /**
  * Internal helper that builds expression string and collects fields
  */
-function buildExpression(where: any, fieldVar: string, fields: Set<string>): string {
+function buildExpression(where: WhereClause, fieldVar: string, fields: Set<string>): string {
 
   // Handle logical operators
   if (where._and) {
-    const expressions = where._and.map((w: any) => buildExpression(w, fieldVar, fields));
+    const expressions = where._and.map(w => buildExpression(w, fieldVar, fields));
     return `(${expressions.join(' && ')})`;
   }
   
   if (where._or) {
-    const expressions = where._or.map((w: any) => buildExpression(w, fieldVar, fields));
+    const expressions = where._or.map(w => buildExpression(w, fieldVar, fields));
     return `(${expressions.join(' || ')})`;
   }
   
@@ -113,5 +138,3 @@ function buildExpression(where: any, fieldVar: string, fields: Set<string>): str
     return `(${expressions.join(' && ')})`;
   }
 }
-
-

@@ -15,8 +15,8 @@ export class View {
   private readonly primaryKeyField: string;
   
   constructor(
-    private readonly viewFilter: Filter,
-    private readonly source: Source
+    private readonly source: Source,
+    private readonly viewFilter?: Filter
   ) {
     this.primaryKeyField = source.getPrimaryKeyField();
     
@@ -29,10 +29,10 @@ export class View {
   }
   
   /**
-   * Check if this view has an actual filter expression
+   * Check if this view has a filter
    */
   private hasFilter(): boolean {
-    return this.viewFilter.expression !== '';
+    return this.viewFilter !== undefined;
   }
   
   /**
@@ -91,7 +91,7 @@ export class View {
     
     // Optimization: For UPDATE events where filter fields haven't changed
     if (event.type === RowUpdateType.Update && wasInView) {
-      const hasRelevantChanges = Array.from(event.fields).some(field => this.viewFilter.fields.has(field));
+      const hasRelevantChanges = Array.from(event.fields).some(field => this.viewFilter!.fields.has(field));
       
       if (!hasRelevantChanges) {
         return wasInView; // Filter result can't have changed
@@ -106,7 +106,7 @@ export class View {
    */
   private matchesFilter(row: any): boolean {
     try {
-      return this.viewFilter.evaluate(row);
+      return this.viewFilter!.evaluate(row);
     } catch (error) {
       this.logger.error(`Filter evaluation error: ${error.message}`, error.stack);
       // On error, exclude the row from view

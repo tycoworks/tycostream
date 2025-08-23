@@ -6,7 +6,7 @@ import type { SourceDefinition } from '../config/source.types';
 import type { RowUpdateEvent, Filter } from '../streaming/types';
 import { RowUpdateType } from '../streaming/types';
 import { truncateForLog } from '../common/logging.utils';
-import { buildFilter } from './filters';
+import { buildFilter } from '../common/filters';
 
 /**
  * GraphQL row operation types
@@ -60,10 +60,8 @@ function createSourceSubscriptionResolver(
   return {
     subscribe: (parent: any, args: any, context: any, info: any) => {
       // Parse and compile filter if provided
-      const filter = buildFilter(args.where);
-      if (filter) {
-        logger.log(`Subscription for ${sourceName} with filter: ${filter.expression}`);
-      }
+      const filter = args.where ? buildFilter(args.where) : undefined;
+      logger.log(`Subscription for ${sourceName}${filter ? ` with filter: ${filter.expression}` : ' (unfiltered)'}`);
       
       // Pass filter to viewService
       const observable = viewService.getUpdates(sourceName, filter).pipe(

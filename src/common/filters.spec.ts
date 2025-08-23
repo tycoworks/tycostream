@@ -2,10 +2,8 @@ import { buildFilter } from './filters';
 
 describe('GraphQL Filters', () => {
   describe('buildFilter expression generation', () => {
-    it('should return null for empty or null where clause', () => {
-      expect(buildFilter(null)).toBeNull();
-      expect(buildFilter(undefined)).toBeNull();
-      expect(buildFilter({})).toBeNull();
+    it('should throw error for empty where clause', () => {
+      expect(() => buildFilter({})).toThrow('Cannot build filter from empty where clause');
     });
 
     describe('comparison operators', () => {
@@ -185,10 +183,8 @@ describe('GraphQL Filters', () => {
   });
 
   describe('buildFilter', () => {
-    it('should return null for empty where clause', () => {
-      expect(buildFilter(null)).toBeNull();
-      expect(buildFilter(undefined)).toBeNull();
-      expect(buildFilter({})).toBeNull();
+    it('should throw error for empty where clause', () => {
+      expect(() => buildFilter({})).toThrow('Cannot build filter from empty where clause');
     });
 
     it('should build filter with evaluate function and fields', () => {

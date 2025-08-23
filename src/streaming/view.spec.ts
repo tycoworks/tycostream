@@ -3,13 +3,6 @@ import { RowUpdateEvent, RowUpdateType, Filter } from './types';
 import { Subject, Observable } from 'rxjs';
 import type { Source } from './source';
 
-// Empty filter that matches all rows
-const EMPTY_FILTER: Filter = {
-  expression: '',
-  fields: new Set<string>(),
-  evaluate: () => true
-};
-
 describe('View', () => {
   let mockSource: jest.Mocked<Source>;
   let mockUpdates$: Subject<RowUpdateEvent>;
@@ -24,8 +17,8 @@ describe('View', () => {
     } as any;
   });
   describe('processEvent', () => {
-    it('should pass through events when empty filter is provided', () => {
-      const view = new View(EMPTY_FILTER, mockSource);
+    it('should pass through events when no filter is provided', () => {
+      const view = new View(mockSource);
       
       const insertEvent: RowUpdateEvent = {
         type: RowUpdateType.Insert,
@@ -44,7 +37,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockSource);
+      const view = new View(mockSource, filter);
       
       const event: RowUpdateEvent = {
         type: RowUpdateType.Update,
@@ -65,7 +58,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockSource);
+      const view = new View(mockSource, filter);
       
       // First, add row to view
       view.processEvent({
@@ -94,7 +87,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockSource);
+      const view = new View(mockSource, filter);
       
       // First, add row to view
       view.processEvent({
@@ -121,7 +114,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockSource);
+      const view = new View(mockSource, filter);
       
       const event: RowUpdateEvent = {
         type: RowUpdateType.Insert,
@@ -134,7 +127,7 @@ describe('View', () => {
     });
     
     it('should handle DELETE events correctly', () => {
-      const view = new View(EMPTY_FILTER, mockSource);
+      const view = new View(mockSource);
       
       // First insert a row
       view.processEvent({
@@ -162,7 +155,7 @@ describe('View', () => {
         expression: 'datum.active === true'
       };
       
-      const view = new View(filter, mockSource);
+      const view = new View(mockSource, filter);
       
       // First insert to establish visibility
       view.processEvent({
@@ -194,7 +187,7 @@ describe('View', () => {
         fields: new Set(['value']),
         evaluate: (row) => row.value > 10
       };
-      const view = new View(filter, mockSource);
+      const view = new View(mockSource, filter);
       
       // Subscribe to the view's updates
       const receivedEvents: RowUpdateEvent[] = [];

@@ -5,15 +5,6 @@ import { View } from './view';
 import type { RowUpdateEvent, Filter } from './types';
 
 /**
- * Empty filter that matches all rows
- */
-const EMPTY_FILTER: Filter = {
-  expression: '',
-  fields: new Set<string>(),
-  evaluate: () => true
-};
-
-/**
  * ViewService manages views of streaming data
  * Views can filter, transform, and reorder data
  * This is the main interface for GraphQL subscriptions
@@ -29,17 +20,14 @@ export class ViewService implements OnModuleDestroy {
   /**
    * Get updates for a specific source with optional filtering
    */
-  getUpdates(sourceName: string, filter?: Filter | null): Observable<RowUpdateEvent> {
-    // Normalize null/undefined filters to EMPTY_FILTER
-    const viewFilter = filter || EMPTY_FILTER;
-    
+  getUpdates(sourceName: string, filter?: Filter): Observable<RowUpdateEvent> {
     // Get the source for this data source
     const source = this.sourceService.getSource(sourceName);
     
     // Create a new view for each subscriber (no caching)
-    const view = new View(viewFilter, source);
+    const view = new View(source, filter);
     
-    this.logger.debug(`Created new view for source: ${sourceName}, filter: ${viewFilter.expression || '(empty)'}`);
+    this.logger.debug(`Created new view for source: ${sourceName}, filter: ${filter?.expression || '(unfiltered)'}`);
     
     // Return the view's filtered updates with cleanup
     return this.createViewStream(view);
