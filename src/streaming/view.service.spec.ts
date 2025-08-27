@@ -84,9 +84,11 @@ describe('ViewService', () => {
     it('should only emit events matching the filter', async () => {
       // Create a filter for active users
       const filter = {
-        expression: 'datum.active === true',
-        fields: new Set(['active']),
-        evaluate: (row: any) => row.active === true
+        match: {
+          expression: 'datum.active === true',
+          fields: new Set(['active']),
+          evaluate: (row: any) => row.active === true
+        }
       };
 
       // Get filtered stream
@@ -128,9 +130,11 @@ describe('ViewService', () => {
 
     it('should emit DELETE when row leaves filtered view', async () => {
       const filter = {
-        expression: 'datum.status === "active"',
-        fields: new Set(['status']),
-        evaluate: (row: any) => row.status === 'active'
+        match: {
+          expression: 'datum.status === "active"',
+          fields: new Set(['status']),
+          evaluate: (row: any) => row.status === 'active'
+        }
       };
 
       const updates$ = viewService.getUpdates('test_source', filter);
@@ -164,9 +168,11 @@ describe('ViewService', () => {
 
     it('should emit INSERT when row enters filtered view', async () => {
       const filter = {
-        expression: 'datum.priority === "high"',
-        fields: new Set(['priority']),
-        evaluate: (row: any) => row.priority === 'high'
+        match: {
+          expression: 'datum.priority === "high"',
+          fields: new Set(['priority']),
+          evaluate: (row: any) => row.priority === 'high'
+        }
       };
 
       const updates$ = viewService.getUpdates('test_source', filter);
@@ -203,9 +209,11 @@ describe('ViewService', () => {
   describe('multiple subscribers', () => {
     it('should create separate views for each subscriber', async () => {
       const filter = {
-        expression: 'datum.type === "A"',
-        fields: new Set(['type']),
-        evaluate: (row: any) => row.type === 'A'
+        match: {
+          expression: 'datum.type === "A"',
+          fields: new Set(['type']),
+          evaluate: (row: any) => row.type === 'A'
+        }
       };
 
       // Create two subscribers with same filter
@@ -252,15 +260,19 @@ describe('ViewService', () => {
 
     it('should handle different filters on same source independently', async () => {
       const filterA = {
-        expression: 'datum.category === "A"',
-        fields: new Set(['category']),
-        evaluate: (row: any) => row.category === 'A'
+        match: {
+          expression: 'datum.category === "A"',
+          fields: new Set(['category']),
+          evaluate: (row: any) => row.category === 'A'
+        }
       };
 
       const filterB = {
-        expression: 'datum.category === "B"',
-        fields: new Set(['category']),
-        evaluate: (row: any) => row.category === 'B'
+        match: {
+          expression: 'datum.category === "B"',
+          fields: new Set(['category']),
+          evaluate: (row: any) => row.category === 'B'
+        }
       };
 
       const updatesA$ = viewService.getUpdates('test_source', filterA);
@@ -309,11 +321,13 @@ describe('ViewService', () => {
   describe('error handling', () => {
     it('should handle errors in filter evaluation gracefully', async () => {
       const filter = {
-        expression: 'datum.nested.value === true',
-        fields: new Set(['nested']),
-        evaluate: (row: any) => {
-          // This will throw if nested is undefined
-          return row.nested.value === true;
+        match: {
+          expression: 'datum.nested.value === true',
+          fields: new Set(['nested']),
+          evaluate: (row: any) => {
+            // This will throw if nested is undefined
+            return row.nested.value === true;
+          }
         }
       };
 

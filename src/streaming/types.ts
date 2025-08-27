@@ -31,3 +31,11 @@ export interface Expression {
   fields: Set<string>;  // Fields used in the expression for optimization
   expression: string;   // The expression string for debugging/logging
 }
+
+/**
+ * View filter configuration with match/unmatch conditions
+ */
+export interface ViewFilter {
+  match: Expression;
+  unmatch?: Expression;
+}

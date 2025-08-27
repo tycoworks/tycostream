@@ -60,8 +60,8 @@ function createSourceSubscriptionResolver(
   return {
     subscribe: (parent: any, args: any, context: any, info: any) => {
       // Parse and compile filter if provided
-      const filter = args.where ? buildExpression(args.where) : undefined;
-      logger.log(`Subscription for ${sourceName}${filter ? ` with filter: ${filter.expression}` : ' (unfiltered)'}`);
+      const filter = args.where ? { match: buildExpression(args.where) } : undefined;
+      logger.log(`Subscription for ${sourceName}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`);
       
       // Pass filter to viewService
       const observable = viewService.getUpdates(sourceName, filter).pipe(

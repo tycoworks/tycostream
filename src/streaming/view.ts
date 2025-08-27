@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Observable, filter, map } from 'rxjs';
-import { RowUpdateEvent, RowUpdateType, Expression } from './types';
+import { RowUpdateEvent, RowUpdateType, ViewFilter, Expression } from './types';
 import type { Source } from './source';
 
 /**
@@ -13,12 +13,29 @@ export class View {
   private readonly visibleKeys = new Set<string | number>();
   private readonly stream$: Observable<RowUpdateEvent>;
   private readonly primaryKeyField: string;
+  private readonly viewFilter?: ViewFilter;
+  private readonly relevantFields?: Set<string>;
   
   constructor(
     private readonly source: Source,
-    private readonly viewFilter?: Expression
+    viewFilter?: ViewFilter
   ) {
     this.primaryKeyField = source.getPrimaryKeyField();
+    
+    // Normalize filters at construction time
+    if (viewFilter) {
+      // If no unmatch provided, create one as negation of match
+      this.viewFilter = {
+        match: viewFilter.match,
+        unmatch: viewFilter.unmatch || {
+          evaluate: (row) => !viewFilter.match.evaluate(row),
+          fields: viewFilter.match.fields,
+          expression: `!(${viewFilter.match.expression})`
+        }
+      };
+      // Cache the union of fields used by both filters
+      this.relevantFields = new Set([...this.viewFilter.match.fields, ...this.viewFilter.unmatch!.fields]);
+    }
     
     // Create the filtered stream from the unified stream (snapshot + live)
     
@@ -91,28 +108,27 @@ export class View {
     
     // Optimization: For UPDATE events where filter fields haven't changed
     if (event.type === RowUpdateType.Update && wasInView) {
-      const hasRelevantChanges = Array.from(event.fields).some(field => this.viewFilter!.fields.has(field));
+      const hasRelevantChanges = Array.from(event.fields).some(field => this.relevantFields!.has(field));
       
       if (!hasRelevantChanges) {
         return wasInView; // Filter result can't have changed
       }
     }
     
-    return this.matchesFilter(fullRow);
-  }
-  
-  /**
-   * Check if a row matches the filter
-   */
-  private matchesFilter(row: any): boolean {
     try {
-      return this.viewFilter!.evaluate(row);
+      // Use appropriate filter based on whether row is in view
+      const shouldStay = wasInView 
+        ? !this.viewFilter!.unmatch!.evaluate(fullRow)  // Stay if unmatch is false
+        : this.viewFilter!.match.evaluate(fullRow);     // Enter if match is true
+      
+      return shouldStay;
     } catch (error) {
       this.logger.error(`Filter evaluation error: ${error.message}`, error.stack);
       // On error, exclude the row from view
       return false;
     }
   }
+  
   
   /**
    * Get filtered updates from this view
