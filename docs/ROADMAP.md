@@ -1,6 +1,6 @@
-## **Milestone 1 — Stream Real-Time Data via GraphQL with Minimal Setup** ✅ (In Progress)
+## **Milestone 1 — Developer Preview** ✅ (In Progress)
 
-> Developers can stream filtered updates from Materialize (views, tables, or any SELECT-able object) into GraphQL clients using a simple YAML schema and local setup.
+> Build real-time dashboards, monitoring apps, and event-driven workflows using GraphQL subscriptions and webhooks connected to Materialize views. Not intended for production use.
 > 
 
 ### ⚙️ Core Streaming Infrastructure
@@ -20,7 +20,6 @@
 - ✅ Hasura-style filters
 - ✅ Multiple sources per database
 - ✅ Multiple concurrent clients supported
-- Nested queries based on relational joins
 
 ### 🔔 Event Triggers
 
@@ -38,67 +37,108 @@
 
 ---
 
-## **Milestone 2 — Deploy tycostream Securely in Production**
+## **Milestone 2 — MVP (Minimal Viable Product)**
 
-> Teams can run tycostream in production with authentication, access control, observability, and fault tolerance.
+> Teams can deploy tycostream in production with authentication, data integrity guarantees, and reliable webhook delivery.
 > 
 
-### 🔐 Access & Security
+### 🔐 Basic Authentication & Authorization
 
-- JWT-based authentication
-- Role-based access control (RBAC) for GraphQL operations
-- Row-level entitlements for secure data access per user
-- Query complexity analysis to prevent expensive operations
-- Field-level middleware for auth and logging
+- JWT-based authentication with signature verification
+- Basic authorization (JWT can access specific sources/operations)
+- Simple deny-by-default policy enforcement
 
-### 🩺 Observability
+### 🩺 Essential Observability
 
-- Prometheus metrics
-- Health check endpoints
-- Structured logs for query and stream activity
-- Full audit trail of data sent to each connected client
+- Health check endpoints (/health, /ready)
+- Prometheus metrics endpoint with key metrics
+- Structured error logging
 
-### 🔄 Streaming Database Resilience
+### 🔔 Webhook Reliability
 
-- Automatic reconnect with exponential backoff
-- Cursor-based resume using SUBSCRIBE AS OF to avoid data loss on reconnection
-- Circuit breaker for failed subscriptions
-- Stream health monitoring and self-healing
-- Runtime source existence validation
+- At-least-once delivery with exponential backoff
+- Dead letter queue for failed webhooks
+- Basic idempotency support (event IDs)
 
-### 🔔 Trigger Reliability
+### 🧠 Core Resilience
 
-- Webhook delivery guarantees with retries and dead letter queue
-- Cooldown periods and rate limiting
-- Parameterized conditions with runtime variables
-
-### 🧠 Server Resilience
-
-- Graceful error handling for GraphQL server failures
+- Graceful error handling without process crashes
 - WebSocket reconnection support
-- Stale client cleanup and connection lifecycle management
-- Standardized error codes for all failure modes
-- Graceful shutdown with client notification before disconnect
-- Exception filters for consistent error handling across the application
-- Production NestJS modules (throttler, cache-manager, terminus, etc.)
+- Basic connection lifecycle management
+- Automatic reconnect to Materialize with resume from last position (no data loss)
 
-### 🔄 Subscription Lifecycle & Reliability
-
-- Clients know when initial data load is complete vs receiving live updates
-- Clients can detect if they missed any updates during brief disconnections
-- Recent updates can be replayed for clients that briefly disconnect
-- Clear visibility into tycostream's connection health with its data sources
-
-### 🧪 Test Infrastructure
+### 🧪 Test Coverage
 
 - ✅ Integration test suite using testcontainers with real Materialize instance
 - ✅ Comprehensive E2E tests covering all CRUD operations, data types, and concurrent connections
-- 🔄 Resilience test suite for failure scenarios and fail-fast behavior validation
-- 🔄 Performance/stress test suite for high throughput and concurrent connection scenarios
 
 ---
 
-## **Milestone 3 — Scale to High-Throughput Workloads and Multi-Client Fanout**
+## **Milestone 3 — Enterprise Features**
+
+> Organizations can deploy tycostream at scale with advanced security, complete observability, and extended database support.
+> 
+
+### 🔗 Extended Data Capabilities
+
+- GraphQL joins
+- RisingWave support alongside Materialize
+- Multiple concurrent database connections
+
+### 🔐 Advanced Security
+
+- Full RBAC for GraphQL operations
+- Row-level security with deny-by-default edge filtering
+- Query complexity analysis to prevent expensive operations
+- Field-level middleware for auth and logging
+- JWKS support with key rotation
+
+### 🩺 Full Observability
+
+- Grafana dashboards and alerting rules
+- Distributed tracing support (OpenTelemetry)
+- Audit trail of data sent to each connected client
+- Performance metrics per subscription
+
+### 🔄 Advanced Resilience
+
+- Circuit breaker for failed subscriptions
+- Stream health monitoring and self-healing
+- Runtime source existence validation
+- Graceful degradation during partial outages
+- Automatic failover between streaming databases
+
+### 🔔 Advanced Triggers
+
+- Webhook signatures (HMAC) for security
+- Cooldown periods and rate limiting
+- Parameterized conditions with runtime variables
+- Webhook retry policies with jitter
+
+### 🧠 Production Hardening
+
+- Standardized error codes for all failure modes
+- Graceful shutdown with client notification before disconnect
+- Memory leak prevention and monitoring
+- Bounded per-subscriber queues with backpressure
+- Configurable drop policies for slow consumers
+
+### 🔄 Advanced Subscription Features
+
+- Clients can detect if they missed any updates during disconnection
+- Recent updates can be replayed for reconnecting clients
+- Connection health visibility with detailed status
+- Subscription-level throttling and rate limiting
+
+### 🧪 Comprehensive Testing
+
+- Resilience test suite for failure scenarios
+- Performance/stress test suite for high throughput
+- Chaos engineering test scenarios
+
+---
+
+## **Milestone 4 — Scale to High-Throughput Workloads**
 
 > Teams can confidently stream high-frequency data to many clients while monitoring performance, avoiding overload, and tuning system behavior.
 > 
@@ -117,13 +157,11 @@
 - Memory pressure monitoring
 - Graceful degradation during overload or outages
 
-### ⏱ Protocol Support & Optimizations
+### ⏱ Performance Optimizations
 
-- Update coalescing: batch rapid changes within time windows
+- Update coalescing: batch rapid changes within configurable time windows
 - Client-configurable batching strategies (time-based, count-based)
-- RisingWave support
-- Filter expression normalization for functional equivalency (e.g., `a AND b` vs `b AND a`)
-- Async view processing with setImmediate to prevent blocking event loop during filtering
+- Async view processing to prevent blocking event loop during filtering
 
 ### 🧪 Performance Testing
 
