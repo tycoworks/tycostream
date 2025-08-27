@@ -32,10 +32,3 @@ export interface Expression {
   expression: string;   // The expression string for debugging/logging
 }
 
-/**
- * View filter configuration with match/unmatch conditions
- */
-export interface ViewFilter {
-  match: Expression;
-  unmatch?: Expression;
-}

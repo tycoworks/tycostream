@@ -1,5 +1,6 @@
 import { View } from './view';
-import { RowUpdateEvent, RowUpdateType, ViewFilter } from './types';
+import { Filter } from './filter';
+import { RowUpdateEvent, RowUpdateType } from './types';
 import { Subject, Observable } from 'rxjs';
 import type { Source } from './source';
 
@@ -31,13 +32,11 @@ describe('View', () => {
     });
     
     it('should handle row entering view', () => {
-      const filter: ViewFilter = {
-        match: {
-          evaluate: (row) => row.active === true,
-          fields: new Set(['active']),
-          expression: 'datum.active === true'
-        }
-      };
+      const filter = new Filter({
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      });
       
       const view = new View(mockSource, filter);
       
@@ -54,13 +53,11 @@ describe('View', () => {
     });
     
     it('should handle row leaving view', () => {
-      const filter: ViewFilter = {
-        match: {
-          evaluate: (row) => row.active === true,
-          fields: new Set(['active']),
-          expression: 'datum.active === true'
-        }
-      };
+      const filter = new Filter({
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      });
       
       const view = new View(mockSource, filter);
       
@@ -85,13 +82,11 @@ describe('View', () => {
     });
     
     it('should handle row updating within view', () => {
-      const filter: ViewFilter = {
-        match: {
-          evaluate: (row) => row.active === true,
-          fields: new Set(['active']),
-          expression: 'datum.active === true'
-        }
-      };
+      const filter = new Filter({
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      });
       
       const view = new View(mockSource, filter);
       
@@ -114,13 +109,11 @@ describe('View', () => {
     });
     
     it('should filter out rows not matching filter', () => {
-      const filter: ViewFilter = {
-        match: {
-          evaluate: (row) => row.active === true,
-          fields: new Set(['active']),
-          expression: 'datum.active === true'
-        }
-      };
+      const filter = new Filter({
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      });
       
       const view = new View(mockSource, filter);
       
@@ -157,13 +150,11 @@ describe('View', () => {
     
     it('should skip filter evaluation for UPDATE when fields dont affect filter', () => {
       const evaluateMock = jest.fn((row) => row.active === true);
-      const filter: ViewFilter = {
-        match: {
-          evaluate: evaluateMock,
-          fields: new Set(['active']),
-          expression: 'datum.active === true'
-        }
-      };
+      const filter = new Filter({
+        evaluate: evaluateMock,
+        fields: new Set(['active']),
+        expression: 'datum.active === true'
+      });
       
       const view = new View(mockSource, filter);
       
@@ -191,18 +182,18 @@ describe('View', () => {
 
     describe('asymmetric match/unmatch conditions', () => {
       it('should handle hysteresis with different match and unmatch thresholds', () => {
-        const filter: ViewFilter = {
-          match: {
+        const filter = new Filter(
+          {
             evaluate: (row) => row.value >= 100,
             fields: new Set(['value']),
             expression: 'value >= 100'
           },
-          unmatch: {
+          {
             evaluate: (row) => row.value < 95,
             fields: new Set(['value']),
             expression: 'value < 95'
           }
-        };
+        );
 
         const view = new View(mockSource, filter);
 
@@ -235,18 +226,18 @@ describe('View', () => {
       });
 
       it('should not re-enter view until match condition is met again', () => {
-        const filter: ViewFilter = {
-          match: {
+        const filter = new Filter(
+          {
             evaluate: (row) => row.price > 10000,
             fields: new Set(['price']),
             expression: 'price > 10000'
           },
-          unmatch: {
+          {
             evaluate: (row) => row.price <= 9500,
             fields: new Set(['price']),
             expression: 'price <= 9500'
           }
-        };
+        );
 
         const view = new View(mockSource, filter);
 
@@ -283,18 +274,18 @@ describe('View', () => {
       });
 
       it('should handle unmatch condition using different fields than match', () => {
-        const filter: ViewFilter = {
-          match: {
+        const filter = new Filter(
+          {
             evaluate: (row) => row.status === 'active',
             fields: new Set(['status']),
             expression: 'status === "active"'
           },
-          unmatch: {
+          {
             evaluate: (row) => row.terminated === true,
             fields: new Set(['terminated']),
             expression: 'terminated === true'
           }
-        };
+        );
 
         const view = new View(mockSource, filter);
 
@@ -329,18 +320,18 @@ describe('View', () => {
         const matchEvaluate = jest.fn((row) => row.active === true);
         const unmatchEvaluate = jest.fn((row) => row.priority < 5);
         
-        const filter: ViewFilter = {
-          match: {
+        const filter = new Filter(
+          {
             evaluate: matchEvaluate,
             fields: new Set(['active']),
             expression: 'active === true'
           },
-          unmatch: {
+          {
             evaluate: unmatchEvaluate,
             fields: new Set(['priority']),
             expression: 'priority < 5'
           }
-        };
+        );
 
         const view = new View(mockSource, filter);
 
@@ -378,13 +369,11 @@ describe('View', () => {
   
   describe('getUpdates', () => {
     it('should emit transformed events that pass the filter', (done) => {
-      const filter: ViewFilter = {
-        match: {
-          expression: 'value > 10',
-          fields: new Set(['value']),
-          evaluate: (row) => row.value > 10
-        }
-      };
+      const filter = new Filter({
+        expression: 'value > 10',
+        fields: new Set(['value']),
+        evaluate: (row) => row.value > 10
+      });
       const view = new View(mockSource, filter);
       
       // Subscribe to the view's updates

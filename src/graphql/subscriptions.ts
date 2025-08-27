@@ -2,6 +2,7 @@ import { map, tap, of } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
 import { Logger } from '@nestjs/common';
 import { ViewService } from '../streaming/view.service';
+import { Filter } from '../streaming/filter';
 import type { SourceDefinition } from '../config/source.types';
 import type { RowUpdateEvent } from '../streaming/types';
 import { RowUpdateType } from '../streaming/types';
@@ -60,7 +61,7 @@ function createSourceSubscriptionResolver(
   return {
     subscribe: (parent: any, args: any, context: any, info: any) => {
       // Parse and compile filter if provided
-      const filter = args.where ? { match: buildExpression(args.where) } : undefined;
+      const filter = args.where ? new Filter(buildExpression(args.where)) : undefined;
       logger.log(`Subscription for ${sourceName}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`);
       
       // Pass filter to viewService

@@ -2,7 +2,8 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { SourceService } from './source.service';
 import { View } from './view';
-import type { RowUpdateEvent, ViewFilter } from './types';
+import { Filter } from './filter';
+import type { RowUpdateEvent } from './types';
 
 /**
  * ViewService manages views of streaming data
@@ -20,7 +21,7 @@ export class ViewService implements OnModuleDestroy {
   /**
    * Get updates for a specific source with optional filtering
    */
-  getUpdates(sourceName: string, filter?: ViewFilter): Observable<RowUpdateEvent> {
+  getUpdates(sourceName: string, filter?: Filter): Observable<RowUpdateEvent> {
     // Get the source for this data source
     const source = this.sourceService.getSource(sourceName);
     
