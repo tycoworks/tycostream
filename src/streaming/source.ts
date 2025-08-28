@@ -47,7 +47,7 @@ export class Source {
    * Get a stream of updates with late joiner support
    * Returns unfiltered stream of all updates from this source
    */
-  getUpdates(): Observable<RowUpdateEvent> {
+  getUpdates(skipSnapshot = false): Observable<RowUpdateEvent> {
     if (this.isShuttingDown) {
       throw new Error('Database stream is shutting down, cannot accept new subscriptions');
     }
@@ -62,21 +62,25 @@ export class Source {
       map(([event]) => event)
     ).subscribe(buffer$);
     
-    // Create snapshot observable from cache
-    const snapshot$ = from(this.cache.getAllRows()).pipe(
-      map(row => ({
-        type: RowUpdateType.Insert,
-        fields: new Set(Object.keys(row)),
-        row
-      }))
-    );
-    
     // Track subscriber
     this.activeSubscribers++;
     this.logger.debug(`Consumer connected - source: ${this.sourceDef.name}, cacheSize: ${this.cache.size}, subscribers: ${this.activeSubscribers}`);
     
-    // Concat: First emit all snapshot events, then emit buffered live events
-    return concat(snapshot$, buffer$).pipe(
+    // Create stream with or without snapshot based on skipSnapshot
+    const stream$ = skipSnapshot 
+      ? buffer$ 
+      : concat(
+          from(this.cache.getAllRows()).pipe(
+            map(row => ({
+              type: RowUpdateType.Insert,
+              fields: new Set(Object.keys(row)),
+              row
+            }))
+          ),
+          buffer$
+        );
+
+    return stream$.pipe(
       finalize(() => {
         this.activeSubscribers--;
         this.logger.debug(`Consumer disconnected - source: ${this.sourceDef.name}, subscribers: ${this.activeSubscribers}`);
