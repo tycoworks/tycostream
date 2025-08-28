@@ -76,35 +76,33 @@ When only `match` is specified, the same condition is used for both match and un
 
 **Create trigger**:
 ```json
-POST /v1/metadata
+POST /triggers
 {
-  "type": "create_event_trigger",
-  "args": {
-    "name": "large_trade_alert",  # Must be unique
-    "source": "trades",
-    "match": {
-      "condition": {
-        "symbol": { "_eq": "AAPL" },
-        "quantity": { "_gt": 10000 }
-      },
-      "webhook": "https://my-app.com/alert"
-    }
+  "name": "large_trade_alert",  # Must be unique
+  "source": "trades",
+  "match": {
+    "condition": {
+      "symbol": { "_eq": "AAPL" },
+      "quantity": { "_gt": 10000 }
+    },
+    "webhook": "https://my-app.com/alert"
   }
 }
 ```
 
 **Delete trigger**:
-```json
-POST /v1/metadata
-{
-  "type": "delete_event_trigger", 
-  "args": { "name": "large_trade_alert" }
-}
+```
+DELETE /triggers/large_trade_alert
 ```
 
 **List triggers**:
 ```
-GET /v1/metadata/triggers
+GET /triggers
+```
+
+**Get specific trigger**:
+```
+GET /triggers/large_trade_alert
 ```
 
 ### Webhook Payload

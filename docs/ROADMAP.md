@@ -59,6 +59,7 @@
 - At-least-once delivery with exponential backoff
 - Dead letter queue for failed webhooks
 - Basic idempotency support (event IDs)
+- Error webhooks for stream disconnection events (notify when connection lost/restored)
 
 ### 🧠 Core Resilience
 
