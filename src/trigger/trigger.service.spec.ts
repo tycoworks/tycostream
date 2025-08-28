@@ -22,10 +22,8 @@ describe('TriggerService', () => {
     const validDto: CreateTriggerDto = {
       name: 'test_trigger',
       source: 'trades',
-      match: {
-        condition: { price: { _gt: 100 } },
-        webhook: 'https://webhook.site/match'
-      }
+      webhook: 'https://webhook.site/webhook',
+      match: { price: { _gt: 100 } }
     };
 
     it('should create a trigger', async () => {
@@ -33,25 +31,32 @@ describe('TriggerService', () => {
       
       expect(trigger.name).toBe('test_trigger');
       expect(trigger.source).toBe('trades');
-      expect(trigger.match.webhook).toBe('https://webhook.site/match');
-      expect(trigger.match.condition.expression).toContain('price > 100');
+      expect(trigger.webhook).toBe('https://webhook.site/webhook');
+      expect(trigger.match.expression).toContain('price > 100');
       expect(trigger.createdAt).toBeInstanceOf(Date);
+    });
+
+    it('should automatically create unmatch as negation of match when not provided', async () => {
+      const trigger = await service.create(validDto);
+      
+      expect(trigger.unmatch).toBeDefined();
+      expect(trigger.unmatch.expression).toBe(`!(${trigger.match.expression})`);
+      // Test the actual evaluation
+      const testRow = { price: 150 };
+      expect(trigger.match.evaluate(testRow)).toBe(true);
+      expect(trigger.unmatch.evaluate(testRow)).toBe(false);
     });
 
     it('should create trigger with unmatch condition', async () => {
       const dtoWithUnmatch: CreateTriggerDto = {
         ...validDto,
-        unmatch: {
-          condition: { price: { _lte: 90 } },
-          webhook: 'https://webhook.site/unmatch'
-        }
+        unmatch: { price: { _lte: 90 } }
       };
 
       const trigger = await service.create(dtoWithUnmatch);
       
       expect(trigger.unmatch).toBeDefined();
-      expect(trigger.unmatch!.webhook).toBe('https://webhook.site/unmatch');
-      expect(trigger.unmatch!.condition.expression).toContain('price <= 90');
+      expect(trigger.unmatch!.expression).toContain('price <= 90');
     });
 
     it('should throw ConflictException for duplicate name', async () => {
@@ -68,10 +73,8 @@ describe('TriggerService', () => {
     const validDto: CreateTriggerDto = {
       name: 'test_trigger',
       source: 'trades',
-      match: {
-        condition: { price: { _gt: 100 } },
-        webhook: 'https://webhook.site/test'
-      }
+      webhook: 'https://webhook.site/test',
+      match: { price: { _gt: 100 } }
     };
 
     it('should get a trigger by name', async () => {
@@ -97,19 +100,15 @@ describe('TriggerService', () => {
       const dto1: CreateTriggerDto = {
         name: 'trigger1',
         source: 'trades',
-        match: {
-          condition: { price: { _gt: 100 } },
-          webhook: 'https://webhook.site/1'
-        }
+        webhook: 'https://webhook.site/1',
+        match: { price: { _gt: 100 } }
       };
 
       const dto2: CreateTriggerDto = {
         name: 'trigger2',
         source: 'live_pnl',
-        match: {
-          condition: { realized_pnl: { _lt: -1000 } },
-          webhook: 'https://webhook.site/2'
-        }
+        webhook: 'https://webhook.site/2',
+        match: { realized_pnl: { _lt: -1000 } }
       };
 
       await service.create(dto1);
@@ -125,10 +124,8 @@ describe('TriggerService', () => {
     const validDto: CreateTriggerDto = {
       name: 'test_trigger',
       source: 'trades',
-      match: {
-        condition: { price: { _gt: 100 } },
-        webhook: 'https://webhook.site/test'
-      }
+      webhook: 'https://webhook.site/test',
+      match: { price: { _gt: 100 } }
     };
 
     it('should delete a trigger', async () => {

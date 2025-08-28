@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
 import { buildExpression } from '../common/expressions';
-import { Trigger, TriggerCondition } from './trigger';
+import { Trigger } from './trigger';
 import { CreateTriggerDto } from './trigger.dto';
 
 /**
@@ -24,22 +24,16 @@ export class TriggerService {
     }
 
     // Compile conditions to Expressions
-    const matchCondition: TriggerCondition = {
-      condition: buildExpression(dto.match.condition),
-      webhook: dto.match.webhook
-    };
-
-    const unmatchCondition = dto.unmatch ? {
-      condition: buildExpression(dto.unmatch.condition),
-      webhook: dto.unmatch.webhook
-    } : undefined;
+    const match = buildExpression(dto.match);
+    const unmatch = dto.unmatch ? buildExpression(dto.unmatch) : undefined;
 
     // Create trigger
     const trigger = new Trigger({
       name: dto.name,
       source: dto.source,
-      match: matchCondition,
-      unmatch: unmatchCondition
+      webhook: dto.webhook,
+      match,
+      unmatch
     });
 
     // Store trigger

@@ -1,32 +1,33 @@
 import { Expression } from '../streaming/types';
 
 /**
- * Match/unmatch configuration for a trigger
- */
-export interface TriggerCondition {
-  condition: Expression;
-  webhook: string; // URL for webhook delivery
-}
-
-/**
  * Trigger definition stored in the registry
  */
 export class Trigger {
   name: string;
   source: string;
-  match: TriggerCondition;
-  unmatch?: TriggerCondition;
+  webhook: string;
+  match: Expression;
+  unmatch: Expression;
   createdAt: Date = new Date();
   
   constructor(config: {
     name: string;
     source: string;
-    match: TriggerCondition;
-    unmatch?: TriggerCondition;
+    webhook: string;
+    match: Expression;
+    unmatch?: Expression;
   }) {
     this.name = config.name;
     this.source = config.source;
+    this.webhook = config.webhook;
     this.match = config.match;
-    this.unmatch = config.unmatch;
+    
+    // If unmatch not provided, use negation of match
+    this.unmatch = config.unmatch || {
+      evaluate: (row: any) => !config.match.evaluate(row),
+      fields: config.match.fields,
+      expression: `!(${config.match.expression})`
+    };
   }
 }

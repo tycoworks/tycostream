@@ -42,32 +42,43 @@ You can configure:
 **Simple Trigger** (same condition for match/unmatch):
 ```json
 {
-  "name": "large_trade_alert",  # Must be unique
+  "name": "large_trade_alert",
   "source": "trades",
+  "webhook": "https://compliance-api/webhook",
   "match": {
-    "condition": {
-      "symbol": { "_eq": "AAPL" },
-      "quantity": { "_gt": 10000 }
-    },
-    "webhook": "https://compliance-api/large-trade"
+    "symbol": { "_eq": "AAPL" },
+    "quantity": { "_gt": 10000 }
   }
 }
 ```
 
-When only `match` is specified, the same condition is used for both match and unmatch events.
+When only `match` is specified, the inverse condition (!match) is automatically used for unmatch events.
 
-**Trigger with Different Match/Unmatch Conditions**:
+**Trigger with Different Match/Unmatch Conditions** (hysteresis):
 ```json
 {
-  "name": "risk_position_alert",  # Must be unique
+  "name": "risk_position_alert",
   "source": "positions",
-  "match": {
-    "condition": { "net_position": { "_gt": 10000 } },
-    "webhook": "https://api/risk-alert"
-  },
-  "unmatch": {
-    "condition": { "net_position": { "_lte": 9500 } },
-    "webhook": "https://api/all-clear"
+  "webhook": "https://api/webhook",
+  "match": { "net_position": { "_gt": 10000 } },
+  "unmatch": { "net_position": { "_lte": 9500 } }
+}
+```
+
+### Webhook Payload
+
+The webhook receives a JSON payload with the event type and row data:
+
+```json
+{
+  "event": "MATCH",  // or "UNMATCH"
+  "trigger": "large_trade_alert",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "id": 12345,
+    "symbol": "AAPL",
+    "quantity": 15000,
+    "price": 150.50
   }
 }
 ```
@@ -78,16 +89,13 @@ When only `match` is specified, the same condition is used for both match and un
 ```json
 POST /triggers
 {
-  "name": "large_trade_alert",  # Must be unique
+  "name": "large_trade_alert",
   "source": "trades",
+  "webhook": "https://my-app.com/webhook",
   "match": {
-    "condition": {
-      "symbol": { "_eq": "AAPL" },
-      "quantity": { "_gt": 10000 }
-    },
-    "webhook": "https://my-app.com/alert"
+    "symbol": { "_eq": "AAPL" },
+    "quantity": { "_gt": 10000 }
   }
-}
 ```
 
 **Delete trigger**:
@@ -230,25 +238,26 @@ During Step 3 implementation, we discovered that View and Trigger have fundament
 - Each client gets own instance
 - Emits INSERT/UPDATE/DELETE based on view membership
 
-**TriggerHandler (for webhooks)**
+**Trigger (for webhooks)**
 - Detects "state transitions" (crossing thresholds)
 - Skips snapshot (don't fire on existing data)
 - Uses asymmetric conditions (match/unmatch for hysteresis)
-- Shared across all triggers for a source
-- Emits MATCH/UNMATCH events
+- Fires webhooks with MATCH/UNMATCH events
+- Self-contained stream processor (like View)
 
-3. **Refactor to separate concerns** (New approach)
-   - Revert View changes - remove Filter/asymmetric conditions
-   - Move View to graphql module (it's GraphQL-specific)
+3. **Connect triggers to streaming core**
+   - Trigger class becomes the stream processor (like View)
    - Add `skipSnapshot` parameter to Source.getUpdates()
-   - Create TriggerHandler class for trigger-specific logic
-
-4. **Connect triggers to streaming core** (Updated)
-   - TriggerHandler subscribes with skipSnapshot=true
-   - One TriggerHandler per source (handles all triggers)
-   - Track match state per row per trigger
+   - Trigger subscribes with skipSnapshot=true
+   - Track match state per row within Trigger
    - Fire webhooks using @nestjs/axios
    - For MVP: log webhook errors and skip (no retries, no process exit)
+
+4. **TriggerService manages Trigger instances**
+   - Creates Trigger instances when triggers are created
+   - One Trigger instance per trigger definition
+   - Manages lifecycle (create, delete, list)
+   - Similar pattern to ViewService/View relationship
 
 5. **Demo implementation**
    - Add simple webhook receiver (10-line Express server)

@@ -11,13 +11,11 @@ describe('TriggerController', () => {
   const mockTrigger: Trigger = new Trigger({
     name: 'test_trigger',
     source: 'trades',
+    webhook: 'https://webhook.site/test',
     match: {
-      condition: {
-        evaluate: () => true,
-        fields: new Set(['price']),
-        expression: 'price > 100'
-      },
-      webhook: 'https://webhook.site/test'
+      evaluate: () => true,
+      fields: new Set(['price']),
+      expression: 'price > 100'
     }
   });
 
@@ -54,10 +52,8 @@ describe('TriggerController', () => {
     const createDto: CreateTriggerDto = {
       name: 'test_trigger',
       source: 'trades',
-      match: {
-        condition: { price: { _gt: 100 } },
-        webhook: 'https://webhook.site/test'
-      }
+      webhook: 'https://webhook.site/test',
+      match: { price: { _gt: 100 } }
     };
 
     it('should create a trigger via POST /triggers', async () => {

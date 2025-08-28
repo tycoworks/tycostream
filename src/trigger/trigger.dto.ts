@@ -1,18 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsObject, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
-
-/**
- * DTO for trigger condition (match or unmatch)
- */
-class TriggerConditionDto {
-  @IsObject()
-  @IsNotEmpty()
-  condition: Record<string, any>; // Will be compiled to Expression
-
-  @IsString()
-  @IsNotEmpty()
-  webhook: string; // URL for webhook delivery
-}
+import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
 
 /**
  * DTO for creating a new trigger
@@ -27,13 +13,15 @@ export class CreateTriggerDto {
   @IsNotEmpty()
   source: string;
 
-  @ValidateNested()
-  @Type(() => TriggerConditionDto)
+  @IsString()
   @IsNotEmpty()
-  match: TriggerConditionDto;
+  webhook: string; // URL for webhook delivery (called with eventType)
 
-  @ValidateNested()
-  @Type(() => TriggerConditionDto)
+  @IsObject()
+  @IsNotEmpty()
+  match: Record<string, any>; // Match condition (will be compiled to Expression)
+
+  @IsObject()
   @IsOptional()
-  unmatch?: TriggerConditionDto;
+  unmatch?: Record<string, any>; // Optional unmatch condition (defaults to !match)
 }
