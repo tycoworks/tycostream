@@ -213,14 +213,14 @@ This keeps tycostream truly stateless - it's just a router between streams and w
    - ✅ Keep this internal - GraphQL continues using simple `where` clauses
    - ✅ Test the new exit behavior with unit tests
 
-2. **Trigger module and API**
-   - Create trigger module with controller and service
-   - Add REST endpoints for trigger management (NestJS controllers)
-   - Support separate webhooks for match/unmatch events
-   - In-memory trigger registry
-   - Lazy initialization on first trigger creation (like GraphQL)
+2. **Trigger module and API** ✅
+   - ✅ Create trigger module with controller and service
+   - ✅ Add REST endpoints for trigger management (NestJS controllers)
+   - ✅ Support separate webhooks for match/unmatch events
+   - ✅ In-memory trigger registry
 
 3. **Connect to streaming core**
+   - Lazy initialization on first trigger creation (like GraphQL)
    - Subscribe to ViewService for trigger sources (reuse existing pattern)
    - Use augmented views with match/unmatch state tracking
    - Fire webhooks using @nestjs/axios (official HTTP client)
