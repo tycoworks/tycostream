@@ -219,15 +219,38 @@ This keeps tycostream truly stateless - it's just a router between streams and w
    - ✅ Support separate webhooks for match/unmatch events
    - ✅ In-memory trigger registry
 
-3. **Connect to streaming core**
-   - Lazy initialization on first trigger creation (like GraphQL)
-   - Subscribe to ViewService for trigger sources (reuse existing pattern)
-   - Use augmented views with match/unmatch state tracking
-   - Fire webhooks using @nestjs/axios (official HTTP client)
-   - Send full row data in webhook payload
+### Architecture Discovery (During Step 3 Implementation)
+
+During Step 3 implementation, we discovered that View and Trigger have fundamentally different requirements:
+
+**View (for GraphQL subscriptions)**
+- Shows "what's currently visible through a filter"
+- Needs snapshot to establish initial state
+- Uses symmetric filters (WHERE clauses)
+- Each client gets own instance
+- Emits INSERT/UPDATE/DELETE based on view membership
+
+**TriggerHandler (for webhooks)**
+- Detects "state transitions" (crossing thresholds)
+- Skips snapshot (don't fire on existing data)
+- Uses asymmetric conditions (match/unmatch for hysteresis)
+- Shared across all triggers for a source
+- Emits MATCH/UNMATCH events
+
+3. **Refactor to separate concerns** (New approach)
+   - Revert View changes - remove Filter/asymmetric conditions
+   - Move View to graphql module (it's GraphQL-specific)
+   - Add `skipSnapshot` parameter to Source.getUpdates()
+   - Create TriggerHandler class for trigger-specific logic
+
+4. **Connect triggers to streaming core** (Updated)
+   - TriggerHandler subscribes with skipSnapshot=true
+   - One TriggerHandler per source (handles all triggers)
+   - Track match state per row per trigger
+   - Fire webhooks using @nestjs/axios
    - For MVP: log webhook errors and skip (no retries, no process exit)
 
-4. **Demo implementation**
+5. **Demo implementation**
    - Add simple webhook receiver (10-line Express server)
    - Create alerts table in Materialize
    - Update demo UI with trigger management panel
