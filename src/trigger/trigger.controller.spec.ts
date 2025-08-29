@@ -8,16 +8,23 @@ describe('TriggerController', () => {
   let controller: TriggerController;
   let service: TriggerService;
 
-  const mockTrigger: Trigger = new Trigger({
+  // Create a partial mock that matches the Trigger structure
+  const mockTrigger = {
     name: 'test_trigger',
-    source: 'trades',
     webhook: 'https://webhook.site/test',
     match: {
       evaluate: () => true,
       fields: new Set(['price']),
       expression: 'price > 100'
-    }
-  });
+    },
+    unmatch: {
+      evaluate: () => false,
+      fields: new Set(['price']),
+      expression: '!(price > 100)'
+    },
+    createdAt: new Date(),
+    dispose: jest.fn()
+  } as any as Trigger;
 
   const mockService = {
     create: jest.fn(),

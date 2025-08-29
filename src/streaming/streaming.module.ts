@@ -14,7 +14,8 @@ import { ViewService } from './view.service';
     ViewService
   ],
   exports: [
-    ViewService
+    ViewService,
+    SourceService
   ],
 })
 export class StreamingModule {}

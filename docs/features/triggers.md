@@ -224,7 +224,7 @@ This keeps tycostream truly stateless - it's just a router between streams and w
 2. **Trigger module and API** ✅
    - ✅ Create trigger module with controller and service
    - ✅ Add REST endpoints for trigger management (NestJS controllers)
-   - ✅ Support separate webhooks for match/unmatch events
+   - ✅ Support single webhook URL (simplified from original design)
    - ✅ In-memory trigger registry
 
 ### Architecture Discovery (During Step 3 Implementation)
@@ -245,26 +245,35 @@ During Step 3 implementation, we discovered that View and Trigger have fundament
 - Fires webhooks with MATCH/UNMATCH events
 - Self-contained stream processor (like View)
 
-3. **Connect triggers to streaming core**
-   - Trigger class becomes the stream processor (like View)
-   - Add `skipSnapshot` parameter to Source.getUpdates()
-   - Trigger subscribes with skipSnapshot=true
-   - Track match state per row within Trigger
-   - Fire webhooks using @nestjs/axios
-   - For MVP: log webhook errors and skip (no retries, no process exit)
+3. **Connect triggers to streaming core** ✅
+   - ✅ Trigger class becomes the stream processor (like View)
+   - ✅ Add `skipSnapshot` parameter to Source.getUpdates()
+   - ✅ Trigger subscribes with skipSnapshot=true
+   - ✅ Track match state per row within Trigger (via StateTracker)
+   - ✅ Extract StateTracker class to handle match/unmatch state transitions
+   - ✅ Use StateTracker in Trigger class
 
-4. **TriggerService manages Trigger instances**
-   - Creates Trigger instances when triggers are created
-   - One Trigger instance per trigger definition
-   - Manages lifecycle (create, delete, list)
-   - Similar pattern to ViewService/View relationship
+4. **TriggerService manages Trigger instances** ✅
+   - ✅ Creates Trigger instances when triggers are created
+   - ✅ One Trigger instance per trigger definition
+   - ✅ Manages lifecycle (create, delete, list)
+   - ✅ Similar pattern to ViewService/View relationship
 
-5. **Demo implementation**
-   - Add simple webhook receiver (10-line Express server)
-   - Create alerts table in Materialize
-   - Update demo UI with trigger management panel
-   - Show live audit trail of triggered/cleared events
-   - Integration tests
+5. **Architecture refinements** 🔄
+   - 🔄 Update View class to use StateTracker for consistency
+   - 🔄 Remove Source dependency from Trigger and View classes
+   - 🔄 Pass primaryKeyField and Observable directly instead
+
+6. **Implement webhook firing** ❌
+   - ❌ Fire webhooks using @nestjs/axios
+   - ❌ For MVP: log webhook errors and skip (no retries, no process exit)
+
+7. **Demo implementation** ❌ (not started)
+   - ❌ Add simple webhook receiver (10-line Express server)
+   - ❌ Create alerts table in Materialize
+   - ❌ Update demo UI with trigger management panel
+   - ❌ Show live audit trail of triggered/cleared events
+   - ❌ Integration tests
 
 ## Demo Application
 

@@ -2,16 +2,38 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TriggerService } from './trigger.service';
 import { CreateTriggerDto } from './trigger.dto';
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { SourceService } from '../streaming/source.service';
+import { of } from 'rxjs';
 
 describe('TriggerService', () => {
   let service: TriggerService;
+  let sourceService: SourceService;
+
+  const mockSource = {
+    getPrimaryKeyField: () => 'id',
+    getUpdates: jest.fn(() => of({ type: 0, fields: new Set(['id']), row: { id: 1 } }))
+  };
+
+  const mockSourceService = {
+    getSource: jest.fn(() => mockSource)
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [TriggerService],
+      providers: [
+        TriggerService,
+        {
+          provide: SourceService,
+          useValue: mockSourceService
+        }
+      ],
     }).compile();
 
     service = module.get<TriggerService>(TriggerService);
+    sourceService = module.get<SourceService>(SourceService);
+    
+    // Clear mocks
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -30,24 +52,20 @@ describe('TriggerService', () => {
       const trigger = await service.create(validDto);
       
       expect(trigger.name).toBe('test_trigger');
-      expect(trigger.source).toBe('trades');
       expect(trigger.webhook).toBe('https://webhook.site/webhook');
       expect(trigger.match.expression).toContain('price > 100');
       expect(trigger.createdAt).toBeInstanceOf(Date);
+      expect(mockSourceService.getSource).toHaveBeenCalledWith('trades');
     });
 
-    it('should automatically create unmatch as negation of match when not provided', async () => {
+    it('should pass undefined unmatch to trigger when not provided', async () => {
       const trigger = await service.create(validDto);
       
-      expect(trigger.unmatch).toBeDefined();
-      expect(trigger.unmatch.expression).toBe(`!(${trigger.match.expression})`);
-      // Test the actual evaluation
-      const testRow = { price: 150 };
-      expect(trigger.match.evaluate(testRow)).toBe(true);
-      expect(trigger.unmatch.evaluate(testRow)).toBe(false);
+      // Trigger gets undefined unmatch, StateTracker handles negation internally
+      expect(trigger.unmatch).toBeUndefined();
     });
 
-    it('should create trigger with unmatch condition', async () => {
+    it('should pass explicit unmatch condition to trigger', async () => {
       const dtoWithUnmatch: CreateTriggerDto = {
         ...validDto,
         unmatch: { price: { _lte: 90 } }
