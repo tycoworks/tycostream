@@ -231,53 +231,43 @@ This keeps tycostream truly stateless - it's just a router between streams and w
 
 After implementing the initial design, we discovered a simpler, more elegant architecture:
 
-**Key Insight**: Views and Triggers are fundamentally the same thing - filtered streams that track state transitions. The only difference is how those transitions are consumed (GraphQL subscriptions vs webhooks).
+**Key Insight**: Views already provide the right abstraction - they track what's "in view" and emit INSERT/UPDATE/DELETE events. Triggers are just Views where INSERT means "matched" and DELETE means "unmatched". No new abstractions needed.
 
 **New Architecture**:
 ```
 streaming/
   ├── Source (raw event stream)
-  ├── View (tracks match/unmatch state transitions)
+  ├── View (tracks what's in filtered set, emits INSERT/UPDATE/DELETE)
   └── Types, Filter, etc.
 
 api/
-  ├── GraphQL schema and resolvers
-  ├── REST API for trigger CRUD
-  ├── Maps View transitions → INSERT/UPDATE/DELETE (for GraphQL)
-  └── Maps View transitions → webhook calls (for triggers)
+  ├── GraphQL subscriptions (uses View events, filters fields as needed)
+  └── Webhook triggers (uses View events, fires on INSERT/DELETE)
 ```
 
 **Benefits**:
-- No duplicate state tracking logic
-- View is a pure stream transformer
-- Each API layer handles its own formatting
-- Simpler mental model
+- No new abstractions or event types
+- View remains a simple filtered stream
+- Each API layer interprets events as needed
+- Minimal code changes
 
 ### Implementation Plan
 
-#### Phase 1: Refactor View
+#### Phase 1: Clean up View
 
-1. **Refactor View class** (`src/streaming/view.ts`)
-   - Keep name as "View" - it's conceptually correct
-   - Change output from RowUpdateEvent to StateTransition events
-   - Remove GraphQL-specific formatting (INSERT/UPDATE/DELETE logic)
-   - Output format:
-     ```typescript
-     interface StateTransitionEvent {
-       transition: StateTransition; // Match, Unmatch, Matched, Unmatched
-       row: Record<string, any>;    // Full row data
-       fields: Set<string>;          // Changed fields (for Updates)
-     }
-     ```
+1. **Remove GraphQL-specific field filtering** (`src/streaming/view.ts`)
+   - Keep INSERT/UPDATE/DELETE event types
+   - Always include all fields in the event
+   - Remove the logic that filters fields for DELETE events
+   - Let each API layer decide what fields it needs
 
 2. **Keep ViewService as-is** (`src/streaming/view.service.ts`)
-   - No renaming needed
-   - Keep the same lifecycle management
+   - No changes needed
    - Continue creating View instances per subscription
 
-3. **Keep state tracking logic in View**
-   - Already has match/unmatch evaluation logic
-   - Track matched keys internally
+3. **View continues to track visibility**
+   - Keep the visibleKeys Set
+   - Keep match/unmatch evaluation logic
    - Support both symmetric (match only) and asymmetric (match/unmatch) conditions
 
 #### Phase 2: Reorganize API Layer
@@ -287,14 +277,11 @@ api/
    - All GraphQL and trigger files at same level
    - Update imports across the codebase
 
-5. **Create GraphQL adapter** (`src/api/subscription-adapter.ts`)
-   - Subscribe to View's state transitions
-   - Transform to RowUpdateEvent format:
-     - `Match` → `INSERT` (all fields)
-     - `Unmatch` → `DELETE` (primary key only)
-     - `Matched` → `UPDATE` (changed fields)
-     - `Unmatched` → filtered out
-   - Keep existing subscription resolver structure
+5. **Update GraphQL subscriptions** (`src/api/subscriptions.ts`)
+   - Add field filtering logic that was removed from View
+   - For DELETE events, only send primary key field
+   - For INSERT events, send all fields
+   - For UPDATE events, send changed fields
 
 #### Phase 3: Implement Trigger API
 
@@ -310,9 +297,10 @@ api/
      private subscriptions = new Map<string, Subscription>();
      ```
    - For each trigger:
-     - Creates a View via ViewService
-     - Subscribes to state transitions
-     - Fires webhooks on Match/Unmatch transitions
+     - Creates a View via ViewService with skipSnapshot=true
+     - Subscribes to View events
+     - Maps INSERT → MATCH webhook, DELETE → UNMATCH webhook
+     - Ignores UPDATE events
    - Stores both trigger config and subscription
    - Handles webhook failures (log and continue)
 
