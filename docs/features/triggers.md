@@ -227,53 +227,140 @@ This keeps tycostream truly stateless - it's just a router between streams and w
    - ✅ Support single webhook URL (simplified from original design)
    - ✅ In-memory trigger registry
 
-### Architecture Discovery (During Step 3 Implementation)
+### Revised Architecture (Simplified Approach)
 
-During Step 3 implementation, we discovered that View and Trigger have fundamentally different requirements:
+After implementing the initial design, we discovered a simpler, more elegant architecture:
 
-**View (for GraphQL subscriptions)**
-- Shows "what's currently visible through a filter"
-- Needs snapshot to establish initial state
-- Uses symmetric filters (WHERE clauses)
-- Each client gets own instance
-- Emits INSERT/UPDATE/DELETE based on view membership
+**Key Insight**: Views and Triggers are fundamentally the same thing - filtered streams that track state transitions. The only difference is how those transitions are consumed (GraphQL subscriptions vs webhooks).
 
-**Trigger (for webhooks)**
-- Detects "state transitions" (crossing thresholds)
-- Skips snapshot (don't fire on existing data)
-- Uses asymmetric conditions (match/unmatch for hysteresis)
-- Fires webhooks with MATCH/UNMATCH events
-- Self-contained stream processor (like View)
+**New Architecture**:
+```
+streaming/
+  ├── Source (raw event stream)
+  ├── View (tracks match/unmatch state transitions)
+  └── Types, Filter, etc.
 
-3. **Connect triggers to streaming core** ✅
-   - ✅ Trigger class becomes the stream processor (like View)
-   - ✅ Add `skipSnapshot` parameter to Source.getUpdates()
-   - ✅ Trigger subscribes with skipSnapshot=true
-   - ✅ Track match state per row within Trigger (via StateTracker)
-   - ✅ Extract StateTracker class to handle match/unmatch state transitions
-   - ✅ Use StateTracker in Trigger class
+api/
+  ├── GraphQL schema and resolvers
+  ├── REST API for trigger CRUD
+  ├── Maps View transitions → INSERT/UPDATE/DELETE (for GraphQL)
+  └── Maps View transitions → webhook calls (for triggers)
+```
 
-4. **TriggerService manages Trigger instances** ✅
-   - ✅ Creates Trigger instances when triggers are created
-   - ✅ One Trigger instance per trigger definition
-   - ✅ Manages lifecycle (create, delete, list)
-   - ✅ Similar pattern to ViewService/View relationship
+**Benefits**:
+- No duplicate state tracking logic
+- View is a pure stream transformer
+- Each API layer handles its own formatting
+- Simpler mental model
 
-5. **Architecture refinements** 🔄
-   - 🔄 Update View class to use StateTracker for consistency
-   - 🔄 Remove Source dependency from Trigger and View classes
-   - 🔄 Pass primaryKeyField and Observable directly instead
+### Implementation Plan
 
-6. **Implement webhook firing** ❌
-   - ❌ Fire webhooks using @nestjs/axios
-   - ❌ For MVP: log webhook errors and skip (no retries, no process exit)
+#### Phase 1: Refactor View
 
-7. **Demo implementation** ❌ (not started)
-   - ❌ Add simple webhook receiver (10-line Express server)
-   - ❌ Create alerts table in Materialize
-   - ❌ Update demo UI with trigger management panel
-   - ❌ Show live audit trail of triggered/cleared events
-   - ❌ Integration tests
+1. **Refactor View class** (`src/streaming/view.ts`)
+   - Keep name as "View" - it's conceptually correct
+   - Change output from RowUpdateEvent to StateTransition events
+   - Remove GraphQL-specific formatting (INSERT/UPDATE/DELETE logic)
+   - Output format:
+     ```typescript
+     interface StateTransitionEvent {
+       transition: StateTransition; // Match, Unmatch, Matched, Unmatched
+       row: Record<string, any>;    // Full row data
+       fields: Set<string>;          // Changed fields (for Updates)
+     }
+     ```
+
+2. **Keep ViewService as-is** (`src/streaming/view.service.ts`)
+   - No renaming needed
+   - Keep the same lifecycle management
+   - Continue creating View instances per subscription
+
+3. **Keep state tracking logic in View**
+   - Already has match/unmatch evaluation logic
+   - Track matched keys internally
+   - Support both symmetric (match only) and asymmetric (match/unmatch) conditions
+
+#### Phase 2: Reorganize API Layer
+
+4. **Rename graphql directory to api** (`src/graphql/` → `src/api/`)
+   - Keep flat structure - no subdirectories
+   - All GraphQL and trigger files at same level
+   - Update imports across the codebase
+
+5. **Create GraphQL adapter** (`src/api/subscription-adapter.ts`)
+   - Subscribe to View's state transitions
+   - Transform to RowUpdateEvent format:
+     - `Match` → `INSERT` (all fields)
+     - `Unmatch` → `DELETE` (primary key only)
+     - `Matched` → `UPDATE` (changed fields)
+     - `Unmatched` → filtered out
+   - Keep existing subscription resolver structure
+
+#### Phase 3: Implement Trigger API
+
+6. **Move trigger REST endpoints to api** (`src/trigger/` → `src/api/`)
+   - Move `trigger.controller.ts` and `trigger.dto.ts` to api/
+   - Delete entire `src/trigger/` directory after moving files
+   - Trigger module gets merged into api.module.ts
+
+7. **Create WebhookService** (`src/api/webhook.service.ts`)
+   - Manages trigger configurations (in-memory Map):
+     ```typescript
+     private triggers = new Map<string, TriggerConfig>();
+     private subscriptions = new Map<string, Subscription>();
+     ```
+   - For each trigger:
+     - Creates a View via ViewService
+     - Subscribes to state transitions
+     - Fires webhooks on Match/Unmatch transitions
+   - Stores both trigger config and subscription
+   - Handles webhook failures (log and continue)
+
+8. **Update TriggerController** (`src/api/trigger.controller.ts`)
+   - Inject WebhookService instead of TriggerService
+   - CRUD operations manage trigger registry:
+     - POST /triggers - Creates View and subscription
+     - DELETE /triggers/:name - Disposes subscription and removes from Map
+     - GET /triggers - Returns active trigger configurations from Map
+
+#### Phase 4: Cleanup
+
+9. **Remove obsolete files**
+   - Delete `src/common/states.ts` and `states.spec.ts` (StateTracker)
+   - Delete `src/trigger/trigger.ts`, `trigger.service.ts`, and `trigger.spec.ts`
+   - Delete entire `src/trigger/` directory after moving needed files
+   - Keep View tests, just update them for new output format
+
+10. **Update module structure**
+    ```
+    src/
+    ├── streaming/
+    │   ├── view.ts (kept as-is, refactored internally)
+    │   ├── view.service.ts (kept as-is)
+    │   ├── source.ts
+    │   ├── source.service.ts
+    │   └── streaming.module.ts
+    └── api/
+        ├── api.module.ts (renamed from graphql.module.ts)
+        ├── schema.ts
+        ├── subscriptions.ts
+        ├── subscription-adapter.ts (new - maps state transitions to GraphQL)
+        ├── trigger.controller.ts (moved from trigger/)
+        ├── trigger.dto.ts (moved from trigger/)
+        └── webhook.service.ts (new - manages triggers and fires webhooks)
+    ```
+
+#### Phase 5: Testing & Demo
+
+11. **Update tests**
+    - Update view.spec.ts for state transition output
+    - Update GraphQL tests to handle state transitions
+    - Create webhook.service.spec.ts
+
+12. **Demo implementation**
+    - Simple webhook receiver endpoint
+    - Update UI to show trigger management
+    - Integration tests for full flow
 
 ## Demo Application
 
