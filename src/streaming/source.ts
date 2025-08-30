@@ -20,6 +20,7 @@ export class Source {
   private latestTimestamp = BigInt(0);
   private isShuttingDown = false;
   private activeSubscribers = 0;
+  private readonly allFields: Set<string>;
 
   constructor(
     private readonly databaseStream: DatabaseStream,
@@ -27,6 +28,7 @@ export class Source {
     private readonly onDispose: () => void
   ) {
     this.cache = new SimpleCache(sourceDef.primaryKeyField);
+    this.allFields = new Set(sourceDef.fields.map(f => f.name));
     
     // Start streaming immediately since we're created on-demand
     this.startStreaming().catch(error => {
@@ -163,52 +165,37 @@ export class Source {
 
   /**
    * Determine the appropriate event type and data based on database update type
-   * Handles UPSERT logic and minimizes DELETE event data
+   * Handles UPSERT logic and enriches events with cached data
    */
   private prepareEvent(row: Record<string, any>, primaryKey: any, updateType: DatabaseRowUpdateType): RowUpdateEvent {
-    // Get existing row from cache if it exists
     const existingRow = this.cache.get(primaryKey);
     
-    // Determine event type and fields
+    // Enrich with cached data if available (for DELETE and partial UPDATE support)
+    const fullRow = existingRow ? { ...existingRow, ...row } : row;
+    
     let eventType: RowUpdateType;
     let fields: Set<string>;
-    let eventRow: Record<string, any>;
     
     if (updateType === DatabaseRowUpdateType.Delete) {
       eventType = RowUpdateType.Delete;
-      fields = this.getPkFieldSet();
-      // For DELETE, normalize row to only contain primary key
-      eventRow = { [this.sourceDef.primaryKeyField]: primaryKey };
+      fields = new Set(this.allFields);  // Copy to prevent mutation
     } else if (updateType === DatabaseRowUpdateType.Upsert) {
       if (existingRow) {
-        // UPDATE - start with primary key, add changed fields
+        // UPDATE - calculate what changed
         eventType = RowUpdateType.Update;
-        fields = this.getPkFieldSet();
+        fields = new Set<string>();
         this.calculateChanges(existingRow, row, fields);
       } else {
-        // INSERT - all fields
+        // INSERT - all schema fields
         eventType = RowUpdateType.Insert;
-        fields = new Set(Object.keys(row));
+        fields = new Set(this.allFields);  // Copy to prevent mutation
       }
-      eventRow = row;
     } else {
-      // Unknown update type - this should never happen
+      // Future-proofing for new enum values
       throw new Error(`Unexpected update type: ${updateType} for row: ${truncateForLog(row)}`);
     }
     
-    return {
-      type: eventType,
-      fields,
-      row: eventRow
-    };
-  }
-
-  /**
-   * Create a Set containing only the primary key field
-   * Used for DELETE events and as the base for UPDATE events
-   */
-  private getPkFieldSet(): Set<string> {
-    return new Set<string>([this.sourceDef.primaryKeyField]);
+    return { type: eventType, fields, row: fullRow };
   }
 
   /**

@@ -96,22 +96,44 @@ describe('Source', () => {
       // Second event is the UPDATE with only changed fields
       expect(events[1]).toEqual({
         type: RowUpdateType.Update,
-        fields: new Set(['id', 'name']), // Only changed field + pk
+        fields: new Set(['name']), // Only actually changed fields
         row: { id: '1', name: 'updated', value: 100 }
       });
     });
 
-    it('should emit DELETE event with only primary key', async () => {
+    it('should enrich partial UPDATE with cached data', async () => {
+      // First insert a complete row
+      source['processUpdate']({ id: '1', name: 'original', value: 100 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
+      
+      // Subscribe after insert
+      const updates$ = source.getUpdates();
+      const eventsPromise = firstValueFrom(updates$.pipe(take(2), toArray()));
+      
+      // Send partial update (missing 'value' field - simulating what some DBs might send)
+      source['processUpdate']({ id: '1', name: 'updated' }, BigInt(2000), DatabaseRowUpdateType.Upsert);
+      
+      const events = await eventsPromise;
+      
+      // UPDATE event should have full row data despite partial input
+      expect(events[1]).toEqual({
+        type: RowUpdateType.Update,
+        fields: new Set(['name']), // Only name actually changed
+        row: { id: '1', name: 'updated', value: 100 } // Full row with enriched 'value'
+      });
+    });
+
+    it('should emit DELETE event with full row data from cache', async () => {
       // First insert a row
-      const fullRow = { id: '1', name: 'test', value: 100, extra: 'data' };
+      const fullRow = { id: '1', name: 'test', value: 100 };
       source['processUpdate'](fullRow, BigInt(1000), DatabaseRowUpdateType.Upsert);
       
       // Subscribe after insert - will get snapshot (INSERT) then delete
       const updates$ = source.getUpdates();
       const eventsPromise = firstValueFrom(updates$.pipe(take(2), toArray()));
       
-      // Delete the row
-      source['processUpdate'](fullRow, BigInt(2000), DatabaseRowUpdateType.Delete);
+      // Delete the row (database might only send primary key)
+      const deleteRow = { id: '1' };
+      source['processUpdate'](deleteRow, BigInt(2000), DatabaseRowUpdateType.Delete);
       
       const events = await eventsPromise;
       expect(events).toHaveLength(2);
@@ -119,10 +141,28 @@ describe('Source', () => {
       // First event is snapshot (INSERT)
       expect(events[0].type).toBe(RowUpdateType.Insert);
       
-      // Second event is the DELETE with only primary key
+      // Second event is the DELETE with schema fields and enriched data
       expect(events[1].type).toBe(RowUpdateType.Delete);
-      expect(events[1].fields).toEqual(new Set(['id']));
-      expect(events[1].row).toEqual({ id: '1' });
+      expect(events[1].fields).toEqual(new Set(['id', 'name', 'value']));
+      expect(events[1].row).toEqual(fullRow);
+    });
+
+    it('should handle DELETE for uncached row', async () => {
+      const updates$ = source.getUpdates();
+      const eventsPromise = firstValueFrom(updates$.pipe(take(1), toArray()));
+      
+      // Delete a row that was never cached (edge case)
+      const deleteRow = { id: '999' };
+      source['processUpdate'](deleteRow, BigInt(1000), DatabaseRowUpdateType.Delete);
+      
+      const events = await eventsPromise;
+      
+      // Should still emit DELETE with whatever data we have
+      expect(events[0]).toEqual({
+        type: RowUpdateType.Delete,
+        fields: new Set(['id', 'name', 'value']), // Schema fields
+        row: { id: '999' } // Only has the data that was provided
+      });
     });
 
     it('should provide snapshot to new subscribers', async () => {
@@ -139,6 +179,27 @@ describe('Source', () => {
       expect(events[0].row.id).toBe('1');
       expect(events[1].type).toBe(RowUpdateType.Insert);
       expect(events[1].row.id).toBe('2');
+    });
+
+    it('should skip snapshot when skipSnapshot is true', async () => {
+      // Insert some data before subscribing
+      source['processUpdate']({ id: '1', name: 'first', value: 10 }, BigInt(1000), DatabaseRowUpdateType.Upsert);
+      source['processUpdate']({ id: '2', name: 'second', value: 20 }, BigInt(2000), DatabaseRowUpdateType.Upsert);
+      
+      // Subscribe with skipSnapshot
+      const updates$ = source.getUpdates(true);
+      
+      // Add a new event after subscribing
+      setTimeout(() => {
+        source['processUpdate']({ id: '3', name: 'third', value: 30 }, BigInt(3000), DatabaseRowUpdateType.Upsert);
+      }, 10);
+      
+      const events = await firstValueFrom(updates$.pipe(take(1), toArray()));
+      
+      // Should only get the new event, not the snapshot
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe(RowUpdateType.Insert);
+      expect(events[0].row.id).toBe('3');
     });
 
     it('should handle multiple subscribers independently', async () => {
