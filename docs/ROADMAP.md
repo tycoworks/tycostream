@@ -163,6 +163,7 @@
 - Update coalescing: batch rapid changes within configurable time windows
 - Client-configurable batching strategies (time-based, count-based)
 - Async view processing to prevent blocking event loop during filtering
+- Field filtering: send only primary key for DELETE, only changed fields for UPDATE (reduce network traffic)
 
 ### 🧪 Performance Testing
 

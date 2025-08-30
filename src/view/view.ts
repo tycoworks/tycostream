@@ -18,7 +18,8 @@ export class View {
   
   constructor(
     private readonly source: Source,
-    viewFilter?: Filter
+    viewFilter?: Filter,
+    private readonly deltaUpdates = false
   ) {
     this.primaryKeyField = source.getPrimaryKeyField();
     this.filter = viewFilter;
@@ -43,47 +44,51 @@ export class View {
    * Returns transformed event or null if filtered out
    */
   processEvent(event: RowUpdateEvent): RowUpdateEvent | null {
-    // Fast path for empty filter
-    if (!this.hasFilter()) {
-      return event;
-    }
-    
     const key = event.row[this.primaryKeyField];
-    const wasInView = this.visibleKeys.has(key);
+
+    const outputType = this.getEventType(event);
     
-    let isInView: boolean;
-    let outputEvent: RowUpdateEvent | null;
-    
-    if (event.type === RowUpdateType.Delete) {
-      isInView = false;
-      outputEvent = wasInView ? event : null;
-    } else {
-      // INSERT/UPDATE events
-      isInView = this.shouldBeInView(event, wasInView);
-      
-      if (!wasInView && isInView) {
-        // Row entering view - transform to INSERT
-        outputEvent = { ...event, type: RowUpdateType.Insert };
-      } else if (wasInView && !isInView) {
-        // Row leaving view - transform to DELETE
-        outputEvent = { ...event, type: RowUpdateType.Delete };
-      } else if (wasInView && isInView) {
-        // Row still in view
-        outputEvent = event;
-      } else {
-        // Not in view before or after
-        outputEvent = null;
-      }
-    }
-    
-    // Update visible keys based on new state
-    if (isInView) {
+    // Update visible keys based on output type
+    if (outputType === RowUpdateType.Insert) {
       this.visibleKeys.add(key);
-    } else {
+    } else if (outputType === RowUpdateType.Delete) {
       this.visibleKeys.delete(key);
     }
     
-    return outputEvent;
+    // Build output event if needed
+    return outputType === null ? null : this.formatEvent(event, outputType);
+  }
+  
+  /**
+   * Get the output event type based on filter and visibility
+   */
+  private getEventType(event: RowUpdateEvent): RowUpdateType | null {
+    const key = event.row[this.primaryKeyField];
+    const wasInView = this.visibleKeys.has(key);
+    
+    if (!this.hasFilter()) {
+      // No filter - pass through everything
+      return event.type;
+    } else if (event.type === RowUpdateType.Delete) {
+      return wasInView ? event.type : null;
+    } else {
+      // INSERT/UPDATE events with filter
+      const isInView = this.shouldBeInView(event, wasInView);
+      
+      if (!wasInView && isInView) {
+        // Row entering view - transform to INSERT
+        return RowUpdateType.Insert;
+      } else if (wasInView && !isInView) {
+        // Row leaving view - transform to DELETE
+        return RowUpdateType.Delete;
+      } else if (wasInView && isInView) {
+        // Row still in view
+        return event.type;
+      } else {
+        // Not in view before or after
+        return null;
+      }
+    }
   }
   
   /**
@@ -114,7 +119,33 @@ export class View {
       return false;
     }
   }
-  
+   
+  /**
+   * Format event with appropriate row data based on deltaUpdates setting
+   */
+  private formatEvent(event: RowUpdateEvent, outputType: RowUpdateType): RowUpdateEvent {
+    // Determine what row data to include
+    let row: Record<string, any>;
+    
+    if (!this.deltaUpdates) {
+      // Full updates: use complete row
+      row = event.row;
+    } else if (outputType === RowUpdateType.Delete) {
+      // Delta updates DELETE: only primary key
+      row = { [this.primaryKeyField]: event.row[this.primaryKeyField] };
+    } else if (outputType === RowUpdateType.Update) {
+      // Delta updates UPDATE: primary key + changed fields
+      row = { [this.primaryKeyField]: event.row[this.primaryKeyField] };
+      for (const field of event.fields) {
+        row[field] = event.row[field];
+      }
+    } else {
+      // Delta updates INSERT: keep full row
+      row = event.row;
+    }
+    
+    return { type: outputType, fields: event.fields, row };
+  }
   
   /**
    * Get filtered updates from this view
