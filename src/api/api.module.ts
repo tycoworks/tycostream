@@ -6,13 +6,14 @@ import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin
 import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import { generateSchema } from './schema';
 import type { SourceDefinition } from '../config/source.types';
-import { buildSubscriptionResolvers } from './subscriptions';
+import { buildSubscriptionResolvers } from './subscription.resolver';
 import { ViewModule } from '../view/view.module';
 import { ViewService } from '../view/view.service';
+import { TriggerController } from './trigger.controller';
 
 /**
- * GraphQL module configures Apollo Server with dynamic schema generation
- * Runtime schema based on YAML config, supports both WebSocket protocols
+ * API module provides both GraphQL subscriptions and REST endpoints
+ * Handles real-time data streaming and webhook triggers
  */
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { ViewService } from '../view/view.service';
       inject: [ConfigService, ViewService],
     }),
   ],
+  controllers: [TriggerController],
   providers: [],
 })
-export class GraphqlModule {}
+export class ApiModule {}

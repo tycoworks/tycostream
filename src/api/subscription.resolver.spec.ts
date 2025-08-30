@@ -1,5 +1,5 @@
 import { of } from 'rxjs';
-import { buildSubscriptionResolvers } from './subscriptions';
+import { buildSubscriptionResolvers } from './subscription.resolver';
 import { ViewService } from '../view/view.service';
 import type { SourceDefinition } from '../config/source.types';
 import { RowUpdateType } from '../view/types';

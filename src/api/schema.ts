@@ -1,6 +1,6 @@
 import type { SourceDefinition } from '../config/source.types';
 import { getGraphQLType } from '../common/types';
-import { GraphQLRowOperation } from './subscriptions';
+import { GraphQLRowOperation } from './subscription.resolver';
 import { GraphQLString, GraphQLInt, GraphQLFloat, GraphQLBoolean, GraphQLID } from 'graphql';
 
 /**

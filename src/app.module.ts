@@ -5,12 +5,11 @@ import graphqlConfig from './config/graphql.config';
 import sourcesConfig from './config/sources.config';
 import { DatabaseModule } from './database/database.module';
 import { ViewModule } from './view/view.module';
-import { GraphqlModule } from './graphql/graphql.module';
-import { TriggerModule } from './trigger/trigger.module';
+import { ApiModule } from './api/api.module';
 
 /**
  * Root application module that bootstraps the tycostream server
- * Module order matters: Config → Database → Streaming → GraphQL → Triggers
+ * Module order matters: Config → Database → View → API
  */
 @Module({
   imports: [
@@ -24,8 +23,7 @@ import { TriggerModule } from './trigger/trigger.module';
     // Core modules - order matters for dependencies
     DatabaseModule,    // Database infrastructure
     ViewModule,        // View domain logic (filtered streams)
-    GraphqlModule,     // GraphQL API layer
-    TriggerModule,     // Event triggers via webhooks
+    ApiModule,         // API layer (GraphQL subscriptions & REST triggers)
   ],
 })
 export class AppModule {}
