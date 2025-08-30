@@ -1,25 +1,24 @@
-import { Controller, Post, Get, Delete, Body, Param, HttpCode, HttpStatus, Logger } from '@nestjs/common';
-import { TriggerService } from './trigger.service';
+import { Controller, Post, Get, Delete, Body, Param, HttpCode, HttpStatus, Logger, NotImplementedException } from '@nestjs/common';
 import { CreateTriggerDto } from './trigger.dto';
-import { Trigger } from './trigger';
 
 /**
  * REST API controller for trigger management
+ * TODO: Will be moved to api module and connected to WebhookService
  */
 @Controller()
 export class TriggerController {
   private readonly logger = new Logger(TriggerController.name);
 
-  constructor(private readonly triggerService: TriggerService) {}
+  constructor() {}
 
   /**
    * Create a new trigger
    * POST /triggers
    */
   @Post('triggers')
-  async createTrigger(@Body() dto: CreateTriggerDto): Promise<Trigger> {
+  async createTrigger(@Body() dto: CreateTriggerDto): Promise<any> {
     this.logger.log(`Creating trigger: ${dto.name}`);
-    return this.triggerService.create(dto);
+    throw new NotImplementedException('Triggers will be implemented in api module');
   }
 
   /**
@@ -27,8 +26,8 @@ export class TriggerController {
    * GET /triggers
    */
   @Get('triggers')
-  async getAll(): Promise<Trigger[]> {
-    return this.triggerService.getAll();
+  async getAll(): Promise<any[]> {
+    throw new NotImplementedException('Triggers will be implemented in api module');
   }
 
   /**
@@ -36,8 +35,8 @@ export class TriggerController {
    * GET /triggers/:name
    */
   @Get('triggers/:name')
-  async get(@Param('name') name: string): Promise<Trigger> {
-    return this.triggerService.get(name);
+  async get(@Param('name') name: string): Promise<any> {
+    throw new NotImplementedException('Triggers will be implemented in api module');
   }
 
   /**
@@ -48,6 +47,6 @@ export class TriggerController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteTrigger(@Param('name') name: string): Promise<void> {
     this.logger.log(`Deleting trigger: ${name}`);
-    await this.triggerService.delete(name);
+    throw new NotImplementedException('Triggers will be implemented in api module');
   }
 }
