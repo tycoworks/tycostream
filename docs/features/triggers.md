@@ -236,7 +236,7 @@ After implementing the initial design, we discovered a simpler, more elegant arc
 **New Architecture**:
 ```
 streaming/
-  ├── Source (raw event stream)
+  ├── Source (enriches events with cached data, ensures full row)
   ├── View (tracks what's in filtered set, emits INSERT/UPDATE/DELETE)
   └── Types, Filter, etc.
 
@@ -246,29 +246,34 @@ api/
 ```
 
 **Benefits**:
+- Database-agnostic: Works regardless of what fields DB sends
+- Consistent data: All events have full row data after Source layer
 - No new abstractions or event types
 - View remains a simple filtered stream
 - Each API layer interprets events as needed
-- Minimal code changes
+- Webhooks get complete context for DELETE events
+- Future-proof for supporting other databases
 
 ### Implementation Plan
 
-#### Phase 1: Clean up View
+#### Phase 1: Enrich events in Source layer
 
-1. **Remove GraphQL-specific field filtering** (`src/streaming/view.ts`)
-   - Keep INSERT/UPDATE/DELETE event types
-   - Always include all fields in the event
-   - Remove the logic that filters fields for DELETE events
-   - Let each API layer decide what fields it needs
+1. **Normalize all events to include full row data** (`src/streaming/source.ts`)
+   - INSERT: Already has all fields (pass through as-is)
+   - UPDATE: Enrich with cached data to ensure all fields are present
+   - DELETE: Enrich with cached data to include all fields (not just key)
+   - This ensures consistent full-row data for all event types
+   - Future-proofs for databases that send partial data
 
-2. **Keep ViewService as-is** (`src/streaming/view.service.ts`)
+2. **View receives enriched events** (`src/streaming/view.ts`)
+   - No special handling needed for different event types
+   - All events now have full row data
+   - View just filters based on match/unmatch conditions
+   - Passes through full row data for all events
+
+3. **Keep ViewService as-is** (`src/streaming/view.service.ts`)
    - No changes needed
    - Continue creating View instances per subscription
-
-3. **View continues to track visibility**
-   - Keep the visibleKeys Set
-   - Keep match/unmatch evaluation logic
-   - Support both symmetric (match only) and asymmetric (match/unmatch) conditions
 
 #### Phase 2: Reorganize API Layer
 
@@ -278,10 +283,10 @@ api/
    - Update imports across the codebase
 
 5. **Update GraphQL subscriptions** (`src/api/subscriptions.ts`)
-   - Add field filtering logic that was removed from View
-   - For DELETE events, only send primary key field
+   - Add field filtering for GraphQL compatibility
+   - For DELETE events, filter to only send primary key field
    - For INSERT events, send all fields
-   - For UPDATE events, send changed fields
+   - For UPDATE events, send changed fields (already tracked by Source)
 
 #### Phase 3: Implement Trigger API
 
