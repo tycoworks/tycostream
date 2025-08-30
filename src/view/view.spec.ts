@@ -367,6 +367,118 @@ describe('View', () => {
     });
   });
   
+  describe('deltaUpdates mode', () => {
+    it('should return only primary key for DELETE events', () => {
+      const view = new View(mockSource, undefined, true); // deltaUpdates = true
+      
+      // First insert a row to track it
+      view.processEvent({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: 1, name: 'Test', value: 100 }
+      });
+      
+      // Then delete it
+      const deleteEvent: RowUpdateEvent = {
+        type: RowUpdateType.Delete,
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: 1, name: 'Test', value: 100 }
+      };
+      
+      const result = view.processEvent(deleteEvent);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe(RowUpdateType.Delete);
+      expect(result!.row).toEqual({ id: 1 }); // Only primary key
+      expect(result!.fields).toEqual(new Set(['id', 'name', 'value'])); // Original fields preserved
+    });
+    
+    it('should return primary key + changed fields for UPDATE events', () => {
+      const view = new View(mockSource, undefined, true); // deltaUpdates = true
+      
+      // First insert a row
+      view.processEvent({
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: 1, name: 'Test', value: 100 }
+      });
+      
+      // Then update it
+      const updateEvent: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['value']), // Only value changed
+        row: { id: 1, name: 'Test', value: 200 }
+      };
+      
+      const result = view.processEvent(updateEvent);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe(RowUpdateType.Update);
+      expect(result!.row).toEqual({ id: 1, value: 200 }); // PK + changed field
+      expect(result!.fields).toEqual(new Set(['value']));
+    });
+    
+    it('should return full row for INSERT events', () => {
+      const view = new View(mockSource, undefined, true); // deltaUpdates = true
+      
+      const insertEvent: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'value']),
+        row: { id: 1, name: 'Test', value: 100 }
+      };
+      
+      const result = view.processEvent(insertEvent);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe(RowUpdateType.Insert);
+      expect(result!.row).toEqual({ id: 1, name: 'Test', value: 100 }); // Full row
+      expect(result!.fields).toEqual(new Set(['id', 'name', 'value']));
+    });
+    
+    it('should work with filters in deltaUpdates mode', () => {
+      const filter = new Filter({
+        evaluate: (row) => row.value > 50,
+        fields: new Set(['value']),
+        expression: 'value > 50'
+      });
+      
+      const view = new View(mockSource, filter, true); // deltaUpdates = true
+      
+      // Row enters view
+      const enterEvent: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['value']),
+        row: { id: 1, name: 'Test', value: 100 }
+      };
+      
+      const enterResult = view.processEvent(enterEvent);
+      expect(enterResult).not.toBeNull();
+      expect(enterResult!.type).toBe(RowUpdateType.Insert); // Transformed to INSERT
+      expect(enterResult!.row).toEqual({ id: 1, name: 'Test', value: 100 }); // Full row for INSERT
+      
+      // Update within view
+      const updateEvent: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['name']),
+        row: { id: 1, name: 'Updated', value: 100 }
+      };
+      
+      const updateResult = view.processEvent(updateEvent);
+      expect(updateResult).not.toBeNull();
+      expect(updateResult!.type).toBe(RowUpdateType.Update);
+      expect(updateResult!.row).toEqual({ id: 1, name: 'Updated' }); // PK + changed field
+      
+      // Row leaves view
+      const leaveEvent: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['value']),
+        row: { id: 1, name: 'Updated', value: 25 }
+      };
+      
+      const leaveResult = view.processEvent(leaveEvent);
+      expect(leaveResult).not.toBeNull();
+      expect(leaveResult!.type).toBe(RowUpdateType.Delete); // Transformed to DELETE
+      expect(leaveResult!.row).toEqual({ id: 1 }); // Only PK for DELETE
+    });
+  });
+  
   describe('getUpdates', () => {
     it('should emit transformed events that pass the filter', (done) => {
       const filter = new Filter({
