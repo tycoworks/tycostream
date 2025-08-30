@@ -165,9 +165,9 @@ All fields from the source row are included in the data object. The webhook endp
 
 ## Architecture
 
-### Triggers as Peers to GraphQL
+### Triggers and Subscriptions in the API Layer
 
-Triggers will be implemented as a peer to the GraphQL engine, consuming directly from the streaming core:
+Both GraphQL subscriptions and REST triggers live in the API module, consuming from the shared View abstraction:
 
 ```
                     ┌─────────────────┐
@@ -176,29 +176,32 @@ Triggers will be implemented as a peer to the GraphQL engine, consuming directly
                     └────────┬────────┘
                              │
                     ┌────────▼────────┐
-                    │  Streaming Core │
-                    │  (tycostream)   │
+                    │     Source      │
+                    │  (enrichment)   │
                     └────────┬────────┘
                              │
-                ┌────────────┴────────────┐
-                │                         │
-       ┌────────▼────────┐      ┌────────▼────────┐
-       │ GraphQL Engine  │      │ Trigger Engine  │
-       │                 │      │                 │
-       └────────┬────────┘      └────────┬────────┘
-                │                         │
-       ┌────────▼────────┐      ┌────────▼────────┐
-       │   WebSocket     │      │    Webhooks     │
-       │   (UI Clients)  │      │  (HTTP POST)    │
-       └─────────────────┘      └─────────────────┘
+                    ┌────────▼────────┐
+                    │      View       │
+                    │   (filtering)   │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   API Module    │
+                    ├─────────────────┤
+                    │ • Subscriptions │
+                    │ • Triggers      │
+                    └─────────────────┘
 ```
 
-Both GraphQL and Triggers:
-- Use the same filtering logic
-- Consume the same streams  
-- Run in parallel without interference
-- Lazy-load sources on first use
-- Share the same View objects from `ViewService`
+The View abstraction provides:
+- Filtered event streams with INSERT/UPDATE/DELETE semantics
+- Support for asymmetric match/unmatch conditions
+- Optional delta updates (changed fields only) for network efficiency
+- Consistent event delivery to all consumers
+
+Both subscriptions and triggers interpret View events:
+- **GraphQL Subscriptions**: Map to INSERT/UPDATE/DELETE operations
+- **REST Triggers**: Map INSERT to MATCH, DELETE to UNMATCH
 
 ### Runtime Storage
 
@@ -212,147 +215,80 @@ This keeps tycostream truly stateless - it's just a router between streams and w
 
 ## Implementation
 
-### Implementation Steps
-
-1. **Extend views with match/unmatch logic (internal foundation)** ✅
-   - ✅ Move filter compilation (`buildFilter`) from `src/graphql/filters.ts` to shared module for reuse
-   - ✅ Modify View class to accept optional separate match/unmatch conditions
-   - ✅ Update visibility logic: row exits only when unmatch condition is met (not when match condition becomes false)
-   - ✅ Keep this internal - GraphQL continues using simple `where` clauses
-   - ✅ Test the new exit behavior with unit tests
-
-2. **Trigger module and API** ✅
-   - ✅ Create trigger module with controller and service
-   - ✅ Add REST endpoints for trigger management (NestJS controllers)
-   - ✅ Support single webhook URL (simplified from original design)
-   - ✅ In-memory trigger registry
-
-### Revised Architecture (Simplified Approach)
-
-After implementing the initial design, we discovered a simpler, more elegant architecture:
-
-**Key Insight**: Views already provide the right abstraction - they track what's "in view" and emit INSERT/UPDATE/DELETE events. Triggers are just Views where INSERT means "matched" and DELETE means "unmatched". No new abstractions needed.
-
-**New Architecture**:
-```
-view/
-  ├── Source (enriches events with cached data, ensures full row)
-  ├── View (tracks what's in filtered set, emits INSERT/UPDATE/DELETE)
-  └── Types, Filter, etc.
-
-api/
-  ├── GraphQL subscriptions (uses View events)
-  └── Webhook triggers (uses View events, fires on INSERT/DELETE)
-```
-
-**Benefits**:
-- Database-agnostic: Works regardless of what fields DB sends
-- Consistent data: All events have full row data after Source layer
-- No new abstractions or event types
-- View remains a simple filtered stream
-- Each API layer interprets events as needed
-- Webhooks get complete context for DELETE events
-- Future-proof for supporting other databases
-
 ### Implementation Plan
 
-#### Phase 1: Enrich events in Source layer ✅
+The implementation is divided into four main phases:
 
-1. **Normalize all events to include full row data** (`src/view/source.ts`) ✅
-   - INSERT: Already has all fields (pass through as-is)
-   - UPDATE: Enrich with cached data to ensure all fields are present
-   - DELETE: Enrich with cached data to include all fields (not just key)
-   - This ensures consistent full-row data for all event types
-   - Future-proofs for databases that send partial data
+#### Phase 1: View Layer Enhancement ✅
 
-2. **View receives enriched events** (`src/view/view.ts`) ✅
-   - No special handling needed for different event types
-   - All events now have full row data
-   - View just filters based on match/unmatch conditions
-   - Passes through full row data for all events
+Extend the View abstraction to support asymmetric filtering and delta updates:
 
-3. **Keep ViewService as-is** (`src/view/view.service.ts`) ✅
-   - No changes needed
-   - Continue creating View instances per subscription
+1. **Add match/unmatch filter support** (`src/view/view.ts`)
+   - Support separate match and unmatch conditions
+   - Default unmatch to !match when not specified
+   - Track row visibility based on condition state
 
-#### Phase 2: Reorganize API Layer ✅
+2. **Implement delta updates** (`src/view/view.ts`)
+   - Track field changes between events
+   - Optional mode for network efficiency
+   - GraphQL uses this to minimize payload size
 
-4. **Rename graphql directory to api** (`src/graphql/` → `src/api/`) ✅
-   - Keep flat structure - no subdirectories
-   - All GraphQL and trigger files at same level
-   - Update imports across the codebase
+3. **Event enrichment** (`src/view/source.ts`)
+   - Ensure all events have full row data
+   - Cache rows for enriching partial updates/deletes
+   - Database-agnostic approach
 
-5. **Update GraphQL subscriptions** (`src/api/subscription.resolver.ts`)
-   - Add field filtering for GraphQL compatibility (TODO)
-   - For DELETE events, filter to only send primary key field
-   - For INSERT events, send all fields
-   - For UPDATE events, send changed fields (already tracked by Source)
+#### Phase 2: API Module Consolidation ✅
 
-#### Phase 3: Implement Trigger API
+Consolidate GraphQL and REST endpoints into a unified API module:
 
-6. **Move trigger REST endpoints to api** (`src/trigger/` → `src/api/`) ✅
-   - Move `trigger.controller.ts` and `trigger.dto.ts` to api/
-   - Delete entire `src/trigger/` directory after moving files
-   - Trigger module gets merged into api.module.ts
+1. **Rename and reorganize** (`src/graphql/` → `src/api/`)
+   - Flat structure with all API files at same level
+   - GraphQL subscriptions and REST triggers as peers
+   - Shared utilities and types
 
-7. **Create WebhookService** (`src/api/webhook.service.ts`)
-   - Manages trigger configurations (in-memory Map):
-     ```typescript
-     private triggers = new Map<string, TriggerConfig>();
-     private subscriptions = new Map<string, Subscription>();
-     ```
-   - For each trigger:
-     - Creates a View via ViewService with skipSnapshot=true
-     - Subscribes to View events
-     - Maps INSERT → MATCH webhook, DELETE → UNMATCH webhook
-     - Ignores UPDATE events
-   - Stores both trigger config and subscription
-   - Handles webhook failures (log and continue)
+2. **Update GraphQL subscriptions** (`src/api/subscription.resolver.ts`)
+   - Use delta updates for efficiency
+   - Map View events to GraphQL operations
+   - Handle field filtering for compatibility
 
-8. **Update TriggerController** (`src/api/trigger.controller.ts`)
-   - Inject WebhookService instead of TriggerService
-   - CRUD operations manage trigger registry:
-     - POST /triggers - Creates View and subscription
-     - DELETE /triggers/:name - Disposes subscription and removes from Map
-     - GET /triggers - Returns active trigger configurations from Map
+#### Phase 3: Trigger Implementation
 
-#### Phase 4: Cleanup
+Implement the trigger system using the View abstraction:
 
-9. **Remove obsolete files**
-   - Delete `src/common/states.ts` and `states.spec.ts` (StateTracker)
-   - Delete `src/trigger/trigger.ts`, `trigger.service.ts`, and `trigger.spec.ts`
-   - Delete entire `src/trigger/` directory after moving needed files
-   - Keep View tests, just update them for new output format
+1. **REST API endpoints** (`src/api/trigger.controller.ts`)
+   - CRUD operations for trigger management
+   - Validation of trigger configurations
+   - Integration with NestJS framework
 
-10. **Update module structure** ✅
-    ```
-    src/
-    ├── view/
-    │   ├── view.ts (tracks filtered data)
-    │   ├── view.service.ts (manages views)
-    │   ├── source.ts (enriches events with cached data)
-    │   ├── source.service.ts (manages sources)
-    │   └── view.module.ts
-    └── api/
-        ├── api.module.ts (renamed from graphql.module.ts)
-        ├── schema.ts
-        ├── subscription.resolver.ts (renamed from subscriptions.ts)
-        ├── trigger.controller.ts (moved from trigger/)
-        ├── trigger.dto.ts (moved from trigger/)
-        └── webhook.service.ts (TODO - manages triggers and fires webhooks)
-    ```
+2. **Trigger Service** (`src/api/trigger.service.ts`)
+   - Manages trigger configurations in memory
+   - Creates View subscriptions for each trigger
+   - Maps View events to webhook calls
 
-#### Phase 5: Testing & Demo
+3. **Webhook delivery** (`src/api/trigger.service.ts`)
+   - HTTP POST with full row data using NestJS HttpModule (axios)
+   - Retry logic for failures
+   - Async processing to avoid blocking
 
-11. **Update tests**
-    - Update view.spec.ts for state transition output
-    - Update GraphQL tests to handle state transitions
-    - Create webhook.service.spec.ts
+#### Phase 4: Testing and Documentation
 
-12. **Demo implementation**
-    - Simple webhook receiver endpoint
-    - Update UI to show trigger management
-    - Integration tests for full flow
+Complete the implementation with comprehensive testing:
+
+1. **Unit tests**
+   - View match/unmatch logic
+   - Trigger service webhook firing
+   - API endpoint validation
+
+2. **Integration tests**
+   - End-to-end trigger flow
+   - Concurrent trigger handling
+   - Error recovery scenarios
+
+3. **Demo application**
+   - Trigger management UI
+   - Live webhook monitoring
+   - Example use cases
 
 ## Demo Application
 
