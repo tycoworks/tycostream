@@ -235,13 +235,13 @@ After implementing the initial design, we discovered a simpler, more elegant arc
 
 **New Architecture**:
 ```
-streaming/
+view/
   ├── Source (enriches events with cached data, ensures full row)
   ├── View (tracks what's in filtered set, emits INSERT/UPDATE/DELETE)
   └── Types, Filter, etc.
 
 api/
-  ├── GraphQL subscriptions (uses View events, filters fields as needed)
+  ├── GraphQL subscriptions (uses View events)
   └── Webhook triggers (uses View events, fires on INSERT/DELETE)
 ```
 
@@ -256,41 +256,41 @@ api/
 
 ### Implementation Plan
 
-#### Phase 1: Enrich events in Source layer
+#### Phase 1: Enrich events in Source layer ✅
 
-1. **Normalize all events to include full row data** (`src/streaming/source.ts`)
+1. **Normalize all events to include full row data** (`src/view/source.ts`) ✅
    - INSERT: Already has all fields (pass through as-is)
    - UPDATE: Enrich with cached data to ensure all fields are present
    - DELETE: Enrich with cached data to include all fields (not just key)
    - This ensures consistent full-row data for all event types
    - Future-proofs for databases that send partial data
 
-2. **View receives enriched events** (`src/streaming/view.ts`)
+2. **View receives enriched events** (`src/view/view.ts`) ✅
    - No special handling needed for different event types
    - All events now have full row data
    - View just filters based on match/unmatch conditions
    - Passes through full row data for all events
 
-3. **Keep ViewService as-is** (`src/streaming/view.service.ts`)
+3. **Keep ViewService as-is** (`src/view/view.service.ts`) ✅
    - No changes needed
    - Continue creating View instances per subscription
 
-#### Phase 2: Reorganize API Layer
+#### Phase 2: Reorganize API Layer ✅
 
-4. **Rename graphql directory to api** (`src/graphql/` → `src/api/`)
+4. **Rename graphql directory to api** (`src/graphql/` → `src/api/`) ✅
    - Keep flat structure - no subdirectories
    - All GraphQL and trigger files at same level
    - Update imports across the codebase
 
-5. **Update GraphQL subscriptions** (`src/api/subscriptions.ts`)
-   - Add field filtering for GraphQL compatibility
+5. **Update GraphQL subscriptions** (`src/api/subscription.resolver.ts`)
+   - Add field filtering for GraphQL compatibility (TODO)
    - For DELETE events, filter to only send primary key field
    - For INSERT events, send all fields
    - For UPDATE events, send changed fields (already tracked by Source)
 
 #### Phase 3: Implement Trigger API
 
-6. **Move trigger REST endpoints to api** (`src/trigger/` → `src/api/`)
+6. **Move trigger REST endpoints to api** (`src/trigger/` → `src/api/`) ✅
    - Move `trigger.controller.ts` and `trigger.dto.ts` to api/
    - Delete entire `src/trigger/` directory after moving files
    - Trigger module gets merged into api.module.ts
@@ -324,23 +324,22 @@ api/
    - Delete entire `src/trigger/` directory after moving needed files
    - Keep View tests, just update them for new output format
 
-10. **Update module structure**
+10. **Update module structure** ✅
     ```
     src/
-    ├── streaming/
-    │   ├── view.ts (kept as-is, refactored internally)
-    │   ├── view.service.ts (kept as-is)
-    │   ├── source.ts
-    │   ├── source.service.ts
-    │   └── streaming.module.ts
+    ├── view/
+    │   ├── view.ts (tracks filtered data)
+    │   ├── view.service.ts (manages views)
+    │   ├── source.ts (enriches events with cached data)
+    │   ├── source.service.ts (manages sources)
+    │   └── view.module.ts
     └── api/
         ├── api.module.ts (renamed from graphql.module.ts)
         ├── schema.ts
-        ├── subscriptions.ts
-        ├── subscription-adapter.ts (new - maps state transitions to GraphQL)
+        ├── subscription.resolver.ts (renamed from subscriptions.ts)
         ├── trigger.controller.ts (moved from trigger/)
         ├── trigger.dto.ts (moved from trigger/)
-        └── webhook.service.ts (new - manages triggers and fires webhooks)
+        └── webhook.service.ts (TODO - manages triggers and fires webhooks)
     ```
 
 #### Phase 5: Testing & Demo

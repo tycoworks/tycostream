@@ -2,7 +2,7 @@
 
 ## Overview
 
-tycostream is a real-time GraphQL API that streams updates from database sources (views, tables, or any SELECT-able object) to subscribed clients. It provides a simple, configuration-driven approach to exposing streaming SQL data through standard GraphQL subscriptions.
+tycostream is a real-time data streaming platform that bridges database sources (views, tables, or any SELECT-able object) to GraphQL subscriptions and webhook triggers. It provides a simple, configuration-driven approach to exposing streaming SQL data through standard GraphQL subscriptions and REST-triggered webhooks.
 
 ## Technology Stack
 
@@ -44,18 +44,20 @@ Handles all interaction with Materialize:
 - Stream buffering and line parsing
 - Automatic connection management and reconnection logic
 
-### Streaming Module (`src/streaming/`)
-Bridges database and GraphQL layers:
+### View Module (`src/view/`)
+Core streaming logic that bridges database and API layers:
 - Management of Source instances per data source
+- Event enrichment with cached data (ensures full row for all events)
 - Snapshot replay and live update unification
 - Filtered view creation and lifecycle management
 - Filter expression evaluation on event streams
 - In-memory cache with primary key indexing
 
-### GraphQL Module (`src/graphql/`)
-Serves the GraphQL API:
+### API Module (`src/api/`)
+Serves both GraphQL and REST APIs:
 - Dynamic GraphQL schema generation from YAML configuration
 - Subscription endpoints with filtered streaming support
+- REST endpoints for trigger management (create/delete/list)
 - WebSocket handling via NestJS GraphQL module
 - Automatic client connection lifecycle management
 - Filter expression parsing and validation
@@ -71,21 +73,24 @@ Shared infrastructure:
 ## Data Flow
 
 1. **Initial Connection**
-   - Client connects via GraphQL WebSocket subscription with optional filter
-   - ViewService creates or reuses a View for the source + filter combination
+   - Client connects via GraphQL WebSocket subscription or creates REST trigger
+   - ViewService creates a View instance for the source + filter combination
    - Source connects to database if not already connected
 
 2. **State Synchronization**
    - SUBSCRIBE query captures current source state via COPY protocol
    - Initial rows populate Source's in-memory cache
    - View filters cached state based on filter expression
-   - Client receives filtered snapshot as individual events
+   - GraphQL clients receive filtered snapshot as individual events
+   - Triggers can skip snapshot for "from now on" semantics
 
 3. **Live Updates**
-   - Materialize sends incremental updates (inserts/updates/deletes)
+   - Materialize sends incremental updates (may have partial data)
+   - Source enriches events with cached data (ensures full row)
    - Updates applied to cache and propagated through unified stream
    - View transforms events: filtering rows in/out based on expression
-   - Filtered events delivered to subscribed clients
+   - GraphQL: Filtered events delivered to subscribed clients
+   - Triggers: INSERT events fire webhooks (match), DELETE events clear (unmatch)
 
 4. **Late Joiner Handling**
    - New subscribers receive filtered cached state immediately
@@ -115,6 +120,7 @@ Shared infrastructure:
 - Materialize sources (views/tables) are typically bounded in size
 - Eliminates need for external state store
 - Provides sub-millisecond query response times
+- Enables event enrichment (full row data for DELETE events)
 
 ## Future Evolution
 
@@ -125,3 +131,5 @@ The architecture supports several evolution paths without major rewrites:
 - **Advanced Filtering**: Push complex filters to Materialize WHERE clauses for efficiency
 - **Multiple Sources**: Router pattern for source-specific handlers
 - **Monitoring**: OpenTelemetry instrumentation points
+- **Webhook Delivery**: Retry logic, dead letter queues, and delivery guarantees
+- **Trigger Persistence**: Optional database backing for trigger definitions
