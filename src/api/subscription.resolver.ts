@@ -64,8 +64,8 @@ function createSourceSubscriptionResolver(
       const filter = args.where ? new Filter(buildExpression(args.where)) : undefined;
       logger.log(`Subscription for ${sourceName}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`);
       
-      // Pass filter to viewService
-      const observable = viewService.getUpdates(sourceName, filter).pipe(
+      // Pass filter to viewService with deltaUpdates enabled for GraphQL efficiency
+      const observable = viewService.getUpdates(sourceName, filter, true).pipe(
         map((event: RowUpdateEvent) => {
           const operation = ROW_UPDATE_TYPE_MAP[event.type];
           
