@@ -49,7 +49,7 @@ describe('View', () => {
       const result = view.processEvent(event);
       expect(result).not.toBeNull();
       expect(result!.type).toBe(RowUpdateType.Insert);
-      expect(result!.fields).toEqual(new Set(['id', 'name', 'active']));
+      expect(result!.fields).toEqual(new Set(['id', 'active'])); // Keeps original UPDATE fields
     });
     
     it('should handle row leaving view', () => {
@@ -78,7 +78,7 @@ describe('View', () => {
       const result = view.processEvent(event);
       expect(result).not.toBeNull();
       expect(result!.type).toBe(RowUpdateType.Delete);
-      expect(result!.fields).toEqual(new Set(['id']));
+      expect(result!.fields).toEqual(new Set(['id', 'active'])); // Keeps original UPDATE fields
     });
     
     it('should handle row updating within view', () => {

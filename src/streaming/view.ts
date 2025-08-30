@@ -62,11 +62,11 @@ export class View {
       isInView = this.shouldBeInView(event, wasInView);
       
       if (!wasInView && isInView) {
-        // Row entering view - send as INSERT with all fields
-        outputEvent = { type: RowUpdateType.Insert, fields: new Set(Object.keys(event.row)), row: event.row };
+        // Row entering view - transform to INSERT
+        outputEvent = { ...event, type: RowUpdateType.Insert };
       } else if (wasInView && !isInView) {
-        // Row leaving view - send as DELETE with just primary key
-        outputEvent = { type: RowUpdateType.Delete, fields: new Set([this.primaryKeyField]), row: event.row };
+        // Row leaving view - transform to DELETE
+        outputEvent = { ...event, type: RowUpdateType.Delete };
       } else if (wasInView && isInView) {
         // Row still in view
         outputEvent = event;
