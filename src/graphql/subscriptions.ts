@@ -1,11 +1,11 @@
 import { map, tap, of } from 'rxjs';
 import { eachValueFrom } from 'rxjs-for-await';
 import { Logger } from '@nestjs/common';
-import { ViewService } from '../streaming/view.service';
-import { Filter } from '../streaming/filter';
+import { ViewService } from '../view/view.service';
+import { Filter } from '../view/filter';
 import type { SourceDefinition } from '../config/source.types';
-import type { RowUpdateEvent } from '../streaming/types';
-import { RowUpdateType } from '../streaming/types';
+import type { RowUpdateEvent } from '../view/types';
+import { RowUpdateType } from '../view/types';
 import { truncateForLog } from '../common/logging.utils';
 import { buildExpression } from '../common/expressions';
 

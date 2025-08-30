@@ -1,8 +1,8 @@
 import { of } from 'rxjs';
 import { buildSubscriptionResolvers } from './subscriptions';
-import { ViewService } from '../streaming/view.service';
+import { ViewService } from '../view/view.service';
 import type { SourceDefinition } from '../config/source.types';
-import { RowUpdateType } from '../streaming/types';
+import { RowUpdateType } from '../view/types';
 
 // Mock rxjs-for-await
 jest.mock('rxjs-for-await', () => ({

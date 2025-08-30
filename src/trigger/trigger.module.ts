@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { StreamingModule } from '../streaming/streaming.module';
+import { ViewModule } from '../view/view.module';
 import { TriggerController } from './trigger.controller';
 
 @Module({
-  imports: [StreamingModule],
+  imports: [ViewModule],
   controllers: [TriggerController],
   providers: [],
   exports: []

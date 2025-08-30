@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { Expression } from '../streaming/types';
+import { Expression } from '../view/types';
 
 const logger = new Logger('Expressions');
 

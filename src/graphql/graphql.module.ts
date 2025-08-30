@@ -7,8 +7,8 @@ import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/dis
 import { generateSchema } from './schema';
 import type { SourceDefinition } from '../config/source.types';
 import { buildSubscriptionResolvers } from './subscriptions';
-import { StreamingModule } from '../streaming/streaming.module';
-import { ViewService } from '../streaming/view.service';
+import { ViewModule } from '../view/view.module';
+import { ViewService } from '../view/view.service';
 
 /**
  * GraphQL module configures Apollo Server with dynamic schema generation
@@ -16,10 +16,10 @@ import { ViewService } from '../streaming/view.service';
  */
 @Module({
   imports: [
-    StreamingModule,
+    ViewModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
-      imports: [ConfigModule, StreamingModule],
+      imports: [ConfigModule, ViewModule],
       /**
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config

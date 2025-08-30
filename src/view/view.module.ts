@@ -4,8 +4,8 @@ import { SourceService } from './source.service';
 import { ViewService } from './view.service';
 
 /**
- * Streaming module provides real-time data streaming functionality
- * Exports ViewService for GraphQL subscriptions to consume
+ * View module provides filtered real-time data views
+ * Exports ViewService for GraphQL subscriptions and triggers
  */
 @Module({
   imports: [DatabaseModule],
@@ -14,8 +14,7 @@ import { ViewService } from './view.service';
     ViewService
   ],
   exports: [
-    ViewService,
-    SourceService
+    ViewService  // Only export ViewService, SourceService is internal
   ],
 })
-export class StreamingModule {}
+export class ViewModule {}
