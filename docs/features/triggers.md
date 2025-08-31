@@ -42,15 +42,14 @@ You can configure:
 **Simple Trigger** (same condition for match/unmatch):
 ```graphql
 mutation {
-  createTrigger(input: {
+  createTradesTrigger(
     name: "large_trade_alert"
-    source: "trades"
     webhook: "https://compliance-api/webhook"
     match: {
       symbol: { _eq: "AAPL" }
       quantity: { _gt: 10000 }
     }
-  }) {
+  ) {
     name
     source
     webhook
@@ -65,14 +64,12 @@ When only `match` is specified, the inverse condition (!match) is automatically 
 **Trigger with Different Match/Unmatch Conditions** (hysteresis):
 ```graphql
 mutation {
-  createTrigger(input: {
+  createPositionsTrigger(
     name: "risk_position_alert"
-    source: "positions"
     webhook: "https://api/webhook"
     match: { net_position: { _gt: 10000 } }
     unmatch: { net_position: { _lte: 9500 } }
-  }) {
-    id
+  ) {
     name
     source
     webhook
@@ -108,18 +105,17 @@ The payload includes:
 
 ### GraphQL API
 
-**Create trigger**:
+**Create trigger** (source-specific for type safety):
 ```graphql
 mutation {
-  createTrigger(input: {
+  createTradesTrigger(
     name: "large_trade_alert"
-    source: "trades"
     webhook: "https://my-app.com/webhook"
     match: {
       symbol: { _eq: "AAPL" }
       quantity: { _gt: 10000 }
     }
-  }) {
+  ) {
     name
     source
     webhook
@@ -129,10 +125,10 @@ mutation {
 }
 ```
 
-**Delete trigger**:
+**Delete trigger** (source-specific):
 ```graphql
 mutation {
-  deleteTrigger(name: "large_trade_alert") {
+  deleteTradesTrigger(name: "large_trade_alert") {
     name
     source
     webhook
@@ -140,27 +136,27 @@ mutation {
 }
 ```
 
-**List triggers**:
+**List triggers** (generic, returns minimal info):
 ```graphql
 query {
   triggers {
     name
     source
-    webhook
-    match
-    unmatch
   }
 }
 ```
 
-**Get specific trigger**:
+**Get specific trigger** (source-specific for typed conditions):
 ```graphql
 query {
-  trigger(name: "large_trade_alert") {
+  tradesTrigger(name: "large_trade_alert") {
     name
     source
     webhook
-    match
+    match {
+      symbol { _eq }
+      quantity { _gt }
+    }
     unmatch
   }
 }
@@ -284,9 +280,10 @@ Enhance the API module to support triggers alongside subscriptions:
 Implement the trigger system using GraphQL mutations and the View abstraction:
 
 1. **GraphQL Schema** (`src/api/schema.ts`)
-   - Add Mutation type with createTrigger/deleteTrigger
-   - Add Query type with triggers/trigger
-   - Define TriggerInput and Trigger types
+   - Generate source-specific mutations: `create${Source}Trigger`/`delete${Source}Trigger`
+   - Generate source-specific queries: `${source}Trigger`
+   - Add generic query: `triggers` returning `[TriggerListItem!]!`
+   - Generate source-specific types: `${Source}Trigger` with typed match/unmatch fields
 
 2. **Trigger Resolvers** (`src/api/trigger.resolver.ts`)
    - Mutation resolvers for create/delete operations
