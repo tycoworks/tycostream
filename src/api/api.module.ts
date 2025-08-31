@@ -59,9 +59,8 @@ import { TriggerService } from './trigger.service';
         
         return {
           typeDefs,
-          playground: false, // Deprecated in Apollo Server 4, using plugins instead
           introspection: true, // Always enable introspection for API discovery
-          csrfPrevention: graphqlConfig.playground ? false : true, // Disable CSRF when playground is enabled
+          csrfPrevention: true, // Always enabled - Apollo Sandbox handles this properly
           plugins: [landingPagePlugin],
           subscriptions: {
             'graphql-ws': true,

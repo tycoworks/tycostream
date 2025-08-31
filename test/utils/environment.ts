@@ -153,7 +153,7 @@ export class TestEnvironment {
     process.env.DATABASE_PASSWORD = 'materialize';
     process.env.DATABASE_NAME = 'materialize';
     process.env.GRAPHQL_PORT = this.appPort.toString();
-    process.env.GRAPHQL_UI = 'false';
+    process.env.GRAPHQL_UI = process.env.GRAPHQL_UI || 'false';
     process.env.SCHEMA_PATH = this.schemaPath;
     process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'error';
   }
