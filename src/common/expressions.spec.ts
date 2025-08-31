@@ -3,7 +3,7 @@ import { buildExpression } from './expressions';
 describe('GraphQL Expressions', () => {
   describe('buildExpression generation', () => {
     it('should throw error for empty where clause', () => {
-      expect(() => buildExpression({})).toThrow('Cannot build expression from empty where clause');
+      expect(() => buildExpression({})).toThrow('Cannot build expression from empty expression tree');
     });
 
     describe('comparison operators', () => {
@@ -184,7 +184,7 @@ describe('GraphQL Expressions', () => {
 
   describe('buildExpression function', () => {
     it('should throw error for empty where clause', () => {
-      expect(() => buildExpression({})).toThrow('Cannot build expression from empty where clause');
+      expect(() => buildExpression({})).toThrow('Cannot build expression from empty expression tree');
     });
 
     it('should build filter with evaluate function and fields', () => {

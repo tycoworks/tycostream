@@ -3,7 +3,7 @@ import { Observable } from 'rxjs';
 import { map, tap } from 'rxjs/operators';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
-import { buildExpression, WhereClause } from '../common/expressions';
+import { buildExpression, ExpressionTree } from '../common/expressions';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
 import { truncateForLog } from '../common/logging.utils';
 
@@ -46,7 +46,7 @@ export class SubscriptionService {
    */
   createSubscription(
     sourceName: string,
-    where?: WhereClause
+    where?: ExpressionTree
   ): Observable<GraphQLUpdate> {
     // Parse and compile filter if provided
     const filter = where ? new Filter(buildExpression(where)) : undefined;

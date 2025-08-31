@@ -4,12 +4,12 @@ import { Expression } from '../view/types';
 const logger = new Logger('Expressions');
 
 /**
- * GraphQL/Hasura-style where clause types
+ * GraphQL/Hasura-style expression tree for filtering
  */
-export type WhereClause = {
-  _and?: WhereClause[];
-  _or?: WhereClause[];
-  _not?: WhereClause;
+export type ExpressionTree = {
+  _and?: ExpressionTree[];
+  _or?: ExpressionTree[];
+  _not?: ExpressionTree;
 } & {
   [field: string]: FieldComparison | undefined;
 };
@@ -28,17 +28,17 @@ export type FieldComparison = {
 };
 
 /**
- * Builds an Expression object from a GraphQL where clause
+ * Builds an Expression object from an expression tree
  * This includes the compiled function and metadata for optimization
- * Throws error for empty where clauses
+ * Throws error for empty expression trees
  */
-export function buildExpression(where: WhereClause): Expression {
-  if (Object.keys(where).length === 0) {
-    throw new Error('Cannot build expression from empty where clause');
+export function buildExpression(tree: ExpressionTree): Expression {
+  if (Object.keys(tree).length === 0) {
+    throw new Error('Cannot build expression from empty expression tree');
   }
   
   const fields = new Set<string>();
-  const expression = buildExpressionString(where, 'datum', fields);
+  const expression = buildExpressionString(tree, 'datum', fields);
   
   try {
     const evaluate = new Function('datum', `return ${expression}`) as (row: any) => boolean;
@@ -56,27 +56,27 @@ export function buildExpression(where: WhereClause): Expression {
 /**
  * Internal helper that builds expression string and collects fields
  */
-function buildExpressionString(where: WhereClause, fieldVar: string, fields: Set<string>): string {
+function buildExpressionString(tree: ExpressionTree, fieldVar: string, fields: Set<string>): string {
 
   // Handle logical operators
-  if (where._and) {
-    const expressions = where._and.map(w => buildExpressionString(w, fieldVar, fields));
+  if (tree._and) {
+    const expressions = tree._and.map(t => buildExpressionString(t, fieldVar, fields));
     return `(${expressions.join(' && ')})`;
   }
   
-  if (where._or) {
-    const expressions = where._or.map(w => buildExpressionString(w, fieldVar, fields));
+  if (tree._or) {
+    const expressions = tree._or.map(t => buildExpressionString(t, fieldVar, fields));
     return `(${expressions.join(' || ')})`;
   }
   
-  if (where._not) {
-    return `!(${buildExpressionString(where._not, fieldVar, fields)})`;
+  if (tree._not) {
+    return `!(${buildExpressionString(tree._not, fieldVar, fields)})`;
   }
 
   // Handle field comparisons
   const expressions: string[] = [];
   
-  for (const [field, operators] of Object.entries(where)) {
+  for (const [field, operators] of Object.entries(tree)) {
     if (typeof operators !== 'object' || operators === null) {
       continue;
     }

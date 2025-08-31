@@ -1,6 +1,6 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Subscription } from 'rxjs';
-import { WhereClause, buildExpression } from '../common/expressions';
+import { ExpressionTree, buildExpression } from '../common/expressions';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
@@ -16,8 +16,8 @@ export enum TriggerEventType {
 export interface Trigger {
   name: string;
   webhook: string;
-  match: WhereClause;
-  unmatch?: WhereClause;
+  match: ExpressionTree;
+  unmatch?: ExpressionTree;
 }
 
 interface ActiveTrigger extends Trigger {
@@ -36,8 +36,8 @@ export class TriggerService implements OnModuleDestroy {
     input: {
       name: string;
       webhook: string;
-      match: WhereClause;
-      unmatch?: WhereClause;
+      match: ExpressionTree;
+      unmatch?: ExpressionTree;
     }
   ): Promise<Trigger> {
     // Get or create source map
