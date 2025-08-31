@@ -23,6 +23,7 @@ import { SubscriptionService } from './subscription.service';
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       imports: [ConfigModule, ViewModule],
+      providers: [SubscriptionService],
       /**
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
