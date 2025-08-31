@@ -309,20 +309,35 @@ Implement the trigger system using GraphQL mutations and the View abstraction:
 
 Complete the implementation with comprehensive testing:
 
-1. **Unit tests**
-   - View match/unmatch logic
-   - Trigger service webhook firing
-   - API endpoint validation
+1. **Service Layer Unit Tests** (most valuable for business logic)
+   - **TriggerService tests** (`src/api/trigger.service.spec.ts`)
+     - Source-scoped name management (nested Map structure)
+     - Duplicate name detection within sources
+     - Trigger CRUD operations
+     - Cleanup of source map when empty
+   - **SubscriptionService tests** (`src/api/subscription.service.spec.ts`)
+     - Transform RowUpdateEvent to GraphQLUpdate structure
+     - Map RowUpdateType enum to GraphQLRowOperation enum
+     - Wrap updates in source name for GraphQL response
 
-2. **Integration tests**
-   - End-to-end trigger flow
+2. **Schema Generation Tests** (✅ already implemented)
+   - Correct GraphQL types generated
+   - Source-specific operations created
+   - Expression types properly defined
+
+3. **E2E Integration Tests** (`test/triggers.e2e-spec.ts`)
+   - Create trigger via GraphQL mutation
+   - Verify webhook calls when conditions match
+   - Test match/unmatch state transitions
    - Concurrent trigger handling
    - Error recovery scenarios
 
-3. **Demo application**
+4. **Demo application**
    - Trigger management UI
    - Live webhook monitoring
    - Example use cases
+
+Note: Skip resolver unit tests as they only test thin wiring layer that E2E tests will validate anyway.
 
 ## Demo Application
 
