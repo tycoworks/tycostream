@@ -9,6 +9,8 @@ import type { SourceDefinition } from '../config/source.types';
 import { buildSubscriptionResolvers } from './subscription.resolver';
 import { ViewModule } from '../view/view.module';
 import { ViewService } from '../view/view.service';
+import { TriggerService } from './trigger.service';
+import { TriggerResolver } from './trigger.resolver';
 
 /**
  * API module provides GraphQL subscriptions
@@ -78,6 +80,6 @@ import { ViewService } from '../view/view.service';
     }),
   ],
   controllers: [],
-  providers: [],
+  providers: [TriggerService, TriggerResolver],
 })
 export class ApiModule {}

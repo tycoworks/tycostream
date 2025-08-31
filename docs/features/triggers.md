@@ -56,7 +56,6 @@ mutation {
     webhook
     match
     unmatch
-    createdAt
   }
 }
 ```
@@ -79,7 +78,6 @@ mutation {
     webhook
     match
     unmatch
-    createdAt
   }
 }
 ```
@@ -127,7 +125,6 @@ mutation {
     webhook
     match
     unmatch
-    createdAt
   }
 }
 ```
@@ -152,7 +149,6 @@ query {
     webhook
     match
     unmatch
-    createdAt
   }
 }
 ```
@@ -166,7 +162,6 @@ query {
     webhook
     match
     unmatch
-    createdAt
   }
 }
 ```
