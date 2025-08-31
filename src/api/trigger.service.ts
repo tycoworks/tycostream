@@ -6,11 +6,11 @@ import { Filter } from '../view/filter';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
 
 /**
- * Trigger event types that map to GraphQL schema
+ * Trigger event types for webhook payloads
  */
 export enum TriggerEventType {
-  MATCH = 'MATCH',
-  UNMATCH = 'UNMATCH'
+  Match = 'MATCH',
+  Unmatch = 'UNMATCH'
 }
 
 export interface Trigger {
@@ -138,7 +138,7 @@ export class TriggerService implements OnModuleDestroy {
     if (event.type === RowUpdateType.Insert) {
       // Row matched the trigger condition
       this.logger.log(
-        `Trigger ${triggerName} fired: ${TriggerEventType.MATCH} for source ${source}, ` +
+        `Trigger ${triggerName} fired: ${TriggerEventType.Match} for source ${source}, ` +
         `row: ${JSON.stringify(event.row)}`
       );
       // TODO: Send webhook with MATCH event
@@ -146,7 +146,7 @@ export class TriggerService implements OnModuleDestroy {
     } else if (event.type === RowUpdateType.Delete) {
       // Row unmatched the trigger condition
       this.logger.log(
-        `Trigger ${triggerName} fired: ${TriggerEventType.UNMATCH} for source ${source}, ` +
+        `Trigger ${triggerName} fired: ${TriggerEventType.Unmatch} for source ${source}, ` +
         `row: ${JSON.stringify(event.row)}`
       );
       // TODO: Send webhook with UNMATCH event

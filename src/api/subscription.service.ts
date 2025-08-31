@@ -12,9 +12,9 @@ import { truncateForLog } from '../common/logging.utils';
  * These map to the values used in the GraphQL schema
  */
 export enum GraphQLRowOperation {
-  INSERT = 'INSERT',
-  UPDATE = 'UPDATE',
-  DELETE = 'DELETE'
+  Insert = 'INSERT',
+  Update = 'UPDATE',
+  Delete = 'DELETE'
 }
 
 /**
@@ -30,9 +30,9 @@ export interface GraphQLUpdate {
  * Maps RowUpdateType enum values to GraphQL operation enum values
  */
 const ROW_UPDATE_TYPE_MAP = {
-  [RowUpdateType.Insert]: GraphQLRowOperation.INSERT,
-  [RowUpdateType.Update]: GraphQLRowOperation.UPDATE,
-  [RowUpdateType.Delete]: GraphQLRowOperation.DELETE,
+  [RowUpdateType.Insert]: GraphQLRowOperation.Insert,
+  [RowUpdateType.Update]: GraphQLRowOperation.Update,
+  [RowUpdateType.Delete]: GraphQLRowOperation.Delete,
 } as const;
 
 export class SubscriptionService {

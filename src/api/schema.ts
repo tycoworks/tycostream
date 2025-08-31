@@ -32,9 +32,9 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
     
     # Row operation types for subscriptions
     enum RowOperation {
-      ${GraphQLRowOperation.INSERT}
-      ${GraphQLRowOperation.UPDATE}
-      ${GraphQLRowOperation.DELETE}
+      ${GraphQLRowOperation.Insert}
+      ${GraphQLRowOperation.Update}
+      ${GraphQLRowOperation.Delete}
     }
     
     # Trigger type (returned by queries and mutations)
