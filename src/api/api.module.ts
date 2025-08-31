@@ -23,12 +23,11 @@ import { SubscriptionService } from './subscription.service';
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       imports: [ConfigModule, ViewModule],
-      providers: [SubscriptionService],
       /**
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
        */
-      useFactory: async (configService: ConfigService, subscriptionService: SubscriptionService) => {
+      useFactory: async (configService: ConfigService, viewService: ViewService) => {
         const logger = new Logger('GraphQLModule');
         
         // Get source definitions from config
@@ -39,6 +38,9 @@ import { SubscriptionService } from './subscription.service';
         
         // Log the generated SDL
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
+        
+        // Create SubscriptionService instance for resolvers
+        const subscriptionService = new SubscriptionService(viewService);
         
         // Build subscription resolvers
         const subscriptionResolvers = buildSubscriptionResolvers(sources, subscriptionService);
@@ -78,10 +80,10 @@ import { SubscriptionService } from './subscription.service';
           }),
         };
       },
-      inject: [ConfigService, SubscriptionService],
+      inject: [ConfigService, ViewService],
     }),
   ],
   controllers: [],
-  providers: [TriggerService, TriggerResolver, SubscriptionService],
+  //providers: [TriggerService, TriggerResolver],
 })
 export class ApiModule {}
