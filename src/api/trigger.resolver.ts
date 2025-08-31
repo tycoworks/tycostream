@@ -1,27 +1,88 @@
-import { Resolver, Query, Mutation, Args } from '@nestjs/graphql';
+import { Logger } from '@nestjs/common';
+import type { SourceDefinition } from '../config/source.types';
 import { TriggerService } from './trigger.service';
 
-@Resolver('Trigger')
-export class TriggerResolver {
-  constructor(private readonly triggerService: TriggerService) {}
+const logger = new Logger('TriggerResolvers');
 
-  @Query('triggers')
-  async triggers() {
-    return this.triggerService.listTriggers();
+/**
+ * Builds GraphQL resolvers for trigger operations
+ * Generates source-specific mutations and queries dynamically
+ */
+export function buildTriggerResolvers(
+  sources: Map<string, SourceDefinition>,
+  triggerService: TriggerService
+) {
+  const mutationResolvers: Record<string, any> = {};
+  const queryResolvers: Record<string, any> = {};
+
+  // Generate source-specific resolvers
+  for (const [sourceName] of sources) {
+    mutationResolvers[`create_${sourceName}_trigger`] = createTriggerMutationResolver(sourceName, triggerService);
+    mutationResolvers[`delete_${sourceName}_trigger`] = deleteTriggerMutationResolver(sourceName, triggerService);
+    queryResolvers[`${sourceName}_trigger`] = getTriggerQueryResolver(sourceName, triggerService);
+    queryResolvers[`${sourceName}_triggers`] = listTriggersQueryResolver(sourceName, triggerService);
   }
 
-  @Query('trigger')
-  async trigger(@Args('name') name: string) {
-    return this.triggerService.getTrigger(name);
-  }
+  return { mutationResolvers, queryResolvers };
+}
 
-  @Mutation('createTrigger')
-  async createTrigger(@Args('input') input: any) {
-    return this.triggerService.createTrigger(input);
-  }
+/**
+ * Creates a resolver for create_${source}_trigger mutation
+ */
+function createTriggerMutationResolver(
+  sourceName: string,
+  triggerService: TriggerService
+) {
+  return async (_: any, args: { name: string; webhook: string; match: any; unmatch?: any }) => {
+    logger.log(`Creating ${sourceName} trigger: ${args.name}`);
+    
+    return triggerService.createTrigger(sourceName, {
+      name: args.name,
+      webhook: args.webhook,
+      match: args.match,
+      unmatch: args.unmatch,
+    });
+  };
+}
 
-  @Mutation('deleteTrigger')
-  async deleteTrigger(@Args('name') name: string) {
-    return this.triggerService.deleteTrigger(name);
-  }
+/**
+ * Creates a resolver for delete_${source}_trigger mutation
+ */
+function deleteTriggerMutationResolver(
+  sourceName: string,
+  triggerService: TriggerService
+) {
+  return async (_: any, args: { name: string }) => {
+    logger.log(`Deleting ${sourceName} trigger: ${args.name}`);
+    
+    return triggerService.deleteTrigger(sourceName, args.name);
+  };
+}
+
+/**
+ * Creates a resolver for ${source}_trigger query
+ */
+function getTriggerQueryResolver(
+  sourceName: string,
+  triggerService: TriggerService
+) {
+  return async (_: any, args: { name: string }) => {
+    logger.log(`Getting ${sourceName} trigger: ${args.name}`);
+    
+    return triggerService.getTrigger(sourceName, args.name);
+  };
+}
+
+/**
+ * Creates a resolver for ${source}_triggers query
+ */
+function listTriggersQueryResolver(
+  sourceName: string,
+  triggerService: TriggerService
+) {
+  return async () => {
+    logger.log(`Listing all ${sourceName} triggers`);
+    
+    return triggerService.listTriggers(sourceName);
+  };
 }

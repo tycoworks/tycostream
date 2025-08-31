@@ -42,7 +42,7 @@ You can configure:
 **Simple Trigger** (same condition for match/unmatch):
 ```graphql
 mutation {
-  createTradesTrigger(
+  create_trades_trigger(
     name: "large_trade_alert"
     webhook: "https://compliance-api/webhook"
     match: {
@@ -64,7 +64,7 @@ When only `match` is specified, the inverse condition (!match) is automatically 
 **Trigger with Different Match/Unmatch Conditions** (hysteresis):
 ```graphql
 mutation {
-  createPositionsTrigger(
+  create_positions_trigger(
     name: "risk_position_alert"
     webhook: "https://api/webhook"
     match: { net_position: { _gt: 10000 } }
@@ -108,7 +108,7 @@ The payload includes:
 **Create trigger** (source-specific for type safety):
 ```graphql
 mutation {
-  createTradesTrigger(
+  create_trades_trigger(
     name: "large_trade_alert"
     webhook: "https://my-app.com/webhook"
     match: {
@@ -128,7 +128,7 @@ mutation {
 **Delete trigger** (source-specific):
 ```graphql
 mutation {
-  deleteTradesTrigger(name: "large_trade_alert") {
+  delete_trades_trigger(name: "large_trade_alert") {
     name
     source
     webhook
@@ -136,22 +136,27 @@ mutation {
 }
 ```
 
-**List triggers** (generic, returns minimal info):
+**Get specific trigger** (source-specific for typed conditions):
 ```graphql
 query {
-  triggers {
+  trades_trigger(name: "large_trade_alert") {
     name
     source
+    webhook
+    match {
+      symbol { _eq }
+      quantity { _gt }
+    }
+    unmatch
   }
 }
 ```
 
-**Get specific trigger** (source-specific for typed conditions):
+**List all triggers for a source** (source-specific):
 ```graphql
 query {
-  tradesTrigger(name: "large_trade_alert") {
+  trades_triggers {
     name
-    source
     webhook
     match {
       symbol { _eq }
@@ -228,9 +233,9 @@ Both subscriptions and triggers use View events:
 
 ### Runtime Storage
 
-Triggers are stored in a simple in-memory Map (consistent with tycostream's existing cache approach):
+Triggers are stored in a nested in-memory Map structure (consistent with tycostream's existing cache approach):
 
-- **In-memory Map**: Same pattern as existing cache implementation
+- **In-memory Map**: Source → Name → Trigger (names are scoped by source)
 - **No persistence**: Triggers lost on restart (by design)
 - **Apps re-register on startup**: Calling applications are responsible for re-creating their triggers
 
@@ -280,9 +285,9 @@ Enhance the API module to support triggers alongside subscriptions:
 Implement the trigger system using GraphQL mutations and the View abstraction:
 
 1. **GraphQL Schema** (`src/api/schema.ts`)
-   - Generate source-specific mutations: `create${Source}Trigger`/`delete${Source}Trigger`
-   - Generate source-specific queries: `${source}Trigger`
-   - Add generic query: `triggers` returning `[TriggerListItem!]!`
+   - Generate source-specific mutations: `create_${source}_trigger`/`delete_${source}_trigger`
+   - Generate source-specific queries: `${source}_trigger` (get one), `${source}_triggers` (list for source)
+   - Generate source-specific list queries: `${source}_triggers` (list all for that source)
    - Generate source-specific types: `${Source}Trigger` with typed match/unmatch fields
 
 2. **Trigger Resolvers** (`src/api/trigger.resolver.ts`)

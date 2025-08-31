@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map, tap } from 'rxjs/operators';
 import { ViewService } from '../view/view.service';
@@ -35,7 +35,6 @@ const ROW_UPDATE_TYPE_MAP = {
   [RowUpdateType.Delete]: GraphQLRowOperation.DELETE,
 } as const;
 
-@Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
 

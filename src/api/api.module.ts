@@ -9,9 +9,10 @@ import type { SourceDefinition } from '../config/source.types';
 import { buildSubscriptionResolvers } from './subscription.resolver';
 import { ViewModule } from '../view/view.module';
 import { ViewService } from '../view/view.service';
-import { TriggerService } from './trigger.service';
-import { TriggerResolver } from './trigger.resolver';
 import { SubscriptionService } from './subscription.service';
+// TODO: Import and wire up buildTriggerResolvers when schema generation is ready
+// import { buildTriggerResolvers } from './trigger.resolver';
+// import { TriggerService } from './trigger.service';
 
 /**
  * API module provides GraphQL subscriptions
