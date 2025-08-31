@@ -1,5 +1,17 @@
-import { Logger } from '@nestjs/common';
-import { WhereClause } from '../common/expressions';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Subscription } from 'rxjs';
+import { WhereClause, buildExpression } from '../common/expressions';
+import { ViewService } from '../view/view.service';
+import { Filter } from '../view/filter';
+import { RowUpdateEvent, RowUpdateType } from '../view/types';
+
+/**
+ * Trigger event types that map to GraphQL schema
+ */
+export enum TriggerEventType {
+  MATCH = 'MATCH',
+  UNMATCH = 'UNMATCH'
+}
 
 export interface Trigger {
   name: string;
@@ -8,12 +20,16 @@ export interface Trigger {
   unmatch?: WhereClause;
 }
 
-export class TriggerService {
-  private readonly logger = new Logger(TriggerService.name);
-  // Source -> Name -> Trigger (names scoped by source)
-  private readonly triggers = new Map<string, Map<string, Trigger>>();
+interface ActiveTrigger extends Trigger {
+  subscription: Subscription;
+}
 
-  constructor() {}
+export class TriggerService implements OnModuleDestroy {
+  private readonly logger = new Logger(TriggerService.name);
+  // Source -> Name -> ActiveTrigger (names scoped by source)
+  private readonly triggers = new Map<string, Map<string, ActiveTrigger>>();
+
+  constructor(private readonly viewService: ViewService) {}
 
   async createTrigger(
     source: string,
@@ -27,7 +43,7 @@ export class TriggerService {
     // Get or create source map
     let sourceTriggers = this.triggers.get(source);
     if (!sourceTriggers) {
-      sourceTriggers = new Map<string, Trigger>();
+      sourceTriggers = new Map<string, ActiveTrigger>();
       this.triggers.set(source, sourceTriggers);
     }
 
@@ -40,30 +56,56 @@ export class TriggerService {
       ...input,
     };
 
-    sourceTriggers.set(trigger.name, trigger);
-    this.logger.log(`Created trigger: ${trigger.name} for source: ${source}`);
+    // Create View subscription with asymmetric filtering
+    const matchExpression = buildExpression(input.match);
+    const unmatchExpression = input.unmatch 
+      ? buildExpression(input.unmatch)
+      : undefined;
+    const filter = new Filter(matchExpression, unmatchExpression);
 
-    // TODO: Create View subscription for this trigger
+    // Subscribe to View updates (skipSnapshot=true to avoid firing on existing data)
+    const subscription = this.viewService
+      .getUpdates(source, filter, false, true)
+      .subscribe({
+        next: (event: RowUpdateEvent) => this.processEvent(source, trigger.name, event),
+        error: (error) => {
+          this.logger.error(`Error in trigger ${trigger.name}: ${error.message}`);
+        },
+      });
+
+    // Store trigger with subscription
+    const activeTrigger: ActiveTrigger = {
+      ...trigger,
+      subscription,
+    };
+
+    sourceTriggers.set(trigger.name, activeTrigger);
+    this.logger.log(`Created trigger: ${trigger.name} for source: ${source}`);
 
     return trigger;
   }
 
   async deleteTrigger(source: string, name: string): Promise<Trigger> {
-    const trigger = await this.getTrigger(source, name); // Will throw if not found
-
-    // TODO: Clean up View subscription
-
     const sourceTriggers = this.triggers.get(source);
-    sourceTriggers?.delete(name);
+    const activeTrigger = sourceTriggers?.get(name);
+    
+    if (!activeTrigger) {
+      throw new Error(`Trigger ${name} not found for source ${source}`);
+    }
+
+    // Clean up View subscription
+    activeTrigger.subscription.unsubscribe();
+
+    sourceTriggers!.delete(name);
     
     // Clean up source map if empty
-    if (sourceTriggers?.size === 0) {
+    if (sourceTriggers!.size === 0) {
       this.triggers.delete(source);
     }
     
     this.logger.log(`Deleted trigger: ${name} from source: ${source}`);
 
-    return trigger;
+    return activeTrigger;
   }
 
   async getTrigger(source: string, name: string): Promise<Trigger> {
@@ -85,16 +127,49 @@ export class TriggerService {
   }
 
   /**
-   * Clean up all active trigger subscriptions
-   * Should be called on module destroy
+   * Process trigger events from View
    */
-  async dispose(): Promise<void> {
+  private processEvent(
+    source: string,
+    triggerName: string,
+    event: RowUpdateEvent
+  ): void {
+    // Process different event types
+    if (event.type === RowUpdateType.Insert) {
+      // Row matched the trigger condition
+      this.logger.log(
+        `Trigger ${triggerName} fired: ${TriggerEventType.MATCH} for source ${source}, ` +
+        `row: ${JSON.stringify(event.row)}`
+      );
+      // TODO: Send webhook with MATCH event
+      
+    } else if (event.type === RowUpdateType.Delete) {
+      // Row unmatched the trigger condition
+      this.logger.log(
+        `Trigger ${triggerName} fired: ${TriggerEventType.UNMATCH} for source ${source}, ` +
+        `row: ${JSON.stringify(event.row)}`
+      );
+      // TODO: Send webhook with UNMATCH event
+      
+    } else {
+      // Skip UPDATE events (triggers only care about match/unmatch transitions)
+      return;
+    }
+  }
+
+  /**
+   * Clean up all active trigger subscriptions
+   * Implements OnModuleDestroy for proper lifecycle management
+   */
+  async onModuleDestroy(): Promise<void> {
     this.logger.log('Disposing all triggers...');
     
-    // TODO: Clean up all View subscriptions
-    
-    // Clear all nested maps
+    // Clean up all View subscriptions
     for (const [source, sourceTriggers] of this.triggers) {
+      for (const [name, activeTrigger] of sourceTriggers) {
+        this.logger.debug(`Unsubscribing trigger ${name} from source ${source}`);
+        activeTrigger.subscription.unsubscribe();
+      }
       sourceTriggers.clear();
     }
     this.triggers.clear();

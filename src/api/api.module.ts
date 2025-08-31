@@ -41,7 +41,7 @@ import { TriggerService } from './trigger.service';
         
         // Create service instances for resolvers
         const subscriptionService = new SubscriptionService(viewService);
-        const triggerService = new TriggerService();
+        const triggerService = new TriggerService(viewService);
         
         // Build resolvers
         const subscriptionResolvers = buildSubscriptionResolvers(sources, subscriptionService);

@@ -19,14 +19,15 @@ export class View {
   constructor(
     private readonly source: Source,
     viewFilter?: Filter,
-    private readonly deltaUpdates = false
+    private readonly deltaUpdates = false,
+    private readonly skipSnapshot?: boolean
   ) {
     this.primaryKeyField = source.getPrimaryKeyField();
     this.filter = viewFilter;
     
     // Create the filtered stream from the unified stream (snapshot + live)
     
-    this.stream$ = source.getUpdates().pipe(
+    this.stream$ = source.getUpdates(skipSnapshot).pipe(
       map(event => this.processEvent(event)),
       filter((event): event is RowUpdateEvent => event !== null)
     );
