@@ -2,7 +2,7 @@
 
 ## Overview
 
-tycostream is a real-time data streaming platform that bridges database sources (views, tables, or any SELECT-able object) to GraphQL subscriptions and webhook triggers. It provides a simple, configuration-driven approach to exposing streaming SQL data through standard GraphQL subscriptions and REST-triggered webhooks.
+tycostream is a real-time data streaming platform that bridges database sources (views, tables, or any SELECT-able object) to GraphQL subscriptions and webhook triggers. It provides a simple, configuration-driven approach to exposing streaming SQL data through a unified GraphQL API for both subscriptions and trigger management.
 
 ## Technology Stack
 
@@ -54,13 +54,14 @@ Core streaming logic that bridges database and API layers:
 - In-memory cache with primary key indexing
 
 ### API Module (`src/api/`)
-Serves both GraphQL and REST APIs:
+Unified GraphQL API for all operations:
 - Dynamic GraphQL schema generation from YAML configuration
 - Subscription endpoints with filtered streaming support
-- REST endpoints for trigger management (create/delete/list)
+- Mutation/Query endpoints for trigger management (create/delete/list)
 - WebSocket handling via NestJS GraphQL module
 - Automatic client connection lifecycle management
 - Filter expression parsing and validation
+- Field selection support for webhook payloads
 
 ### Configuration & Common (`src/config/` and `src/common/`)
 Shared infrastructure:
@@ -73,7 +74,7 @@ Shared infrastructure:
 ## Data Flow
 
 1. **Initial Connection**
-   - Client connects via GraphQL WebSocket subscription or creates REST trigger
+   - Client connects via GraphQL WebSocket subscription or creates trigger via GraphQL mutation
    - ViewService creates a View instance for the source + filter combination
    - Source connects to database if not already connected
 

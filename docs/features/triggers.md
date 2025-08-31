@@ -40,14 +40,18 @@ You can configure:
 ### Trigger Configuration
 
 **Simple Trigger** (same condition for match/unmatch):
-```json
-{
-  "name": "large_trade_alert",
-  "source": "trades",
-  "webhook": "https://compliance-api/webhook",
-  "match": {
-    "symbol": { "_eq": "AAPL" },
-    "quantity": { "_gt": 10000 }
+```graphql
+mutation {
+  createTrigger(input: {
+    name: "large_trade_alert"
+    source: "trades"
+    webhook: "https://compliance-api/webhook"
+    match: {
+      symbol: { _eq: "AAPL" }
+      quantity: { _gt: 10000 }
+    }
+  }) {
+    name
   }
 }
 ```
@@ -55,13 +59,32 @@ You can configure:
 When only `match` is specified, the inverse condition (!match) is automatically used for unmatch events.
 
 **Trigger with Different Match/Unmatch Conditions** (hysteresis):
-```json
-{
-  "name": "risk_position_alert",
-  "source": "positions",
-  "webhook": "https://api/webhook",
-  "match": { "net_position": { "_gt": 10000 } },
-  "unmatch": { "net_position": { "_lte": 9500 } }
+```graphql
+mutation {
+  createTrigger(input: {
+    name: "risk_position_alert"
+    source: "positions"
+    webhook: "https://api/webhook"
+    match: { net_position: { _gt: 10000 } }
+    unmatch: { net_position: { _lte: 9500 } }
+  }) {
+    name
+  }
+}
+```
+
+**Trigger with Field Selection** (only send specific fields to webhook):
+```graphql
+mutation {
+  createTrigger(input: {
+    name: "large_trade_alert"
+    source: "trades"
+    webhook: "https://api/webhook"
+    match: { quantity: { _gt: 10000 } }
+    fields: ["id", "symbol", "quantity"]  # Only these fields in webhook payload
+  }) {
+    name
+  }
 }
 ```
 
@@ -83,34 +106,59 @@ The webhook receives a JSON payload with the event type and row data:
 }
 ```
 
-### API Endpoints
+### GraphQL API
 
 **Create trigger**:
-```json
-POST /triggers
-{
-  "name": "large_trade_alert",
-  "source": "trades",
-  "webhook": "https://my-app.com/webhook",
-  "match": {
-    "symbol": { "_eq": "AAPL" },
-    "quantity": { "_gt": 10000 }
+```graphql
+mutation {
+  createTrigger(input: {
+    name: "large_trade_alert"
+    source: "trades"
+    webhook: "https://my-app.com/webhook"
+    match: {
+      symbol: { _eq: "AAPL" }
+      quantity: { _gt: 10000 }
+    }
+  }) {
+    name
+    createdAt
   }
+}
 ```
 
 **Delete trigger**:
-```
-DELETE /triggers/large_trade_alert
+```graphql
+mutation {
+  deleteTrigger(name: "large_trade_alert")
+}
 ```
 
 **List triggers**:
-```
-GET /triggers
+```graphql
+query {
+  triggers {
+    name
+    source
+    webhook
+    match
+    unmatch
+    createdAt
+  }
+}
 ```
 
 **Get specific trigger**:
-```
-GET /triggers/large_trade_alert
+```graphql
+query {
+  trigger(name: "large_trade_alert") {
+    name
+    source
+    webhook
+    match
+    unmatch
+    createdAt
+  }
+}
 ```
 
 ### Webhook Payload
@@ -165,9 +213,9 @@ All fields from the source row are included in the data object. The webhook endp
 
 ## Architecture
 
-### Triggers and Subscriptions in the API Layer
+### Unified GraphQL API
 
-Both GraphQL subscriptions and REST triggers live in the API module, consuming from the shared View abstraction:
+Triggers are implemented as GraphQL mutations, living alongside subscriptions in a unified API:
 
 ```
                     ┌─────────────────┐
@@ -186,10 +234,10 @@ Both GraphQL subscriptions and REST triggers live in the API module, consuming f
                     └────────┬────────┘
                              │
                     ┌────────▼────────┐
-                    │   API Module    │
+                    │   GraphQL API   │
                     ├─────────────────┤
-                    │ • Subscriptions │
-                    │ • Triggers      │
+                    │ • Subscriptions │ ──► WebSocket clients
+                    │ • Triggers      │ ──► Webhook endpoints
                     └─────────────────┘
 ```
 
@@ -199,9 +247,9 @@ The View abstraction provides:
 - Optional delta updates (changed fields only) for network efficiency
 - Consistent event delivery to all consumers
 
-Both subscriptions and triggers interpret View events:
-- **GraphQL Subscriptions**: Map to INSERT/UPDATE/DELETE operations
-- **REST Triggers**: Map INSERT to MATCH, DELETE to UNMATCH
+Both subscriptions and triggers use View events:
+- **Subscriptions**: Stream to WebSocket clients with INSERT/UPDATE/DELETE
+- **Triggers**: POST to webhooks with MATCH (INSERT) and UNMATCH (DELETE)
 
 ### Runtime Storage
 
@@ -238,13 +286,13 @@ Extend the View abstraction to support asymmetric filtering and delta updates:
    - Cache rows for enriching partial updates/deletes
    - Database-agnostic approach
 
-#### Phase 2: API Module Consolidation ✅
+#### Phase 2: API Module Enhancement ✅
 
-Consolidate GraphQL and REST endpoints into a unified API module:
+Enhance the API module to support triggers alongside subscriptions:
 
-1. **Rename and reorganize** (`src/graphql/` → `src/api/`)
-   - Flat structure with all API files at same level
-   - GraphQL subscriptions and REST triggers as peers
+1. **Module organization** (`src/api/`)
+   - Unified API layer for all external interfaces
+   - GraphQL subscriptions and trigger mutations together
    - Shared utilities and types
 
 2. **Update GraphQL subscriptions** (`src/api/subscription.resolver.ts`)
@@ -254,20 +302,27 @@ Consolidate GraphQL and REST endpoints into a unified API module:
 
 #### Phase 3: Trigger Implementation
 
-Implement the trigger system using the View abstraction:
+Implement the trigger system using GraphQL mutations and the View abstraction:
 
-1. **REST API endpoints** (`src/api/trigger.controller.ts`)
-   - CRUD operations for trigger management
-   - Validation of trigger configurations
-   - Integration with NestJS framework
+1. **GraphQL Schema** (`src/api/schema.ts`)
+   - Add Mutation type with createTrigger/deleteTrigger
+   - Add Query type with triggers/trigger
+   - Define TriggerInput and Trigger types
 
-2. **Trigger Service** (`src/api/trigger.service.ts`)
+2. **Trigger Resolvers** (`src/api/trigger.resolver.ts`)
+   - Mutation resolvers for create/delete operations
+   - Query resolvers for list/get operations
+   - Integration with TriggerService
+
+3. **Trigger Service** (`src/api/trigger.service.ts`)
    - Manages trigger configurations in memory
    - Creates View subscriptions for each trigger
    - Maps View events to webhook calls
+   - Filters fields if specified in trigger config
 
-3. **Webhook delivery** (`src/api/trigger.service.ts`)
-   - HTTP POST with full row data using NestJS HttpModule (axios)
+4. **Webhook delivery** (`src/api/trigger.service.ts`)
+   - HTTP POST with filtered row data using NestJS HttpModule (axios)
+   - Only sends fields specified in trigger config
    - Retry logic for failures
    - Async processing to avoid blocking
 

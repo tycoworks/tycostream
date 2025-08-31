@@ -9,11 +9,10 @@ import type { SourceDefinition } from '../config/source.types';
 import { buildSubscriptionResolvers } from './subscription.resolver';
 import { ViewModule } from '../view/view.module';
 import { ViewService } from '../view/view.service';
-import { TriggerController } from './trigger.controller';
 
 /**
- * API module provides both GraphQL subscriptions and REST endpoints
- * Handles real-time data streaming and webhook triggers
+ * API module provides GraphQL subscriptions
+ * Handles real-time data streaming
  */
 @Module({
   imports: [
@@ -78,7 +77,7 @@ import { TriggerController } from './trigger.controller';
       inject: [ConfigService, ViewService],
     }),
   ],
-  controllers: [TriggerController],
+  controllers: [],
   providers: [],
 })
 export class ApiModule {}
