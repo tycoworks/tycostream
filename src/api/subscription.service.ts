@@ -22,7 +22,7 @@ export enum GraphQLRowOperation {
  */
 export interface GraphQLUpdate {
   operation: GraphQLRowOperation;
-  data: Record<string, any> | null;
+  data: Record<string, any>;
   fields: string[];
 }
 
