@@ -52,6 +52,11 @@ mutation {
     }
   }) {
     name
+    source
+    webhook
+    match
+    unmatch
+    createdAt
   }
 }
 ```
@@ -68,34 +73,25 @@ mutation {
     match: { net_position: { _gt: 10000 } }
     unmatch: { net_position: { _lte: 9500 } }
   }) {
+    id
     name
-  }
-}
-```
-
-**Trigger with Field Selection** (only send specific fields to webhook):
-```graphql
-mutation {
-  createTrigger(input: {
-    name: "large_trade_alert"
-    source: "trades"
-    webhook: "https://api/webhook"
-    match: { quantity: { _gt: 10000 } }
-    fields: ["id", "symbol", "quantity"]  # Only these fields in webhook payload
-  }) {
-    name
+    source
+    webhook
+    match
+    unmatch
+    createdAt
   }
 }
 ```
 
 ### Webhook Payload
 
-The webhook receives a JSON payload with the event type and row data:
+Webhooks receive a POST request with the event type and full row data:
 
 ```json
 {
-  "event": "MATCH",  // or "UNMATCH"
-  "trigger": "large_trade_alert",
+  "event_type": "MATCH",  // or "UNMATCH"
+  "trigger_name": "large_trade_alert",
   "timestamp": "2024-01-15T10:30:00Z",
   "data": {
     "id": 12345,
@@ -105,6 +101,12 @@ The webhook receives a JSON payload with the event type and row data:
   }
 }
 ```
+
+The payload includes:
+- `event_type`: Either "MATCH" or "UNMATCH"
+- `trigger_name`: Name of the trigger that fired
+- `timestamp`: When the trigger fired (ISO 8601)
+- `data`: Complete row data from the source
 
 ### GraphQL API
 
@@ -121,6 +123,10 @@ mutation {
     }
   }) {
     name
+    source
+    webhook
+    match
+    unmatch
     createdAt
   }
 }
@@ -129,7 +135,11 @@ mutation {
 **Delete trigger**:
 ```graphql
 mutation {
-  deleteTrigger(name: "large_trade_alert")
+  deleteTrigger(name: "large_trade_alert") {
+    name
+    source
+    webhook
+  }
 }
 ```
 
@@ -161,32 +171,6 @@ query {
 }
 ```
 
-### Webhook Payload
-
-Webhooks receive a POST request with the full row data:
-
-```json
-{
-  "event_type": "MATCH",
-  "trigger_name": "risk_position_alert",
-  "timestamp": "2024-01-15T10:31:45.123Z",
-  "data": {
-    "position_id": "ABC",
-    "symbol": "AAPL",
-    "net_position": 10250,
-    "trader": "john",
-    "last_updated": "2024-01-15T10:31:45.000Z"
-  }
-}
-```
-
-The payload includes:
-- `event_type`: Either "MATCH" or "UNMATCH"
-- `trigger_name`: Name of the trigger that fired
-- `timestamp`: When the trigger fired (ISO 8601)
-- `data`: Complete row data from the source
-
-All fields from the source row are included in the data object. The webhook endpoint should validate and extract only the fields it needs.
 
 ## Comparison with Existing Systems
 
@@ -318,11 +302,9 @@ Implement the trigger system using GraphQL mutations and the View abstraction:
    - Manages trigger configurations in memory
    - Creates View subscriptions for each trigger
    - Maps View events to webhook calls
-   - Filters fields if specified in trigger config
 
 4. **Webhook delivery** (`src/api/trigger.service.ts`)
-   - HTTP POST with filtered row data using NestJS HttpModule (axios)
-   - Only sends fields specified in trigger config
+   - HTTP POST with full row data using NestJS HttpModule (axios)
    - Retry logic for failures
    - Async processing to avoid blocking
 

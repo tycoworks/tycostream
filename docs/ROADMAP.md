@@ -25,7 +25,8 @@
 
 - Webhook delivery on data conditions
 - Different match/unmatch thresholds
-- Hasura-compatible API
+- GraphQL mutations for trigger management
+- In-memory trigger storage (ephemeral)
 
 ### 🚀 Developer Experience
 
@@ -115,6 +116,11 @@
 - Cooldown periods and rate limiting
 - Parameterized conditions with runtime variables
 - Webhook retry policies with jitter
+- Trigger persistence (survive restarts)
+- Time-to-live (TTL) and expiration
+- Query matched rows for debugging
+- Trigger audit trail and metrics
+- Field selection for webhook payloads
 
 ### 🧠 Production Hardening
 
