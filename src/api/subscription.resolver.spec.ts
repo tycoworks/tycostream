@@ -1,8 +1,7 @@
 import { of } from 'rxjs';
 import { buildSubscriptionResolvers } from './subscription.resolver';
-import { ViewService } from '../view/view.service';
+import { SubscriptionService, GraphQLRowOperation } from './subscription.service';
 import type { SourceDefinition } from '../config/source.types';
-import { RowUpdateType } from '../view/types';
 
 // Mock rxjs-for-await
 jest.mock('rxjs-for-await', () => ({
@@ -22,11 +21,11 @@ jest.mock('rxjs-for-await', () => ({
 }));
 
 describe('buildSubscriptionResolvers', () => {
-  let mockViewService: jest.Mocked<ViewService>;
+  let mockSubscriptionService: jest.Mocked<SubscriptionService>;
 
   beforeEach(() => {
-    mockViewService = {
-      getUpdates: jest.fn(),
+    mockSubscriptionService = {
+      createSubscription: jest.fn(),
     } as any;
   });
 
@@ -44,7 +43,7 @@ describe('buildSubscriptionResolvers', () => {
       }],
     ]);
 
-    const resolvers = buildSubscriptionResolvers(sources, mockViewService);
+    const resolvers = buildSubscriptionResolvers(sources, mockSubscriptionService);
 
     expect(resolvers).toHaveProperty('trades');
     expect(resolvers).toHaveProperty('orders');
@@ -52,7 +51,7 @@ describe('buildSubscriptionResolvers', () => {
     expect(typeof resolvers.trades.subscribe).toBe('function');
   });
 
-  it('should map RowUpdateType enum to GraphQL operation strings', async () => {
+  it('should return GraphQL operation and data', async () => {
     const sources = new Map<string, SourceDefinition>([
       ['trades', {
         name: 'trades',
@@ -61,26 +60,25 @@ describe('buildSubscriptionResolvers', () => {
       }],
     ]);
 
-    const mockEvent = {
-      type: RowUpdateType.Insert,
-      fields: new Set(['id', 'symbol', 'price']),
-      row: { id: 1, symbol: 'AAPL', price: 150 },
-      timestamp: BigInt(1234567890000),
+    const mockUpdate = {
+      operation: GraphQLRowOperation.INSERT,
+      data: { id: 1, symbol: 'AAPL', price: 150 },
+      fields: ['id', 'symbol', 'price']
     };
 
-    mockViewService.getUpdates.mockReturnValue(of(mockEvent));
+    mockSubscriptionService.createSubscription.mockReturnValue(of(mockUpdate));
 
-    const resolvers = buildSubscriptionResolvers(sources, mockViewService);
+    const resolvers = buildSubscriptionResolvers(sources, mockSubscriptionService);
     const asyncIterator = await resolvers.trades.subscribe({}, {}, {}, {});
     
     // Get first value from async iterator
     const { value } = await asyncIterator[Symbol.asyncIterator]().next();
     
     expect(value.trades.operation).toBe('INSERT');
-    expect(value.trades.data).toEqual(mockEvent.row);
+    expect(value.trades.data).toEqual(mockUpdate.data);
   });
 
-  it('should handle all RowUpdateType values', async () => {
+  it('should handle all operation types', async () => {
     const sources = new Map<string, SourceDefinition>([
       ['trades', {
         name: 'trades',
@@ -90,28 +88,27 @@ describe('buildSubscriptionResolvers', () => {
     ]);
 
     const testCases = [
-      { type: RowUpdateType.Insert, expected: 'INSERT' },
-      { type: RowUpdateType.Update, expected: 'UPDATE' },
-      { type: RowUpdateType.Delete, expected: 'DELETE' },
+      { operation: GraphQLRowOperation.INSERT },
+      { operation: GraphQLRowOperation.UPDATE },
+      { operation: GraphQLRowOperation.DELETE },
     ];
 
     for (const testCase of testCases) {
-      const mockEvent = {
-        type: testCase.type,
-        fields: new Set(['id']),
-        row: { id: 1 },
-        timestamp: BigInt(1234567890000),
+      const mockUpdate = {
+        operation: testCase.operation,
+        data: { id: 1 },
+        fields: ['id']
       };
 
-      mockViewService.getUpdates.mockReturnValue(of(mockEvent));
+      mockSubscriptionService.createSubscription.mockReturnValue(of(mockUpdate));
       
-      const resolvers = buildSubscriptionResolvers(sources, mockViewService);
+      const resolvers = buildSubscriptionResolvers(sources, mockSubscriptionService);
       const asyncIterator = await resolvers.trades.subscribe({}, {}, {}, {});
       
       // Get first value from async iterator
       const { value } = await asyncIterator[Symbol.asyncIterator]().next();
       
-      expect(value.trades.operation).toBe(testCase.expected);
+      expect(value.trades.operation).toBe(testCase.operation);
     }
   });
 
@@ -124,16 +121,21 @@ describe('buildSubscriptionResolvers', () => {
       }],
     ]);
 
-    const resolvers = buildSubscriptionResolvers(sources, mockViewService);
+    const resolvers = buildSubscriptionResolvers(sources, mockSubscriptionService);
     
-    // Pass an invalid where clause with unknown operator
+    // Mock the service to throw an error for invalid filter
+    mockSubscriptionService.createSubscription.mockImplementation(() => {
+      throw new Error('Unknown operator: _unknown_op');
+    });
+    
     const args = {
       where: {
         price: { _unknown_op: 100 }
       }
     };
     
-    // Should throw an error when trying to subscribe
-    expect(() => resolvers.trades.subscribe({}, args, {}, {})).toThrow('Unknown operator: _unknown_op');
+    // Should throw an error when trying to iterate the async generator
+    const asyncIterator = await resolvers.trades.subscribe({}, args, {}, {});
+    await expect(asyncIterator[Symbol.asyncIterator]().next()).rejects.toThrow('Unknown operator: _unknown_op');
   });
 });

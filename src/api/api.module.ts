@@ -11,6 +11,7 @@ import { ViewModule } from '../view/view.module';
 import { ViewService } from '../view/view.service';
 import { TriggerService } from './trigger.service';
 import { TriggerResolver } from './trigger.resolver';
+import { SubscriptionService } from './subscription.service';
 
 /**
  * API module provides GraphQL subscriptions
@@ -26,7 +27,7 @@ import { TriggerResolver } from './trigger.resolver';
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
        */
-      useFactory: async (configService: ConfigService, viewService: ViewService) => {
+      useFactory: async (configService: ConfigService, subscriptionService: SubscriptionService) => {
         const logger = new Logger('GraphQLModule');
         
         // Get source definitions from config
@@ -39,7 +40,7 @@ import { TriggerResolver } from './trigger.resolver';
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
         
         // Build subscription resolvers
-        const subscriptionResolvers = buildSubscriptionResolvers(sources, viewService);
+        const subscriptionResolvers = buildSubscriptionResolvers(sources, subscriptionService);
         
         const graphqlConfig = configService.get('graphql');
         
@@ -76,10 +77,10 @@ import { TriggerResolver } from './trigger.resolver';
           }),
         };
       },
-      inject: [ConfigService, ViewService],
+      inject: [ConfigService, SubscriptionService],
     }),
   ],
   controllers: [],
-  providers: [TriggerService, TriggerResolver],
+  providers: [TriggerService, TriggerResolver, SubscriptionService],
 })
 export class ApiModule {}
