@@ -2,20 +2,147 @@ import { generateSchema } from './schema';
 import type { SourceDefinition } from '../config/source.types';
 
 describe('generateSchema', () => {
-  it('should generate basic schema structure', () => {
+  it('should generate root types even with no sources', () => {
     const sources = new Map<string, SourceDefinition>();
     const schema = generateSchema(sources);
     
-    expect(schema).toContain('type Query');
-    expect(schema).toContain('ping: String');
+    // Should have all three root types
+    expect(schema).toContain('type Query {');
+    expect(schema).toContain('type Mutation {');
     expect(schema).toContain('type Subscription {');
+  });
+
+  it('should define RowOperation enum for subscription events', () => {
+    const sources = new Map<string, SourceDefinition>();
+    const schema = generateSchema(sources);
+    
     expect(schema).toContain('enum RowOperation');
     expect(schema).toContain('INSERT');
     expect(schema).toContain('UPDATE');
     expect(schema).toContain('DELETE');
   });
 
-  it('should generate types for a simple source', () => {
+  it('should define Trigger type for trigger operations', () => {
+    const sources = new Map<string, SourceDefinition>();
+    const schema = generateSchema(sources);
+    
+    expect(schema).toContain('type Trigger {');
+    expect(schema).toContain('name: String!');
+    expect(schema).toContain('webhook: String!');
+    expect(schema).toContain('match: String!');
+    expect(schema).toContain('unmatch: String');
+  });
+
+  it('should define comparison input types for filtering', () => {
+    const sources = new Map<string, SourceDefinition>();
+    const schema = generateSchema(sources);
+    
+    // String comparisons
+    expect(schema).toContain('input StringComparison');
+    expect(schema).toContain('_eq: String');
+    expect(schema).toContain('_neq: String');
+    expect(schema).toContain('_in: [String!]');
+    expect(schema).toContain('_is_null: Boolean');
+    
+    // Numeric comparisons
+    expect(schema).toContain('input IntComparison');
+    expect(schema).toContain('_gt: Int');
+    expect(schema).toContain('_lt: Int');
+    expect(schema).toContain('_gte: Int');
+    expect(schema).toContain('_lte: Int');
+    
+    expect(schema).toContain('input FloatComparison');
+    expect(schema).toContain('input BooleanComparison');
+  });
+
+  it('should generate query fields for triggers', () => {
+    const sources = new Map<string, SourceDefinition>([
+      ['trades', {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: 'integer' },
+          { name: 'symbol', type: 'text' },
+        ],
+      }],
+    ]);
+    
+    const schema = generateSchema(sources);
+    
+    // Should have trigger query fields
+    expect(schema).toContain('trades_triggers: [Trigger!]!');
+    expect(schema).toContain('trades_trigger(name: String!): Trigger');
+  });
+
+  it('should generate mutation fields for triggers', () => {
+    const sources = new Map<string, SourceDefinition>([
+      ['trades', {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: 'integer' },
+          { name: 'symbol', type: 'text' },
+        ],
+      }],
+    ]);
+    
+    const schema = generateSchema(sources);
+    
+    // Should have trigger mutation fields
+    expect(schema).toContain('create_trades_trigger(input: tradesTriggerInput!): Trigger!');
+    expect(schema).toContain('delete_trades_trigger(name: String!): Trigger!');
+  });
+
+  it('should generate trigger input types for each source', () => {
+    const sources = new Map<string, SourceDefinition>([
+      ['trades', {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: 'integer' },
+          { name: 'symbol', type: 'text' },
+        ],
+      }],
+    ]);
+    
+    const schema = generateSchema(sources);
+    
+    // Should have trigger input type
+    expect(schema).toContain('input tradesTriggerInput {');
+    expect(schema).toContain('name: String!');
+    expect(schema).toContain('webhook: String!');
+    expect(schema).toContain('match: tradesWhere!');
+    expect(schema).toContain('unmatch: tradesWhere');
+  });
+
+  it('should generate filter input types that work for both subscriptions and triggers', () => {
+    const sources = new Map<string, SourceDefinition>([
+      ['trades', {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: 'integer' },
+          { name: 'symbol', type: 'text' },
+          { name: 'price', type: 'numeric' },
+        ],
+      }],
+    ]);
+    
+    const schema = generateSchema(sources);
+    
+    // Should have Where input type with field comparisons
+    expect(schema).toContain('input tradesWhere {');
+    expect(schema).toContain('id: IntComparison');
+    expect(schema).toContain('symbol: StringComparison');
+    expect(schema).toContain('price: FloatComparison');
+    
+    // Should have logical operators
+    expect(schema).toContain('_and: [tradesWhere!]');
+    expect(schema).toContain('_or: [tradesWhere!]');
+    expect(schema).toContain('_not: tradesWhere');
+  });
+
+  it('should generate source object types and update types', () => {
     const sources = new Map<string, SourceDefinition>([
       ['trades', {
         name: 'trades',
@@ -42,7 +169,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('data: trades');
     expect(schema).toContain('fields: [String!]');
     
-    // Check subscription
+    // Should have subscription field
     expect(schema).toContain('trades(where: tradesWhere): tradesUpdate!');
   });
 

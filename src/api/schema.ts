@@ -18,23 +18,71 @@ enum ComparisonInputType {
  * Creates type definitions for each source including Query, Subscription, and custom types
  */
 export function generateSchema(sources: Map<string, SourceDefinition>): string {
+  // Build all the dynamic parts
+  const comparisonTypes = buildComparisonTypes();
+  const filterInputTypes = buildFilterInputTypes(sources);
+  const triggerInputTypes = buildTriggerInputTypes(sources);
+  const sourceTypes = buildSourceTypes(sources);
+  const queryFields = buildQueryFields(sources);
+  const mutationFields = buildMutationFields(sources);
   const subscriptionFields = buildSubscriptionFields(sources);
-  const whereInputTypes = buildWhereInputTypes(sources);
   
   let schema = `
-    # Basic query (required by GraphQL)
-    type Query {
-      ping: ${GraphQLString.name}
-    }
+    # ================== ENUMS & BASE TYPES ==================
     
-    # Row operation types
+    # Row operation types for subscriptions
     enum RowOperation {
       ${GraphQLRowOperation.INSERT}
       ${GraphQLRowOperation.UPDATE}
       ${GraphQLRowOperation.DELETE}
     }
     
-    # Comparison operators
+    # Trigger type (returned by queries and mutations)
+    type Trigger {
+      name: ${GraphQLString.name}!
+      webhook: ${GraphQLString.name}!
+      match: ${GraphQLString.name}!
+      unmatch: ${GraphQLString.name}
+    }
+    
+    # ================== INPUT TYPES ==================
+    
+${comparisonTypes}
+    
+${filterInputTypes}
+    
+${triggerInputTypes}
+    
+    # ================== OBJECT TYPES ==================
+    
+${sourceTypes}
+    
+    # ================== ROOT TYPES ==================
+    
+    # Queries
+    type Query {
+${queryFields}
+    }
+    
+    # Mutations
+    type Mutation {
+${mutationFields}
+    }
+    
+    # Subscriptions
+    type Subscription {
+${subscriptionFields}
+    }`;
+
+  return schema;
+}
+
+/**
+ * Build comparison types for filtering
+ * Creates comparison input types for different data types
+ */
+function buildComparisonTypes(): string {
+  return `    # Comparison operators
     input StringComparison {
       _eq: ${GraphQLString.name}
       _neq: ${GraphQLString.name}
@@ -71,34 +119,63 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
       _eq: ${GraphQLBoolean.name}
       _neq: ${GraphQLBoolean.name}
       _is_null: ${GraphQLBoolean.name}
-    }
-    
-${whereInputTypes}
-    
-    type Subscription {
-${subscriptionFields}
     }`;
+}
 
-  // Add types for each source
+/**
+ * Build source types and their update types
+ * Creates the object types for each source and their subscription update types
+ */
+function buildSourceTypes(sources: Map<string, SourceDefinition>): string {
+  const types: string[] = [];
+  
   for (const [sourceName, sourceDefinition] of sources) {
     const fields = buildFieldDefinitions(sourceDefinition);
     
-    schema += `
-
-    # ${sourceName} type
+    types.push(`    # ${sourceName} type
     type ${sourceName} {
 ${fields}
     }
-
+    
     # ${sourceName} update event
     type ${sourceName}Update {
       operation: RowOperation!
       data: ${sourceName}
-      fields: [${GraphQLString.name}!]! 
-    }`;
+      fields: [${GraphQLString.name}!]!
+    }`);
   }
+  
+  return types.join('\n\n');
+}
 
-  return schema;
+/**
+ * Build query fields for triggers
+ * Creates query fields for listing and getting triggers per source
+ */
+function buildQueryFields(sources: Map<string, SourceDefinition>): string {
+  const fields: string[] = [];
+  
+  for (const sourceName of sources.keys()) {
+    fields.push(`      ${sourceName}_triggers: [Trigger!]!`);
+    fields.push(`      ${sourceName}_trigger(name: ${GraphQLString.name}!): Trigger`);
+  }
+  
+  return fields.join('\n');
+}
+
+/**
+ * Build mutation fields for triggers
+ * Creates mutation fields for creating and deleting triggers per source
+ */
+function buildMutationFields(sources: Map<string, SourceDefinition>): string {
+  const fields: string[] = [];
+  
+  for (const sourceName of sources.keys()) {
+    fields.push(`      create_${sourceName}_trigger(input: ${sourceName}TriggerInput!): Trigger!`);
+    fields.push(`      delete_${sourceName}_trigger(name: ${GraphQLString.name}!): Trigger!`);
+  }
+  
+  return fields.join('\n');
 }
 
 /**
@@ -112,10 +189,11 @@ function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string
 }
 
 /**
- * Build where input types for all sources
- * Creates a where input type for each source with field comparisons and logical operators
+ * Build filter input types for all sources
+ * Creates filter input types for each source with field comparisons and logical operators
+ * Used by both subscriptions (where) and triggers (match/unmatch)
  */
-function buildWhereInputTypes(sources: Map<string, SourceDefinition>): string {
+function buildFilterInputTypes(sources: Map<string, SourceDefinition>): string {
   const inputTypes: string[] = [];
   
   for (const [sourceName, sourceDefinition] of sources) {
@@ -126,12 +204,32 @@ function buildWhereInputTypes(sources: Map<string, SourceDefinition>): string {
       })
       .join('\n');
     
-    inputTypes.push(`    # ${sourceName} where conditions
+    inputTypes.push(`    # ${sourceName} filter conditions (for subscriptions and triggers)
     input ${sourceName}Where {
 ${fieldComparisons}
       _and: [${sourceName}Where!]
       _or: [${sourceName}Where!]
       _not: ${sourceName}Where
+    }`);
+  }
+  
+  return inputTypes.join('\n\n');
+}
+
+/**
+ * Build trigger input types for all sources
+ * Creates input types for creating triggers for each source
+ */
+function buildTriggerInputTypes(sources: Map<string, SourceDefinition>): string {
+  const inputTypes: string[] = [];
+  
+  for (const sourceName of sources.keys()) {
+    inputTypes.push(`    # ${sourceName} trigger input
+    input ${sourceName}TriggerInput {
+      name: ${GraphQLString.name}!
+      webhook: ${GraphQLString.name}!
+      match: ${sourceName}Where!
+      unmatch: ${sourceName}Where
     }`);
   }
   

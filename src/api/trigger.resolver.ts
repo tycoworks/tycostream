@@ -33,14 +33,14 @@ function createTriggerMutationResolver(
   sourceName: string,
   triggerService: TriggerService
 ) {
-  return async (_: any, args: { name: string; webhook: string; match: any; unmatch?: any }) => {
-    logger.log(`Creating ${sourceName} trigger: ${args.name}`);
+  return async (_: any, args: { input: { name: string; webhook: string; match: any; unmatch?: any } }) => {
+    logger.log(`Creating ${sourceName} trigger: ${args.input.name}`);
     
     return triggerService.createTrigger(sourceName, {
-      name: args.name,
-      webhook: args.webhook,
-      match: args.match,
-      unmatch: args.unmatch,
+      name: args.input.name,
+      webhook: args.input.webhook,
+      match: args.input.match,
+      unmatch: args.input.unmatch,
     });
   };
 }

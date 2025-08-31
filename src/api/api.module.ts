@@ -10,9 +10,8 @@ import { buildSubscriptionResolvers } from './subscription.resolver';
 import { ViewModule } from '../view/view.module';
 import { ViewService } from '../view/view.service';
 import { SubscriptionService } from './subscription.service';
-// TODO: Import and wire up buildTriggerResolvers when schema generation is ready
-// import { buildTriggerResolvers } from './trigger.resolver';
-// import { TriggerService } from './trigger.service';
+import { buildTriggerResolvers } from './trigger.resolver';
+import { TriggerService } from './trigger.service';
 
 /**
  * API module provides GraphQL subscriptions
@@ -40,11 +39,13 @@ import { SubscriptionService } from './subscription.service';
         // Log the generated SDL
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
         
-        // Create SubscriptionService instance for resolvers
+        // Create service instances for resolvers
         const subscriptionService = new SubscriptionService(viewService);
+        const triggerService = new TriggerService();
         
-        // Build subscription resolvers
+        // Build resolvers
         const subscriptionResolvers = buildSubscriptionResolvers(sources, subscriptionService);
+        const { mutationResolvers, queryResolvers } = buildTriggerResolvers(sources, triggerService);
         
         const graphqlConfig = configService.get('graphql');
         
@@ -67,9 +68,8 @@ import { SubscriptionService } from './subscription.service';
             'subscriptions-transport-ws': true,
           },
           resolvers: {
-            Query: {
-              ping: () => 'pong',
-            },
+            Query: queryResolvers,
+            Mutation: mutationResolvers,
             Subscription: subscriptionResolvers,
           },
           // CORS configuration for development when playground is enabled
@@ -85,6 +85,5 @@ import { SubscriptionService } from './subscription.service';
     }),
   ],
   controllers: [],
-  //providers: [TriggerService, TriggerResolver],
 })
 export class ApiModule {}
