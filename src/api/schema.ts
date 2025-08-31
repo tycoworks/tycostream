@@ -20,7 +20,7 @@ enum ComparisonInputType {
 export function generateSchema(sources: Map<string, SourceDefinition>): string {
   // Build all the dynamic parts
   const comparisonTypes = buildComparisonTypes();
-  const filterInputTypes = buildFilterInputTypes(sources);
+  const expressionInputTypes = buildExpressionInputTypes(sources);
   const triggerInputTypes = buildTriggerInputTypes(sources);
   const sourceTypes = buildSourceTypes(sources);
   const queryFields = buildQueryFields(sources);
@@ -49,7 +49,7 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
     
 ${comparisonTypes}
     
-${filterInputTypes}
+${expressionInputTypes}
     
 ${triggerInputTypes}
     
@@ -184,16 +184,16 @@ function buildMutationFields(sources: Map<string, SourceDefinition>): string {
  */
 function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string {
   return Array.from(sources.keys())
-    .map(sourceName => `      ${sourceName}(where: ${sourceName}Where): ${sourceName}Update!`)
+    .map(sourceName => `      ${sourceName}(where: ${sourceName}Expression): ${sourceName}Update!`)
     .join('\n');
 }
 
 /**
- * Build filter input types for all sources
- * Creates filter input types for each source with field comparisons and logical operators
+ * Build expression input types for all sources
+ * Creates expression input types for each source with field comparisons and logical operators
  * Used by both subscriptions (where) and triggers (match/unmatch)
  */
-function buildFilterInputTypes(sources: Map<string, SourceDefinition>): string {
+function buildExpressionInputTypes(sources: Map<string, SourceDefinition>): string {
   const inputTypes: string[] = [];
   
   for (const [sourceName, sourceDefinition] of sources) {
@@ -204,12 +204,12 @@ function buildFilterInputTypes(sources: Map<string, SourceDefinition>): string {
       })
       .join('\n');
     
-    inputTypes.push(`    # ${sourceName} filter conditions (for subscriptions and triggers)
-    input ${sourceName}Where {
+    inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions and triggers)
+    input ${sourceName}Expression {
 ${fieldComparisons}
-      _and: [${sourceName}Where!]
-      _or: [${sourceName}Where!]
-      _not: ${sourceName}Where
+      _and: [${sourceName}Expression!]
+      _or: [${sourceName}Expression!]
+      _not: ${sourceName}Expression
     }`);
   }
   
@@ -228,8 +228,8 @@ function buildTriggerInputTypes(sources: Map<string, SourceDefinition>): string 
     input ${sourceName}TriggerInput {
       name: ${GraphQLString.name}!
       webhook: ${GraphQLString.name}!
-      match: ${sourceName}Where!
-      unmatch: ${sourceName}Where
+      match: ${sourceName}Expression!
+      unmatch: ${sourceName}Expression
     }`);
   }
   

@@ -111,11 +111,11 @@ describe('generateSchema', () => {
     expect(schema).toContain('input tradesTriggerInput {');
     expect(schema).toContain('name: String!');
     expect(schema).toContain('webhook: String!');
-    expect(schema).toContain('match: tradesWhere!');
-    expect(schema).toContain('unmatch: tradesWhere');
+    expect(schema).toContain('match: tradesExpression!');
+    expect(schema).toContain('unmatch: tradesExpression');
   });
 
-  it('should generate filter input types that work for both subscriptions and triggers', () => {
+  it('should generate expression input types that work for both subscriptions and triggers', () => {
     const sources = new Map<string, SourceDefinition>([
       ['trades', {
         name: 'trades',
@@ -130,16 +130,16 @@ describe('generateSchema', () => {
     
     const schema = generateSchema(sources);
     
-    // Should have Where input type with field comparisons
-    expect(schema).toContain('input tradesWhere {');
+    // Should have Expression input type with field comparisons
+    expect(schema).toContain('input tradesExpression {');
     expect(schema).toContain('id: IntComparison');
     expect(schema).toContain('symbol: StringComparison');
     expect(schema).toContain('price: FloatComparison');
     
     // Should have logical operators
-    expect(schema).toContain('_and: [tradesWhere!]');
-    expect(schema).toContain('_or: [tradesWhere!]');
-    expect(schema).toContain('_not: tradesWhere');
+    expect(schema).toContain('_and: [tradesExpression!]');
+    expect(schema).toContain('_or: [tradesExpression!]');
+    expect(schema).toContain('_not: tradesExpression');
   });
 
   it('should generate source object types and update types', () => {
@@ -170,7 +170,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('fields: [String!]');
     
     // Should have subscription field
-    expect(schema).toContain('trades(where: tradesWhere): tradesUpdate!');
+    expect(schema).toContain('trades(where: tradesExpression): tradesUpdate!');
   });
 
   it('should handle PostgreSQL type mappings correctly', () => {
@@ -215,7 +215,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('type live_pnl {');
     expect(schema).toContain('type live_pnlUpdate {');
     expect(schema).toContain('data: live_pnl');
-    expect(schema).toContain('live_pnl(where: live_pnlWhere): live_pnlUpdate!');
+    expect(schema).toContain('live_pnl(where: live_pnlExpression): live_pnlUpdate!');
   });
 
   it('should treat JSON/JSONB fields as String', () => {
