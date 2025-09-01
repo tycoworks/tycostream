@@ -1,5 +1,6 @@
 import { Logger, OnModuleDestroy } from '@nestjs/common';
-import { Subscription } from 'rxjs';
+import { HttpService } from '@nestjs/axios';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { ExpressionTree, buildExpression } from '../common/expressions';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
@@ -29,7 +30,10 @@ export class TriggerService implements OnModuleDestroy {
   // Source -> Name -> ActiveTrigger (names scoped by source)
   private readonly triggers = new Map<string, Map<string, ActiveTrigger>>();
 
-  constructor(private readonly viewService: ViewService) {}
+  constructor(
+    private readonly viewService: ViewService,
+    private readonly httpService: HttpService
+  ) {}
 
   async createTrigger(
     source: string,
@@ -58,16 +62,16 @@ export class TriggerService implements OnModuleDestroy {
 
     // Create View subscription with asymmetric filtering
     const matchExpression = buildExpression(input.match);
-    const unmatchExpression = input.unmatch 
-      ? buildExpression(input.unmatch)
-      : undefined;
+    const unmatchExpression = input.unmatch ? buildExpression(input.unmatch) : undefined;
     const filter = new Filter(matchExpression, unmatchExpression);
 
     // Subscribe to View updates (skipSnapshot=true to avoid firing on existing data)
     const subscription = this.viewService
       .getUpdates(source, filter, false, true)
       .subscribe({
-        next: (event: RowUpdateEvent) => this.processEvent(source, trigger.name, event),
+        next: async (event: RowUpdateEvent) => {
+          await this.processEvent(source, trigger, event);
+        },
         error: (error) => {
           this.logger.error(`Error in trigger ${trigger.name}: ${error.message}`);
         },
@@ -129,31 +133,37 @@ export class TriggerService implements OnModuleDestroy {
   /**
    * Process trigger events from View
    */
-  private processEvent(
-    source: string,
-    triggerName: string,
-    event: RowUpdateEvent
-  ): void {
-    // Process different event types
-    if (event.type === RowUpdateType.Insert) {
-      // Row matched the trigger condition
-      this.logger.log(
-        `Trigger ${triggerName} fired: ${TriggerEventType.Match} for source ${source}, ` +
-        `row: ${JSON.stringify(event.row)}`
-      );
-      // TODO: Send webhook with MATCH event
+  private async processEvent(source: string, trigger: Trigger, event: RowUpdateEvent): Promise<void> {
+    // Only process INSERT (match) and DELETE (unmatch) events
+    if (event.type === RowUpdateType.Insert || event.type === RowUpdateType.Delete) {
+      const eventType = event.type === RowUpdateType.Insert ? TriggerEventType.Match : TriggerEventType.Unmatch;
       
-    } else if (event.type === RowUpdateType.Delete) {
-      // Row unmatched the trigger condition
-      this.logger.log(
-        `Trigger ${triggerName} fired: ${TriggerEventType.Unmatch} for source ${source}, ` +
-        `row: ${JSON.stringify(event.row)}`
-      );
-      // TODO: Send webhook with UNMATCH event
+      this.logger.log(`Trigger ${trigger.name} fired: ${eventType} for source ${source}`);
+      await this.sendWebhook(trigger.webhook, eventType, trigger.name, event.row);
+    }
+    // UPDATE events are skipped (triggers only care about match/unmatch transitions)
+  }
+
+  /**
+   * Send webhook notification
+   */
+  private async sendWebhook(webhookUrl: string, eventType: TriggerEventType, triggerName: string, data: any): Promise<void> {
+    const payload = {
+      event_type: eventType,
+      trigger_name: triggerName,
+      timestamp: new Date().toISOString(),
+      data
+    };
+
+    try {
+      // Fire and forget - no retry logic for Milestone 1
+      const response$ = this.httpService.post(webhookUrl, payload);
+      const response = await firstValueFrom(response$);
       
-    } else {
-      // Skip UPDATE events (triggers only care about match/unmatch transitions)
-      return;
+      this.logger.log(`Webhook sent successfully to ${webhookUrl}, status: ${response.status}`);
+    } catch (error: any) {
+      // Log error but don't throw - fire and forget
+      this.logger.error(`Failed to send webhook to ${webhookUrl}: ${error.message}`, error.stack);
     }
   }
 

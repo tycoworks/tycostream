@@ -1,5 +1,5 @@
 import { Module, Logger } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
+import { HttpModule, HttpService } from '@nestjs/axios';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -24,12 +24,12 @@ import { TriggerService } from './trigger.service';
     HttpModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
-      imports: [ConfigModule, ViewModule],
+      imports: [ConfigModule, ViewModule, HttpModule],
       /**
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
        */
-      useFactory: async (configService: ConfigService, viewService: ViewService) => {
+      useFactory: async (configService: ConfigService, viewService: ViewService, httpService: HttpService) => {
         const logger = new Logger('GraphQLModule');
         
         // Get source definitions from config
@@ -43,7 +43,7 @@ import { TriggerService } from './trigger.service';
         
         // Create service instances for resolvers
         const subscriptionService = new SubscriptionService(viewService);
-        const triggerService = new TriggerService(viewService);
+        const triggerService = new TriggerService(viewService, httpService);
         
         // Build resolvers
         const subscriptionResolvers = buildSubscriptionResolvers(sources, subscriptionService);
@@ -82,7 +82,7 @@ import { TriggerService } from './trigger.service';
           }),
         };
       },
-      inject: [ConfigService, ViewService],
+      inject: [ConfigService, ViewService, HttpService],
     }),
   ],
   controllers: [],
