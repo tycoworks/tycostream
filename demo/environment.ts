@@ -23,6 +23,7 @@ let testEnv: TestEnvironment;
 // Auto-incrementing ID counters for market data and trades
 let marketDataId = 1;
 let tradeId = 1;
+let alertId = 1;
 
 // Automatically start the demo when this file is executed directly
 if (require.main === module) {
@@ -34,7 +35,12 @@ if (require.main === module) {
  */
 async function runLiveEnvironment() {
 // Create test environment with specified port and schema
-  console.log(`Starting test environment. GraphQL endpoint will be available at http://localhost:${TEST_PORT}/graphql`);
+  console.log(`
+Starting test environment:
+- GraphQL UI: http://localhost:${TEST_PORT}/graphql
+- Market data updates: ${MARKET_DATA_INTERVAL_MS}ms
+- Trade updates: ${TRADE_INTERVAL_MS}ms
+`);
   
   testEnv = await TestEnvironment.create({
     appPort: TEST_PORT,
@@ -48,7 +54,16 @@ async function runLiveEnvironment() {
       workers: '1'
     },
     graphqlUI: false,
-    logLevel: 'error'
+    logLevel: 'error',
+    webhook: {
+      port: 3001,
+      endpoint: '/webhook',
+      handler: async (payload) => {
+        console.log('Webhook received:', JSON.stringify(payload, null, 2));
+        const eventType = payload.event_type === 'MATCH' ? 'TRIGGERED' : 'CLEARED';
+        await insertAlert(payload.trigger_name, eventType, payload.data);
+      }
+    }
   });
   console.log('Test environment created successfully');
   
@@ -61,15 +76,6 @@ async function runLiveEnvironment() {
   console.log('Inserting initial data...');
   await insertInitialData();
   console.log('Initial data insertion complete');
-  
-  console.log(`
-Live environment running!
-- GraphQL: http://localhost:${TEST_PORT}/graphql
-- Market data updates every ${MARKET_DATA_INTERVAL_MS}ms
-- Trade updates every ${TRADE_INTERVAL_MS}ms
-
-Press Ctrl+C to stop
-`);
   
   // Continuously generate random market data updates
   const marketDataInterval = setInterval(async () => {
@@ -246,6 +252,23 @@ async function insertTrade(instrumentId: number, quantity: number) {
   
   const side = quantity > 0 ? 'BUY' : 'SELL';
   console.log(`Trade: ${side} Instrument ${instrumentId}, quantity ${Math.abs(quantity)} @ ${price}`);
+}
+
+/**
+ * Inserts an alert record from a webhook payload
+ */
+async function insertAlert(triggerName: string, eventType: string, data: any) {
+  await testEnv.executeSql(`
+    INSERT INTO alerts (id, trigger_name, event_type, data)
+    VALUES ($1, $2, $3, $4)
+  `, [
+    alertId++,
+    triggerName,
+    eventType,
+    JSON.stringify(data)
+  ]);
+  
+  console.log(`Alert inserted: ${triggerName} - ${eventType}`);
 }
 
 export { runLiveEnvironment };
