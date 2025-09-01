@@ -83,6 +83,13 @@ export class TestEnvironment {
     await this.app.listen(this.config.appPort);
     console.log(`Application listening on port ${this.config.appPort}`);
     
+    // Start webhook receiver if configured
+    if (this.config.webhook) {
+      console.log('Starting webhook receiver...');
+      await this.setupWebhookReceiver();
+      console.log(`Webhook receiver listening on port ${this.config.webhook.port} at endpoint ${this.config.webhook.endpoint}`);
+    }
+    
     // Wait for server to stabilize
     await new Promise(resolve => setTimeout(resolve, 1000));
     console.log('Test environment ready');
@@ -92,6 +99,12 @@ export class TestEnvironment {
    * Stop and clean up all test resources
    */
   async stop(): Promise<void> {
+    // Close webhook server if running
+    if (this.webhookServer) {
+      console.log('Stopping webhook receiver...');
+      this.webhookServer.close();
+    }
+    
     // Close app first
     await this.app.close();
     // Wait for connections to close
@@ -192,6 +205,30 @@ export class TestEnvironment {
     process.env.GRAPHQL_UI = this.config.graphqlUI.toString();
     process.env.SCHEMA_PATH = this.config.schemaPath;
     process.env.LOG_LEVEL = this.config.logLevel;
+  }
+
+  /**
+   * Setup webhook receiver for handling triggers
+   */
+  private async setupWebhookReceiver(): Promise<void> {
+    if (!this.config.webhook) return;
+    
+    this.webhookApp = express();
+    this.webhookApp.use(express.json());
+    
+    const webhookConfig = this.config.webhook;
+    this.webhookApp.post(webhookConfig.endpoint, async (req, res) => {
+      console.log(`Webhook received at ${webhookConfig.endpoint}`);
+      try {
+        await webhookConfig.handler(req.body);
+        res.status(200).send('OK');
+      } catch (error) {
+        console.error('Webhook handler error:', error);
+        res.status(500).send('Handler error');
+      }
+    });
+    
+    this.webhookServer = this.webhookApp.listen(webhookConfig.port);
   }
 
   /**
