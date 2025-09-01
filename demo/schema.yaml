@@ -18,3 +18,12 @@ sources:
       quantity: integer
       price: numeric
       executed_at: timestamp without time zone
+  
+  alerts:
+    primary_key: id
+    columns:
+      id: integer
+      timestamp: timestamp with time zone
+      trigger_name: text
+      event_type: text
+      data: jsonb

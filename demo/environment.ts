@@ -141,6 +141,16 @@ async function setupDatabase() {
     )
   `);
 
+  await testEnv.executeSql(`
+    CREATE TABLE alerts (
+      id INTEGER,
+      timestamp TIMESTAMPTZ DEFAULT NOW(),
+      trigger_name TEXT,
+      event_type TEXT,
+      data JSONB
+    )
+  `);
+
   // Populate instruments table from our configuration
   for (const [id, instrument] of instruments) {
     await testEnv.executeSql(`
