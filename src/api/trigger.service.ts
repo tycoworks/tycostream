@@ -1,4 +1,4 @@
-import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { ExpressionTree, buildExpression } from '../common/expressions';
@@ -25,6 +25,7 @@ interface ActiveTrigger extends Trigger {
   subscription: Subscription;
 }
 
+@Injectable()
 export class TriggerService implements OnModuleDestroy {
   private readonly logger = new Logger(TriggerService.name);
   // Source -> Name -> ActiveTrigger (names scoped by source)
