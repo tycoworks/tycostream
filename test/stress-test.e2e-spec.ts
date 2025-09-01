@@ -29,7 +29,6 @@ const UPDATABLE_FIELDS = ['value', 'status'] as const;
 
 describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   let testEnv: TestEnvironment;
-  const appPort = 4100; // Different port to avoid conflicts
 
   // Test configuration
   const NUM_ROWS = process.env.STRESS_TEST_ROWS ? parseInt(process.env.STRESS_TEST_ROWS) : 10000;
@@ -43,11 +42,20 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     console.log(`Starting stress test with ${NUM_ROWS} rows and ${NUM_CLIENTS} concurrent clients`);
     
     // Bootstrap test environment with more workers for stress test
-    testEnv = await TestEnvironment.create(
-      appPort,
-      path.join(__dirname, 'stress-test-schema.yaml'),
-      '4' // More workers for better stress test performance
-    );
+    testEnv = await TestEnvironment.create({
+      appPort: 4100,
+      schemaPath: path.join(__dirname, 'stress-test-schema.yaml'),
+      database: {
+        host: 'localhost',
+        port: 6875,
+        user: 'materialize',
+        password: 'materialize',
+        name: 'materialize',
+        workers: '4'  // More workers for better stress test performance
+      },
+      graphqlUI: false,
+      logLevel: 'error'
+    });
     
     // Create test table with multiple columns for testing partial updates
     await testEnv.executeSql(`

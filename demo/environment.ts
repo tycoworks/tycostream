@@ -33,20 +33,34 @@ if (require.main === module) {
  * Starts a live streaming environment with simulated market data and trades
  */
 async function runLiveEnvironment() {
-  console.log('Starting live tycostream environment...');
-  console.log(`GraphQL endpoint will be available at http://localhost:${TEST_PORT}/graphql`);
+// Create test environment with specified port and schema
+  console.log(`Starting test environment. GraphQL endpoint will be available at http://localhost:${TEST_PORT}/graphql`);
   
-  // Create test environment with specified port and schema
-  testEnv = await TestEnvironment.create(
-    TEST_PORT,
-    path.join(__dirname, 'schema.yaml')
-  );
+  testEnv = await TestEnvironment.create({
+    appPort: TEST_PORT,
+    schemaPath: path.join(__dirname, 'schema.yaml'),
+    database: {
+      host: 'localhost',
+      port: 6875,
+      user: 'materialize',
+      password: 'materialize',
+      name: 'materialize',
+      workers: '1'
+    },
+    graphqlUI: false,
+    logLevel: 'error'
+  });
+  console.log('Test environment created successfully');
   
   // Initialize database schema and tables
+  console.log('Setting up database schema...');
   await setupDatabase();
+  console.log('Database schema setup complete');
   
   // Populate initial market data and positions
+  console.log('Inserting initial data...');
   await insertInitialData();
+  console.log('Initial data insertion complete');
   
   console.log(`
 Live environment running!
@@ -98,9 +112,7 @@ Press Ctrl+C to stop
 /**
  * Creates database tables and materialized views for the demo
  */
-async function setupDatabase() {
-  console.log('Setting up database schema...');
-  
+async function setupDatabase() {  
   // Create instruments table
   await testEnv.executeSql(`
     CREATE TABLE instruments (

@@ -7,15 +7,24 @@ import {
 describe('Integration Test', () => {
   let testEnv: TestEnvironment;
   let clientManager: TestClientManager;
-  const testPort = 4001;
   const DEFAULT_LIVENESS_TIMEOUT = 30000; // 30 seconds
 
   beforeAll(async () => {
     // Bootstrap complete test environment
-    testEnv = await TestEnvironment.create(
-      testPort,
-      path.join(__dirname, 'integration-schema.yaml')
-    );
+    testEnv = await TestEnvironment.create({
+      appPort: 4001,
+      schemaPath: path.join(__dirname, 'integration-schema.yaml'),
+      database: {
+        host: 'localhost',
+        port: 6875,
+        user: 'materialize',
+        password: 'materialize',
+        name: 'materialize',
+        workers: '1'
+      },
+      graphqlUI: false,
+      logLevel: 'error'
+    });
 
     // Create test tables matching our schema
     await testEnv.executeSql(`
