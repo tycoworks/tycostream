@@ -1,4 +1,5 @@
 import { Module, Logger } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -20,6 +21,7 @@ import { TriggerService } from './trigger.service';
 @Module({
   imports: [
     ViewModule,
+    HttpModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       imports: [ConfigModule, ViewModule],
