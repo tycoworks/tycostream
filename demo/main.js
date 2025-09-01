@@ -80,6 +80,9 @@ subscribeToPositions();
 // Subscribe to alerts
 subscribeToAlerts();
 
+// Create position trigger for large realized P&L losses
+createPositionTrigger();
+
 function subscribeToPositions() {
   client.subscribe({ query: gql(POSITIONS_SUBSCRIPTION) }).subscribe(({ data }) => {
     if (!data?.live_pnl) return;
@@ -105,6 +108,30 @@ function subscribeToAlerts() {
     
     // Add alerts at the top for newest first
     handleGridUpdate(alertsGridApi, operation, rowData, changedFields, 'id', 0);
+  });
+}
+
+function createPositionTrigger() {
+  const CREATE_TRIGGER_MUTATION = gql`
+    mutation CreatePositionTrigger {
+      create_live_pnl_trigger(input: {
+        name: "large_realized_loss",
+        webhook: "http://localhost:3001/webhook",
+        match: {
+          realized_pnl: { _lt: -1000000 }
+        },
+        unmatch: {
+          realized_pnl: { _gte: -500000 }
+        }
+      }) {
+        name
+        webhook
+      }
+    }
+  `;
+  
+  client.mutate({
+    mutation: CREATE_TRIGGER_MUTATION
   });
 }
 
