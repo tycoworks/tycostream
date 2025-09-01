@@ -10,6 +10,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 // State for currently selected instrument
 let selectedInstrumentId = null;
 let tradesSubscription = null;
+let alertsSubscription = null;
 
 // Setup positions grid
 const positionsColumnConfig = getPositionsColumnConfig();
@@ -48,6 +49,24 @@ const TRADES_SUBSCRIPTION = `
 
 const tradesGridApi = createTradesGrid();
 
+// Setup alerts grid
+const alertsColumnConfig = getAlertsColumnConfig();
+const alertsFields = Object.keys(alertsColumnConfig);
+
+const ALERTS_SUBSCRIPTION = `
+  subscription AlertsSubscription {
+    alerts {
+      operation
+      data {
+        ${alertsFields.join('\n        ')}
+      }
+      fields
+    }
+  }
+`;
+
+const alertsGridApi = createAlertsGrid();
+
 // Setup Apollo client
 const wsClient = createClient({ url: 'ws://localhost:4000/graphql' });
 const client = new ApolloClient({
@@ -57,6 +76,9 @@ const client = new ApolloClient({
 
 // Subscribe to positions
 subscribeToPositions();
+
+// Subscribe to alerts
+subscribeToAlerts();
 
 function subscribeToPositions() {
   client.subscribe({ query: gql(POSITIONS_SUBSCRIPTION) }).subscribe(({ data }) => {
@@ -71,6 +93,18 @@ function subscribeToPositions() {
     if (operation === 'DELETE' && rowData.instrument_id === selectedInstrumentId) {
       selectPosition(null);
     }
+  });
+}
+
+function subscribeToAlerts() {
+  alertsSubscription = client.subscribe({ query: gql(ALERTS_SUBSCRIPTION) }).subscribe(({ data }) => {
+    if (!data?.alerts) return;
+    
+    const { operation, data: rowData, fields: changedFields } = data.alerts;
+    if (!rowData) return;
+    
+    // Add alerts at the top for newest first
+    handleGridUpdate(alertsGridApi, operation, rowData, changedFields, 'id', 0);
   });
 }
 
@@ -202,6 +236,45 @@ function getTradesColumnConfig() {
   };
 }
 
+function getAlertsColumnConfig() {
+  return {
+    id: { hide: true },
+    timestamp: { 
+      headerName: 'Timestamp',
+      width: 200,
+      valueFormatter: params => {
+        if (!params.value) return '';
+        const date = new Date(params.value);
+        return date.toLocaleString();
+      }
+    },
+    trigger_name: { 
+      headerName: 'Trigger',
+      width: 150
+    },
+    event_type: { 
+      headerName: 'Event',
+      width: 120,
+      cellStyle: params => ({
+        color: params.value === 'TRIGGERED' ? 'orange' : params.value === 'CLEARED' ? 'green' : 'black',
+      })
+    },
+    data: { 
+      headerName: 'Data',
+      flex: 1,
+      valueFormatter: params => {
+        if (!params.value) return '';
+        try {
+          const parsed = JSON.parse(params.value);
+          return JSON.stringify(parsed, null, 2);
+        } catch {
+          return params.value;
+        }
+      }
+    }
+  };
+}
+
 function getPnlColumnConfig() {
   return {
     valueFormatter: params => params.value != null 
@@ -223,6 +296,12 @@ function createPositionsGrid() {
     onRowClicked: (event) => {
       const instrumentId = event.data.instrument_id;
       selectPosition(instrumentId);
+    },
+    defaultColDef: {
+      resizable: true
+    },
+    autoSizeStrategy: {
+      type: 'fitGridWidth'
     }
   });
   
@@ -233,6 +312,22 @@ function createTradesGrid() {
   return createGrid(document.querySelector('#trades-grid'), {
     theme: 'legacy',
     columnDefs: tradesFields.map(field => ({ field, ...tradesColumnConfig[field] })),
+    rowData: [],
+    getRowId: params => String(params.data.id),
+    defaultColDef: {
+      sortable: true,
+      resizable: true
+    },
+    autoSizeStrategy: {
+      type: 'fitGridWidth'
+    }
+  });
+}
+
+function createAlertsGrid() {
+  return createGrid(document.querySelector('#alerts-grid'), {
+    theme: 'legacy',
+    columnDefs: alertsFields.map(field => ({ field, ...alertsColumnConfig[field] })),
     rowData: [],
     getRowId: params => String(params.data.id),
     defaultColDef: {

@@ -7,29 +7,68 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
+      overflow: hidden;
     }
-    #positions-grid { 
-      height: 50vh; 
-      width: 100vw;
+    .top-section {
+      display: flex;
+      height: 50vh;
       border-bottom: 2px solid #ccc;
     }
+    .positions-container {
+      width: 65%;
+      display: flex;
+      flex-direction: column;
+      border-right: 2px solid #ccc;
+      overflow: hidden;
+    }
+    .trades-container {
+      width: 35%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #positions-grid { 
+      flex: 1;
+      overflow: hidden;
+    }
     #trades-grid { 
-      height: 50vh; 
-      width: 100vw;
+      flex: 1;
+      overflow: hidden;
+    }
+    .bottom-section {
+      height: 50vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #alerts-grid { 
+      flex: 1;
+      overflow: hidden;
     }
     .grid-title {
       padding: 8px;
       background: #f0f0f0;
       font-weight: bold;
       border-bottom: 1px solid #ddd;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
     }
   </style>
 </head>
 <body>
-  <div class="grid-title">Positions</div>
-  <div id="positions-grid" class="ag-theme-alpine"></div>
-  <div class="grid-title">Trades</div>
-  <div id="trades-grid" class="ag-theme-alpine"></div>
+  <div class="top-section">
+    <div class="positions-container">
+      <div class="grid-title">Positions</div>
+      <div id="positions-grid" class="ag-theme-alpine"></div>
+    </div>
+    <div class="trades-container">
+      <div class="grid-title">Trades</div>
+      <div id="trades-grid" class="ag-theme-alpine"></div>
+    </div>
+  </div>
+  <div class="bottom-section">
+    <div class="grid-title">Alerts</div>
+    <div id="alerts-grid" class="ag-theme-alpine"></div>
+  </div>
   <script type="module" src="/main.js"></script>
 </body>
 </html>
