@@ -99,7 +99,8 @@ describe('Integration Test', () => {
     // Create ONE client with active=true filter for the entire test
     clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
     
-    await clientManager.startClient({
+    const client = clientManager.getClient('integration-test-client');
+    await client.subscribe({
       query: `
         subscription {
           users(where: { active: { _eq: true } }) {

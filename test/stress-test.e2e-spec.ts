@@ -112,7 +112,8 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         
         console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
         
-        await clientManager.startClient({
+        const client = clientManager.getClient(`stress-client-${i}`);
+        await client.subscribe({
           query: `
             subscription {
               stress_test(where: {department: {_eq: "${clientDepartment}"}}) {
