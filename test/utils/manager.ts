@@ -1,12 +1,13 @@
 import { TestClient } from './client';
+import { Client as WSClient } from 'graphql-ws';
 
 export class TestClientManager<TData = any> {
   // === Client Management ===
   private clients = new Map<string, TestClient<TData>>();
   
   // === Configuration ===
-  private port: number;
   private livenessTimeoutMs: number;
+  private createWebSocketClient: () => WSClient;
   
   // === Lifecycle State ===
   private finishedCount = 0;
@@ -15,8 +16,11 @@ export class TestClientManager<TData = any> {
   private complete!: () => void;
   private fail!: (error: Error) => void;
 
-  constructor(port: number, livenessTimeoutMs: number = 30000) {
-    this.port = port;
+  constructor(
+    createWebSocketClient: () => WSClient,
+    livenessTimeoutMs: number = 30000
+  ) {
+    this.createWebSocketClient = createWebSocketClient;
     this.livenessTimeoutMs = livenessTimeoutMs;
     this.completionPromise = new Promise((complete, fail) => {
       this.complete = complete;
@@ -31,7 +35,7 @@ export class TestClientManager<TData = any> {
       // Create new client
       client = new TestClient<TData>({
         clientId: id,
-        appPort: this.port,
+        createWebSocketClient: this.createWebSocketClient,
         livenessTimeoutMs: this.livenessTimeoutMs,
         onFinished: () => {
           this.onClientFinished();

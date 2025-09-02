@@ -1,11 +1,10 @@
-import { createClient, Client as WSClient } from 'graphql-ws';
-import * as WebSocket from 'ws';
+import { Client as WSClient } from 'graphql-ws';
 import { StateTracker } from './tracker';
 
 // Constructor options - just configuration and callbacks
 export interface TestClientOptions {
   clientId: string;
-  appPort: number;
+  createWebSocketClient: () => WSClient;
   livenessTimeoutMs: number;
   onFinished: () => void; // Called when client converges to expected state
   onStalled: (clientId: string) => void; // Called when no data received for timeout period
@@ -40,7 +39,7 @@ export class TestClient<TData = any> {
   private livenessTimeout?: NodeJS.Timeout;
 
   constructor(private options: TestClientOptions) {
-    this.client = this.createWebSocketClient(options.appPort);
+    this.client = options.createWebSocketClient();
     
     // Create the completion promise
     this.completionPromise = new Promise<void>((complete, fail) => {
@@ -212,12 +211,4 @@ export class TestClient<TData = any> {
       isStalled: this.stalled
     };
   }
-  
-  private createWebSocketClient(port: number): WSClient {
-    return createClient({
-      url: `ws://localhost:${port}/graphql`,
-      webSocketImpl: WebSocket as any,
-    });
-  }
-
 }

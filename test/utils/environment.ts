@@ -10,6 +10,8 @@ import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
 import { TestClientManager } from './manager';
 import { TestClient } from './client';
+import { createClient, Client as WSClient } from 'graphql-ws';
+import * as WebSocket from 'ws';
 import sourcesConfig from '../../src/config/sources.config';
 
 /**
@@ -93,8 +95,13 @@ export class TestEnvironment {
       console.log(`Webhook receiver listening on port ${this.config.webhook.port} at endpoint ${this.config.webhook.endpoint}`);
     }
     
-    // Create client manager with default timeout
-    this.clientManager = new TestClientManager(this.config.appPort, 30000);
+    // Create client manager with WebSocket factory
+    const createWebSocketClient = () => createClient({
+      url: `ws://localhost:${this.config.appPort}/graphql`,
+      webSocketImpl: WebSocket as any,
+    });
+    
+    this.clientManager = new TestClientManager(createWebSocketClient, 30000);
     
     // Wait for server to stabilize
     await new Promise(resolve => setTimeout(resolve, 1000));
