@@ -5,7 +5,6 @@ export interface StartClientOptions<TData = any> {
   expectedState: Map<string | number, TData>;
   dataPath: string;
   idField: string;
-  onOperation: (operation: string, data: TData) => void;
 }
 
 export class TestClientManager<TData = any> {
@@ -55,8 +54,7 @@ export class TestClientManager<TData = any> {
       query: options.query,
       dataPath: options.dataPath,
       idField: options.idField,
-      expectedState: options.expectedState,
-      onOperation: options.onOperation
+      expectedState: options.expectedState
     });
     
     // Track completion in background

@@ -7,9 +7,9 @@ export interface TestClientOptions {
   clientId: string;
   appPort: number;
   livenessTimeoutMs: number;
-  onFinished: () => void;
-  onStalled: (clientId: string) => void;
-  onRecovered: (clientId: string) => void;
+  onFinished: () => void; // Called when client converges to expected state
+  onStalled: (clientId: string) => void; // Called when no data received for timeout period
+  onRecovered: (clientId: string) => void; // Called when data arrives after a stall
 }
 
 // Subscription options
@@ -18,119 +18,136 @@ export interface SubscriptionOptions<TData = any> {
   dataPath: string; // Path to data in GraphQL response, e.g. "users" or "all_types"
   idField: string; // Field name for ID in the data (e.g., "id", "user_id")
   expectedState: Map<string | number, TData>; // Required - what state we expect to reach
-  onOperation?: (operation: string, data: TData) => void; // Callback for each operation
 }
 
 export class TestClient<TData = any> {
   private client: WSClient;
+  
+  // === Subscription State ===
   private stateTracker?: StateTracker<TData>;
   private subscriptionOptions?: SubscriptionOptions<TData>;
+  
+  // === Lifecycle State ===
   private finished = false;
   private stalled = false;
-  private livenessTimeout?: NodeJS.Timeout;
-  private unsubscribe?: () => void;
+  private eventCount = 0;
+  private lastEventTime = Date.now();
   private completionPromise: Promise<void>;
-  private resolveCompletion!: () => void;
-  private rejectCompletion!: (error: Error) => void;
+  private complete!: () => void;
+  private fail!: (error: Error) => void;
+  
+  // === Liveness Tracking ===
+  private livenessTimeout?: NodeJS.Timeout;
 
   constructor(private options: TestClientOptions) {
     this.client = this.createWebSocketClient(options.appPort);
     
     // Create the completion promise
-    this.completionPromise = new Promise<void>((resolve, reject) => {
-      this.resolveCompletion = resolve;
-      this.rejectCompletion = reject;
+    this.completionPromise = new Promise<void>((complete, fail) => {
+      this.complete = complete;
+      this.fail = fail;
     });
   }
 
-  // Subscribe to GraphQL subscription
+  // === Subscription Management ===
+  
   async subscribe(subscriptionOptions: SubscriptionOptions<TData>): Promise<void> {
     this.subscriptionOptions = subscriptionOptions;
     
-    // Create StateTracker for subscription state management
-    this.stateTracker = new StateTracker<TData>({
-      expectedState: subscriptionOptions.expectedState,
-      extractId: (event: any) => event.rowData[subscriptionOptions.idField],
-      handleEvent: this.createSubscriptionHandler()
-    });
+    // Initialize StateTracker with subscription state management
+    const stateTracker = new StateTracker<TData>(subscriptionOptions.expectedState);
+    this.stateTracker = stateTracker;
     
     // Start liveness check
     this.resetLiveness();
-
-    this.unsubscribe = this.client.subscribe(
+    
+    // TestClient owns the WebSocket subscription
+    this.client.subscribe(
       { query: subscriptionOptions.query },
       {
         next: (data: any) => {
-          this.handleUpdate(data, subscriptionOptions, this.stateTracker!);
+          this.handleDataReceived();
+          this.processSubscriptionData(data, subscriptionOptions, stateTracker);
+          this.checkIfFinished(stateTracker);
         },
         error: (error: any) => {
           const errorMessage = error?.message || error?.toString() || 'Unknown error';
-          console.error(`Client ${this.options.clientId} subscription error:`, errorMessage);
-          this.handleError(new Error(`Client ${this.options.clientId} subscription error: ${errorMessage}`));
+          const contextError = new Error(`Client ${this.options.clientId}: Subscription error: ${errorMessage}`);
+          this.handleError(contextError);
         },
         complete: () => {
-          // Stream closed - this is an error condition
+          // Stream closed - this is an error condition for subscriptions
           const stats = this.stats;
-          const error = this.finished 
-            ? new Error(`Client ${this.options.clientId} stream closed unexpectedly after completion`)
-            : new Error(`Client ${this.options.clientId} stream closed prematurely - events: ${stats.eventCount}, state size: ${stats.stateSize}`);
+          const error = new Error(
+            `Client ${this.options.clientId}: Stream closed prematurely - events: ${stats.eventCount}, state size: ${stats.stateSize}`
+          );
           this.handleError(error);
         },
       }
     );
-    
-    // Return immediately - subscription is set up
   }
   
-  // Wait for the client to finish
-  async waitForCompletion(): Promise<void> {
-    return this.completionPromise;
-  }
-
-  private handleUpdate(data: any, subscriptionOptions: SubscriptionOptions<TData>, stateTracker: StateTracker<TData>) {
-    // If we were stalled, report recovery
-    if (this.stalled) {
-      this.stalled = false;
-      console.log(`Client ${this.options.clientId} recovered after stall - resuming with event ${this.stats.eventCount}`);
-      this.options.onRecovered(this.options.clientId);
-    }
-    
-    this.resetLiveness();
-
+  private processSubscriptionData(data: any, subscriptionOptions: SubscriptionOptions<TData>, stateTracker: StateTracker<TData>): void {
     // Extract operation and data from standard GraphQL response structure
     const responseData = data.data[subscriptionOptions.dataPath];
     if (!responseData) return;
     
     const { operation, data: rowData, fields } = responseData;
     
-    // Notify callback
-    if (subscriptionOptions.onOperation) {
-      subscriptionOptions.onOperation(operation, rowData);
-    }
-    
     // Update state based on operation
     if (!rowData) {
       throw new Error(`Received ${operation} operation without data`);
     }
     
-    // Let StateTracker handle the event - pass the full response for context
-    stateTracker.handleEvent({ rowData, fields }, operation);
-
-    // Check if we're finished on EVERY update
-    if (!this.finished) {
-      this.checkIfFinished();
+    const id = rowData[subscriptionOptions.idField];
+    
+    switch (operation) {
+      case 'DELETE':
+        stateTracker.delete(id);
+        break;
+        
+      case 'INSERT':
+        stateTracker.insert(id, rowData);
+        break;
+        
+      case 'UPDATE':
+        stateTracker.update(id, fields, rowData);
+        break;
+      
+      default:
+        throw new Error(`Unknown operation: ${operation}`);
     }
   }
   
-  private checkIfFinished() {
-    if (!this.hasSubscription) return;
+  // === Liveness & Stall Recovery ===
+  
+  private handleDataReceived(): void {
+    // Track event for liveness
+    this.eventCount++;
+    this.lastEventTime = Date.now();
     
-    const isFinished = this.stateTracker!.isComplete();
-      
-    if (isFinished) {
+    // Handle stalled recovery
+    if (this.stalled) {
+      this.stalled = false;
+      console.log(`Client ${this.options.clientId} recovered after stall - resuming with event ${this.stats.eventCount}`);
+      this.options.onRecovered(this.options.clientId);
+    }
+    this.resetLiveness();
+  }
+  
+  
+  // Wait for the client to finish
+  async waitForCompletion(): Promise<void> {
+    return this.completionPromise;
+  }
+
+  // === Lifecycle Management ===
+  
+  private checkIfFinished(stateTracker: StateTracker<TData>) {
+    if (!this.finished && stateTracker.isComplete()) {
       this.finished = true;
-      const stats = this.stateTracker!.getStats();
-      console.log(`Client ${this.options.clientId} finished successfully - events: ${stats.eventCount}, state size: ${stats.totalReceived}`);
+      const stats = stateTracker.getStats();
+      console.log(`Client ${this.options.clientId} finished successfully - events: ${this.eventCount}, state size: ${stats.totalReceived}`);
       
       this.clearLivenessTimeout();
       
@@ -138,15 +155,14 @@ export class TestClient<TData = any> {
       this.options.onFinished();
       
       // Resolve the completion promise
-      this.resolveCompletion();
+      this.complete();
     }
   }
-  
   
   private handleError(error: Error) {
     this.clearLivenessTimeout();
     this.finished = true; // Prevent further processing
-    this.rejectCompletion(error);
+    this.fail(error);
   }
 
   private resetLiveness() {
@@ -175,9 +191,6 @@ export class TestClient<TData = any> {
 
   dispose() {
     this.clearLivenessTimeout();
-    if (this.unsubscribe) {
-      this.unsubscribe();
-    }
     try {
       this.client.dispose();
     } catch (e) {
@@ -185,20 +198,16 @@ export class TestClient<TData = any> {
     }
   }
 
-  get hasSubscription(): boolean {
-    return this.stateTracker !== undefined;
-  }
+  // === Getters & Utilities ===
 
   get stats() {
     const trackerStats = this.stateTracker?.getStats() || { 
-      eventCount: 0, 
-      totalReceived: 0, 
-      lastEventTime: Date.now() 
+      totalReceived: 0
     };
     return {
-      eventCount: trackerStats.eventCount,
+      eventCount: this.eventCount,
       stateSize: trackerStats.totalReceived,
-      lastEventTime: trackerStats.lastEventTime,
+      lastEventTime: this.lastEventTime,
       isFinished: this.finished,
       isStalled: this.stalled
     };
@@ -209,41 +218,6 @@ export class TestClient<TData = any> {
       url: `ws://localhost:${port}/graphql`,
       webSocketImpl: WebSocket as any,
     });
-  }
-
-  private createSubscriptionHandler() {
-    return (currentState: Map<string | number, TData>, id: string | number, event: any, operation: string) => {
-      const newState = new Map(currentState);
-      
-      switch (operation) {
-        case 'DELETE':
-          newState.delete(id);
-          break;
-          
-        case 'INSERT':
-          newState.set(id, event.rowData);
-          break;
-          
-        case 'UPDATE': {
-          // UPDATE operations only contain changed fields + primary key
-          // We need to merge with existing state
-          const existing = newState.get(id);
-          if (!existing) {
-            throw new Error(`UPDATE for non-existent row with id=${id}`);
-          }
-          
-          // Only update fields that are actually present in the update
-          const updated = { ...existing };
-          for (const field of event.fields) {
-            updated[field] = event.rowData[field];
-          }
-          newState.set(id, updated);
-          break;
-        }
-      }
-      
-      return newState;
-    };
   }
 
 }

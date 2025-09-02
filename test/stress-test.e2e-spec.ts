@@ -129,10 +129,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
           `,
           expectedState: departmentExpectedState,
           dataPath: 'stress_test',
-          idField: 'id',
-          onOperation: (operation, data) => {
-            console.log(`Client received ${operation} for id ${data?.id || 'unknown'}`);            // Silent - we log summary at the end
-          }
+          idField: 'id'
         });
         
         // Stagger client creation to avoid thundering herd

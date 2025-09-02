@@ -96,8 +96,6 @@ describe('Integration Test', () => {
       [1002, { user_id: 1002, name: 'LateJoiner3', email: 'late3@test.com', active: true }]
     ]);
     
-    const receivedOperations: string[] = [];
-    
     // Create ONE client with active=true filter for the entire test
     clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
     
@@ -118,10 +116,7 @@ describe('Integration Test', () => {
       `,
       expectedState,
       dataPath: 'users',
-      idField: 'user_id',
-      onOperation: (operation) => {
-        receivedOperations.push(operation);
-      }
+      idField: 'user_id'
     });
 
     // === BASIC OPERATIONS ===

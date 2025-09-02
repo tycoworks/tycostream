@@ -7,49 +7,52 @@ export class StateTracker<TData> {
   protected expectedState: Map<string | number, TData>;
   protected receivedOrder: Array<string | number> = [];
   protected expectedOrder?: Array<string | number>;
-  protected eventCount = 0;
-  protected lastEventTime = Date.now();
   
   constructor(
-    private options: {
-      // Expected final state
-      expectedState: Map<string | number, TData>;
-      
-      // Optional: Expected order of IDs (for webhooks)
-      expectedOrder?: Array<string | number>;
-      
-      // Function to extract ID from an item
-      extractId: (item: TData) => string | number;
-      
-      // Function to handle how events update the current state
-      handleEvent: (
-        currentState: Map<string | number, TData>,
-        id: string | number,
-        event: any,  // Raw event data
-        operation: string
-      ) => Map<string | number, TData>;
-    }
+    expectedState: Map<string | number, TData>,
+    expectedOrder?: Array<string | number>
   ) {
-    this.expectedState = options.expectedState;
-    this.expectedOrder = options.expectedOrder;
+    this.expectedState = expectedState;
+    this.expectedOrder = expectedOrder;
   }
   
   /**
-   * Handle an incoming event
+   * Insert an item into the state
    */
-  handleEvent(event: any, operation: string = 'INSERT'): void {
-    this.eventCount++;
-    this.lastEventTime = Date.now();
-    
-    const id = this.options.extractId(event);
-    
-    // Apply the handler function to update state
-    this.currentState = this.options.handleEvent(this.currentState, id, event, operation);
+  insert(id: string | number, data: TData): void {
+    this.currentState.set(id, data);
     
     // Track order if we're checking it
     if (this.expectedOrder) {
       this.receivedOrder.push(id);
     }
+  }
+  
+  /**
+   * Update specific fields of an existing item
+   * @param fields Array of field names that were updated
+   * @param rowData The data containing the updated fields
+   */
+  update(id: string | number, fields: string[], rowData: any): void {
+    const existing = this.currentState.get(id);
+    if (!existing) {
+      throw new Error(`UPDATE for non-existent row with id=${id}`);
+    }
+    
+    // Build the updated object with only the specified fields
+    const updated = { ...existing };
+    for (const field of fields) {
+      updated[field as keyof TData] = rowData[field];
+    }
+    
+    this.currentState.set(id, updated);
+  }
+  
+  /**
+   * Delete an item from the state
+   */
+  delete(id: string | number): void {
+    this.currentState.delete(id);
   }
   
   /**
@@ -77,8 +80,6 @@ export class StateTracker<TData> {
    */
   getStats() {
     return {
-      eventCount: this.eventCount,
-      lastEventTime: this.lastEventTime,
       totalExpected: this.expectedState.size,
       totalReceived: this.currentState.size,
       isComplete: this.isComplete()
