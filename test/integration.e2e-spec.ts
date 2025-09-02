@@ -1,13 +1,8 @@
 import * as path from 'path';
-import {
-  TestEnvironment,
-  TestClientManager
-} from './utils';
+import { TestEnvironment } from './utils';
 
 describe('Integration Test', () => {
   let testEnv: TestEnvironment;
-  let clientManager: TestClientManager;
-  const DEFAULT_LIVENESS_TIMEOUT = 30000; // 30 seconds
 
   beforeAll(async () => {
     // Bootstrap complete test environment
@@ -68,17 +63,6 @@ describe('Integration Test', () => {
     await testEnv.stop();
   });
 
-  beforeEach(() => {
-    // Client manager will be created in each test with appropriate configuration
-  });
-
-  afterEach(async () => {
-    // Clean up client manager after each test
-    if (clientManager) {
-      clientManager.dispose();
-    }
-  });
-
   it('should handle complete integration flow with filtering', async () => {
     // This is the ONE comprehensive integration test
     // We'll use a filter throughout to prove everything works with filtering enabled
@@ -97,9 +81,7 @@ describe('Integration Test', () => {
     ]);
     
     // Create ONE client with active=true filter for the entire test
-    clientManager = new TestClientManager(testEnv.port, DEFAULT_LIVENESS_TIMEOUT);
-    
-    const client = clientManager.getClient('integration-test-client');
+    const client = testEnv.getClient('integration-test-client');
     await client.subscribe({
       query: `
         subscription {
@@ -192,7 +174,7 @@ describe('Integration Test', () => {
     );
 
     // Wait for all events to process and convergence
-    await clientManager.waitForCompletion();
+    await testEnv.waitForCompletion();
 
     // The test passes if we converged to expectedState
     // No need for individual assertions - the framework handles state comparison

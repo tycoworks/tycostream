@@ -8,6 +8,8 @@ import { Server } from 'http';
 import { AppModule } from '../../src/app.module';
 import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
+import { TestClientManager } from './manager';
+import { TestClient } from './client';
 import sourcesConfig from '../../src/config/sources.config';
 
 /**
@@ -55,6 +57,7 @@ export class TestEnvironment {
   private webhookApp?: express.Application;
   private webhookServer?: Server;
   private config: TestEnvironmentConfig;
+  private clientManager: TestClientManager;
 
   private static readonly DATABASE_VERSION = 'materialize/materialized:v0.124.0';
 
@@ -90,15 +93,42 @@ export class TestEnvironment {
       console.log(`Webhook receiver listening on port ${this.config.webhook.port} at endpoint ${this.config.webhook.endpoint}`);
     }
     
+    // Create client manager with default timeout
+    this.clientManager = new TestClientManager(this.config.appPort, 30000);
+    
     // Wait for server to stabilize
     await new Promise(resolve => setTimeout(resolve, 1000));
     console.log('Test environment ready');
   }
 
   /**
+   * Get or create a test client
+   */
+  getClient<TData = any>(id: string): TestClient<TData> {
+    return this.clientManager.getClient(id);
+  }
+  
+  /**
+   * Wait for all clients to complete
+   */
+  async waitForCompletion(): Promise<void> {
+    return this.clientManager.waitForCompletion();
+  }
+  
+  /**
+   * Get statistics for all clients
+   */
+  get clientStats() {
+    return this.clientManager.stats;
+  }
+  
+  /**
    * Stop and clean up all test resources
    */
   async stop(): Promise<void> {
+    // Dispose all clients
+    this.clientManager?.dispose();
+    
     // Close webhook server if running
     if (this.webhookServer) {
       console.log('Stopping webhook receiver...');

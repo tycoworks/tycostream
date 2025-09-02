@@ -1,8 +1,5 @@
 import * as path from 'path';
-import {
-  TestEnvironment,
-  TestClientManager
-} from './utils';
+import { TestEnvironment } from './utils';
 
 enum Status {
   Active = 'active',
@@ -34,7 +31,6 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   const NUM_ROWS = process.env.STRESS_TEST_ROWS ? parseInt(process.env.STRESS_TEST_ROWS) : 10000;
   const NUM_CLIENTS = process.env.STRESS_TEST_CLIENTS ? parseInt(process.env.STRESS_TEST_CLIENTS) : 30;
   const INSERT_DELAY_MS = process.env.STRESS_TEST_DELAY ? parseInt(process.env.STRESS_TEST_DELAY) : 5;
-  const CLIENT_LIVENESS_TIMEOUT_MS = 120000; // 120 seconds without messages = stalled
   const TEST_TIMEOUT_MS = 600000; // 10 minutes total test timeout
   const DEPARTMENTS = Object.values(Department);
 
@@ -88,9 +84,6 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       console.log(`  ${dept}: ${state.size} rows`);
     });
     
-    // Create client manager
-    const clientManager = new TestClientManager(testEnv.port, CLIENT_LIVENESS_TIMEOUT_MS);
-    
     try {
       // Execute the pre-calculated operations
       console.log(`Starting ${operations.length} database operations...`);
@@ -112,7 +105,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         
         console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
         
-        const client = clientManager.getClient(`stress-client-${i}`);
+        const client = testEnv.getClient(`stress-client-${i}`);
         await client.subscribe({
           query: `
             subscription {
@@ -146,12 +139,12 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Wait for either all clients to finish or timeout
-      await clientManager.waitForCompletion();
+      await testEnv.waitForCompletion();
       
       console.log(`Stress test completed successfully. All ${NUM_CLIENTS} clients received their department-filtered data.`);
       
       // Log final stats
-      const stats = clientManager.stats;
+      const stats = testEnv.clientStats;
       console.log('Client statistics:');
       stats.forEach(stat => {
         console.log(`  Client ${stat.clientId}: ${stat.eventCount} events, state size: ${stat.stateSize}`);
@@ -161,16 +154,13 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       console.error('Test failed:', error);
       
       // Log client stats on failure
-      const stats = clientManager.stats;
+      const stats = testEnv.clientStats;
       console.log('Client statistics at failure:');
       stats.forEach(stat => {
         console.log(`  Client ${stat.clientId}: ${stat.eventCount} events, state size: ${stat.stateSize}, finished: ${stat.isFinished}`);
       });
       
       throw error;
-    } finally {
-      // Clean up all clients
-      clientManager.dispose();
     }
   }, TEST_TIMEOUT_MS);
 });
