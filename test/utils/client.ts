@@ -1,5 +1,6 @@
 import { createClient, Client as WSClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
+import { StateTracker } from './tracker';
 
 export interface TestClientOptions<TData = any> {
   clientId: string; // Required - TestClientManager will populate with randomUUID
@@ -17,9 +18,7 @@ export interface TestClientOptions<TData = any> {
 
 export class TestClient<TData = any> {
   private client: WSClient;
-  private currentState = new Map<string | number, TData>();
-  private eventCount = 0;
-  private lastEventTime = Date.now();
+  private stateTracker: StateTracker<TData>;
   private finished = false;
   private stalled = false;
   private livenessTimeout?: NodeJS.Timeout;
@@ -27,11 +26,16 @@ export class TestClient<TData = any> {
   private completionPromise: Promise<void>;
   private resolveCompletion!: () => void;
   private rejectCompletion!: (error: Error) => void;
-  private idField: string;
 
   constructor(private options: TestClientOptions<TData>) {
     this.client = this.createWebSocketClient(options.appPort);
-    this.idField = options.idField;
+    
+    // Create StateTracker for subscription state management
+    this.stateTracker = new StateTracker<TData>({
+      expectedState: options.expectedState,
+      extractId: (event: any) => event.rowData[options.idField],
+      handleEvent: this.createSubscriptionHandler()
+    });
     
     // Create the completion promise
     this.completionPromise = new Promise<void>((resolve, reject) => {
@@ -58,10 +62,10 @@ export class TestClient<TData = any> {
         },
         complete: () => {
           // Stream closed - this is an error condition
-          const expectedSize = this.options.expectedState.size;
+          const stats = this.stateTracker.getStats();
           const error = this.finished 
             ? new Error(`Client ${this.options.clientId} stream closed unexpectedly after completion`)
-            : new Error(`Client ${this.options.clientId} stream closed prematurely - events: ${this.eventCount}, state size: ${this.currentState.size}, expected: ${expectedSize}`);
+            : new Error(`Client ${this.options.clientId} stream closed prematurely - events: ${stats.eventCount}, state size: ${stats.totalReceived}, expected: ${stats.totalExpected}`);
           this.handleError(error);
         },
       }
@@ -76,13 +80,11 @@ export class TestClient<TData = any> {
   }
 
   private handleUpdate(data: any) {
-    this.eventCount++;
-    this.lastEventTime = Date.now();
-    
     // If we were stalled, report recovery
     if (this.stalled) {
       this.stalled = false;
-      console.log(`Client ${this.options.clientId} recovered after stall - resuming with event ${this.eventCount}`);
+      const stats = this.stateTracker.getStats();
+      console.log(`Client ${this.options.clientId} recovered after stall - resuming with event ${stats.eventCount}`);
       this.options.onRecovered(this.options.clientId);
     }
     
@@ -102,34 +104,8 @@ export class TestClient<TData = any> {
       throw new Error(`Received ${operation} operation without data`);
     }
     
-    const id = rowData[this.idField];
-    
-    switch (operation) {
-      case 'DELETE':
-        this.currentState.delete(id);
-        break;
-        
-      case 'INSERT':
-        this.currentState.set(id, rowData);
-        break;
-        
-      case 'UPDATE': {
-        // UPDATE only has changed fields + primary key - merge with existing
-        const existingRow = this.currentState.get(id);
-        if (!existingRow) {
-          throw new Error(`UPDATE for non-existent row with ${this.idField}=${id}`);
-        }
-        
-        // Only update fields that are actually present in the update
-        const updatedRow = { ...existingRow };
-        for (const field of fields) {
-          updatedRow[field] = rowData[field];
-        }
-        
-        this.currentState.set(id, updatedRow);
-        break;
-      }
-    }
+    // Let StateTracker handle the event - pass the full response for context
+    this.stateTracker.handleEvent({ rowData, fields }, operation);
 
     // Check if we're finished on EVERY update
     if (!this.finished) {
@@ -138,11 +114,12 @@ export class TestClient<TData = any> {
   }
   
   private checkIfFinished() {
-    const isFinished = this.areStatesEqual(this.currentState, this.options.expectedState);
+    const isFinished = this.stateTracker.isComplete();
       
     if (isFinished) {
       this.finished = true;
-      console.log(`Client ${this.options.clientId} finished successfully - events: ${this.eventCount}, state size: ${this.currentState.size}`);
+      const stats = this.stateTracker.getStats();
+      console.log(`Client ${this.options.clientId} finished successfully - events: ${stats.eventCount}, state size: ${stats.totalReceived}`);
       
       this.clearLivenessTimeout();
       
@@ -168,8 +145,8 @@ export class TestClient<TData = any> {
       this.livenessTimeout = setTimeout(() => {
         // Don't error out - just mark as stalled and notify manager
         this.stalled = true;
-        const expectedSize = this.options.expectedState.size;
-        console.warn(`Client ${this.options.clientId} stalled - no messages for ${timeoutMs}ms. Events: ${this.eventCount}, State size: ${this.currentState.size}/${expectedSize}`);
+        const stats = this.stateTracker.getStats();
+        console.warn(`Client ${this.options.clientId} stalled - no messages for ${timeoutMs}ms. Events: ${stats.eventCount}, State size: ${stats.totalReceived}/${stats.totalExpected}`);
         this.options.onStalled(this.options.clientId);
         
         // Keep the liveness check going in case we recover
@@ -198,10 +175,11 @@ export class TestClient<TData = any> {
   }
 
   get stats() {
+    const trackerStats = this.stateTracker.getStats();
     return {
-      eventCount: this.eventCount,
-      stateSize: this.currentState.size,
-      lastEventTime: this.lastEventTime,
+      eventCount: trackerStats.eventCount,
+      stateSize: trackerStats.totalReceived,
+      lastEventTime: trackerStats.lastEventTime,
       isFinished: this.finished,
       isStalled: this.stalled
     };
@@ -214,24 +192,39 @@ export class TestClient<TData = any> {
     });
   }
 
-  /**
-   * Compare two state maps for equality
-   */
-  private areStatesEqual<T>(
-    currentState: Map<string | number, T>,
-    expectedState: Map<string | number, T>
-  ): boolean {
-    if (currentState.size !== expectedState.size) {
-      return false;
-    }
-    
-    for (const [id, expectedData] of expectedState) {
-      const currentData = currentState.get(id);
-      if (!currentData || JSON.stringify(currentData) !== JSON.stringify(expectedData)) {
-        return false;
+  private createSubscriptionHandler() {
+    return (currentState: Map<string | number, TData>, id: string | number, event: any, operation: string) => {
+      const newState = new Map(currentState);
+      
+      switch (operation) {
+        case 'DELETE':
+          newState.delete(id);
+          break;
+          
+        case 'INSERT':
+          newState.set(id, event.rowData);
+          break;
+          
+        case 'UPDATE': {
+          // UPDATE operations only contain changed fields + primary key
+          // We need to merge with existing state
+          const existing = newState.get(id);
+          if (!existing) {
+            throw new Error(`UPDATE for non-existent row with id=${id}`);
+          }
+          
+          // Only update fields that are actually present in the update
+          const updated = { ...existing };
+          for (const field of event.fields) {
+            updated[field] = event.rowData[field];
+          }
+          newState.set(id, updated);
+          break;
+        }
       }
-    }
-    
-    return true;
+      
+      return newState;
+    };
   }
+
 }
