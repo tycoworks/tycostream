@@ -20,7 +20,7 @@ export class TestClientManager<TData = any> {
   private livenessTimeoutMs: number;
   private nextClientId: number = 1;
 
-  constructor(port: number, livenessTimeoutMs: number) {
+  constructor(port: number, livenessTimeoutMs: number = 30000) {
     this.port = port;
     this.livenessTimeoutMs = livenessTimeoutMs;
     this.allFinishedPromise = new Promise((resolve, reject) => {
@@ -37,7 +37,6 @@ export class TestClientManager<TData = any> {
       clientId,
       appPort: this.port,
       livenessTimeoutMs: this.livenessTimeoutMs,
-      ...options,
       onFinished: () => {
         this.onClientFinished();
       },
@@ -52,7 +51,13 @@ export class TestClientManager<TData = any> {
     this.clients.push(client);
     
     // Start the subscription (doesn't wait for completion)
-    await client.startSubscription();
+    await client.subscribe({
+      query: options.query,
+      dataPath: options.dataPath,
+      idField: options.idField,
+      expectedState: options.expectedState,
+      onOperation: options.onOperation
+    });
     
     // Track completion in background
     client.waitForCompletion().catch(error => {
