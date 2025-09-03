@@ -2,7 +2,9 @@ import { ApolloClient, InMemoryCache, gql } from '@apollo/client';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
-import { StateTracker } from './tracker';
+import { SubscriptionHandler } from './subscription';
+import { TriggerHandler } from './trigger';
+import { HandlerCallbacks } from './handler';
 
 // GraphQL endpoint configuration
 export interface GraphQLEndpoint {
@@ -39,14 +41,12 @@ export interface TriggerOptions<TData = any> {
 
 export class TestClient<TData = any> {
   private graphqlClient: ApolloClient;
-  private subscription?: any;
   
-  // === Subscription State ===
-  private subscriptionTracker?: StateTracker<TData>;
+  // === Handlers ===
+  private subscriptionHandler?: SubscriptionHandler<TData>;
   private subscriptionOptions?: SubscriptionOptions<TData>;
-  
-  // === Trigger State ===
-  private triggerTracker?: StateTracker<TData>;
+
+  private triggerHandler?: TriggerHandler<TData>;
   private triggerOptions?: TriggerOptions<TData>;
   
   // === Lifecycle State ===
@@ -117,95 +117,34 @@ export class TestClient<TData = any> {
     
     // Start subscription if configured
     if (this.subscriptionOptions) {
-      // Initialize subscription tracker
-      this.subscriptionTracker = new StateTracker<TData>(this.subscriptionOptions.expectedState);
-      
-      // Mark as ready once subscription is set up (not waiting for first data)
-      this.subscription = this.graphqlClient.subscribe({
-        query: gql`${this.subscriptionOptions.query}`
-      }).subscribe({
-        next: (result) => {
-          if (result.error) {
-            const errorMessage = result.error?.message || 'Unknown GraphQL error';
-            const contextError = new Error(`Client ${this.options.clientId}: GraphQL error: ${errorMessage}`);
-            this.handleError(contextError);
-            return;
-          }
-          // Apollo wraps the data, pass result.data instead of result
-          this.processData(() => {
-            this.processSubscriptionData(result.data, this.subscriptionOptions!, this.subscriptionTracker!);
-          });
-        },
-        error: (error) => {
-          const errorMessage = error?.message || error?.toString() || 'Unknown error';
-          const contextError = new Error(`Client ${this.options.clientId}: Subscription error: ${errorMessage}`);
-          this.handleError(contextError);
-        },
-        complete: () => {
-          // Stream closed - this is an error condition for subscriptions
-          const stats = this.stats;
-          const error = new Error(
-            `Client ${this.options.clientId}: Stream closed prematurely - events: ${stats.eventCount}, state size: ${stats.stateSize}`
-          );
-          this.handleError(error);
-        }
+      // Create handler with expected state and callbacks
+      this.subscriptionHandler = new SubscriptionHandler<TData>({
+        clientId: this.options.clientId,
+        query: this.subscriptionOptions.query,
+        dataPath: this.subscriptionOptions.dataPath,
+        idField: this.subscriptionOptions.idField,
+        expectedState: this.subscriptionOptions.expectedState,
+        callbacks: this.createHandlerCallbacks()
       });
+      
+      // Start the subscription
+      await this.subscriptionHandler.start(this.graphqlClient);
     }
     
     // Set up webhook and execute trigger mutation if configured
     if (this.triggerOptions) {
-      // Convert array to Map for StateTracker, with order tracking
-      const expectedStateMap = new Map<string | number, TData>();
-      const expectedOrder: Array<string | number> = [];
-      const idField = this.triggerOptions.idField;
-      
-      this.triggerOptions.expectedEvents.forEach((event, index) => {
-        const id = event[idField] || index;
-        expectedStateMap.set(id, event);
-        expectedOrder.push(id);
+      // Create handler with expected events and callbacks
+      this.triggerHandler = new TriggerHandler<TData>({
+        clientId: this.options.clientId,
+        query: this.triggerOptions.query,
+        idField: this.triggerOptions.idField,
+        expectedEvents: this.triggerOptions.expectedEvents,
+        createWebhook: this.options.createWebhook,
+        callbacks: this.createHandlerCallbacks()
       });
       
-      // Create tracker with both expected state and expected order
-      this.triggerTracker = new StateTracker<TData>(expectedStateMap, expectedOrder);
-      
-      // Generate unique trigger name based on client ID
-      const triggerName = `trigger_${this.options.clientId}_${Date.now()}`;
-      
-      // Register webhook endpoint
-      const endpoint = `/webhook/${this.options.clientId}/${triggerName}`;
-      const webhookUrl = this.options.createWebhook(endpoint, async (payload) => {
-        console.log(`Client ${this.options.clientId} received webhook for trigger ${triggerName}`);
-        
-        this.processData(() => {
-          // Process webhook data - extract ID using configured idField
-          const id = payload.data?.[this.triggerOptions!.idField] || payload[this.triggerOptions!.idField] || payload.trigger_name || Date.now();
-          this.triggerTracker!.insert(id, payload);
-        });
-      });
-      
-      console.log(`Registered webhook endpoint: ${webhookUrl}`);
-      
-      // Execute the GraphQL mutation to create the trigger
-      try {
-        const result = await this.graphqlClient.mutate({
-          mutation: gql`${this.triggerOptions.query}`,
-          variables: { webhookUrl }
-        });
-        
-        if (result.error) {
-          const errorMessage = result.error?.message || 'Unknown GraphQL error';
-          const contextError = new Error(`Client ${this.options.clientId}: Trigger mutation error: ${errorMessage}`);
-          this.handleError(contextError);
-          return;
-        }
-        
-        console.log(`Client ${this.options.clientId}: Trigger created successfully with webhook URL: ${webhookUrl}`);
-      } catch (error) {
-        const errorMessage = error?.message || error?.toString() || 'Unknown error';
-        const contextError = new Error(`Client ${this.options.clientId}: Failed to create trigger: ${errorMessage}`);
-        this.handleError(contextError);
-        return;
-      }
+      // Start the trigger (register webhook and execute mutation)
+      await this.triggerHandler.start(this.graphqlClient);
     }
     
     // All setup is complete (subscription and/or webhook), mark as ready
@@ -221,15 +160,18 @@ export class TestClient<TData = any> {
 
   dispose() {
     this.clearLivenessTimeout();
-    if (this.subscription) {
-      this.subscription.unsubscribe();
+    if (this.subscriptionHandler) {
+      this.subscriptionHandler.dispose();
+    }
+    if (this.triggerHandler) {
+      this.triggerHandler.dispose();
     }
   }
 
   get stats() {
-    // Combine stats from both trackers
-    const subStats = this.subscriptionTracker?.getStats() || { totalReceived: 0 };
-    const triggerStats = this.triggerTracker?.getStats() || { totalReceived: 0 };
+    // Combine stats from both handlers
+    const subStats = this.subscriptionHandler?.getStats() || { totalReceived: 0 };
+    const triggerStats = this.triggerHandler?.getStats() || { totalReceived: 0 };
     
     return {
       eventCount: this.eventCount,
@@ -242,10 +184,12 @@ export class TestClient<TData = any> {
 
   // === Private Methods ===
 
-  private processData(dataHandler: () => void): void {
-    this.handleDataReceived();
-    dataHandler();
-    this.checkIfFinished();
+  private createHandlerCallbacks(): HandlerCallbacks {
+    return {
+      onDataReceived: () => this.handleDataReceived(),
+      onCheckFinished: () => this.checkIfFinished(),
+      onError: (error) => this.handleError(error)
+    };
   }
 
   private handleDataReceived(): void {
@@ -265,9 +209,9 @@ export class TestClient<TData = any> {
   private checkIfFinished() {
     if (this.finished) return;
     
-    // Check if ALL active trackers are complete
-    const subscriptionComplete = !this.subscriptionTracker || this.subscriptionTracker.isComplete();
-    const triggerComplete = !this.triggerTracker || this.triggerTracker.isComplete();
+    // Check if ALL handlers are complete
+    const subscriptionComplete = !this.subscriptionHandler || this.subscriptionHandler.isComplete();
+    const triggerComplete = !this.triggerHandler || this.triggerHandler.isComplete();
     
     if (subscriptionComplete && triggerComplete) {
       this.finished = true;
@@ -310,43 +254,6 @@ export class TestClient<TData = any> {
     if (this.livenessTimeout) {
       clearTimeout(this.livenessTimeout);
       this.livenessTimeout = undefined;
-    }
-  }
-  
-  private processSubscriptionData(data: any, subscriptionOptions: SubscriptionOptions<TData>, stateTracker: StateTracker<TData>): void {
-    // Extract operation and data from standard GraphQL response structure
-    const responseData = data[subscriptionOptions.dataPath];
-    if (!responseData) return;
-    
-    const { operation, data: rowData, fields } = responseData;
-    
-    // Update state based on operation
-    if (!rowData) {
-      throw new Error(`Received ${operation} operation without data`);
-    }
-    
-    // Apollo 4 always adds __typename even with fetchPolicy: 'no-cache'
-    // We need to filter it out for clean state comparison
-    const cleanData = { ...rowData };
-    delete cleanData.__typename;
-    
-    const id = cleanData[subscriptionOptions.idField];
-    
-    switch (operation) {
-      case 'DELETE':
-        stateTracker.delete(id);
-        break;
-        
-      case 'INSERT':
-        stateTracker.insert(id, cleanData);
-        break;
-        
-      case 'UPDATE':
-        stateTracker.update(id, fields, cleanData);
-        break;
-      
-      default:
-        throw new Error(`Unknown operation: ${operation}`);
     }
   }
 }
