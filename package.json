@@ -17,6 +17,7 @@
     "demo": "(cd demo && ts-node environment.ts &) && cd demo && vite"
   },
   "dependencies": {
+    "@apollo/client": "^4.0.4",
     "@apollo/server": "^4.12.2",
     "@nestjs/apollo": "^13.1.0",
     "@nestjs/axios": "^4.0.1",
@@ -37,7 +38,8 @@
     "pg-types": "^4.0.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "rxjs-for-await": "^1.0.0"
+    "rxjs-for-await": "^1.0.0",
+    "subscriptions-transport-ws": "^0.11.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

@@ -1,5 +1,4 @@
-import { TestClient } from './client';
-import { Client as WSClient } from 'graphql-ws';
+import { TestClient, GraphQLEndpoint } from './client';
 import { TestClientConfig } from './environment';
 
 export class TestClientManager<TData = any> {
@@ -8,7 +7,7 @@ export class TestClientManager<TData = any> {
   
   // === Configuration ===
   private livenessTimeoutMs: number;
-  private createWebSocketClient: () => WSClient;
+  private graphqlEndpoint: GraphQLEndpoint;
   private createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
   
   // === Lifecycle State ===
@@ -19,11 +18,11 @@ export class TestClientManager<TData = any> {
   private fail!: (error: Error) => void;
 
   constructor(
-    createWebSocketClient: () => WSClient,
+    graphqlEndpoint: GraphQLEndpoint,
     createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string,
     livenessTimeoutMs: number = 30000
   ) {
-    this.createWebSocketClient = createWebSocketClient;
+    this.graphqlEndpoint = graphqlEndpoint;
     this.createWebhook = createWebhook;
     this.livenessTimeoutMs = livenessTimeoutMs;
     this.completionPromise = new Promise((complete, fail) => {
@@ -60,7 +59,7 @@ export class TestClientManager<TData = any> {
     // Create new client
     const client = new TestClient<TData>({
       clientId: config.id,
-      createWebSocketClient: this.createWebSocketClient,
+      graphqlEndpoint: this.graphqlEndpoint,
       createWebhook: this.createWebhook,
       livenessTimeoutMs: this.livenessTimeoutMs,
       onFinished: () => {

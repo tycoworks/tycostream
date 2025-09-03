@@ -10,8 +10,6 @@ import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
 import { TestClientManager } from './manager';
 import { SubscriptionOptions, TriggerOptions } from './client';
-import { createClient, Client as WSClient } from 'graphql-ws';
-import * as WebSocket from 'ws';
 import sourcesConfig from '../../src/config/sources.config';
 
 /**
@@ -318,15 +316,16 @@ export class TestEnvironment {
    * Create a configured TestClientManager
    */
   private createClientManager(): TestClientManager {
-    const createWebSocketClient = () => createClient({
-      url: `ws://localhost:${this.config.appPort}/graphql`,
-      webSocketImpl: WebSocket as any,
-    });
+    const graphqlEndpoint = {
+      host: 'localhost',
+      port: this.config.appPort,
+      path: '/graphql'
+    };
     
     const createWebhook = (endpoint: string, handler: (payload: any) => Promise<void>) => {
       return this.registerWebhook(endpoint, handler);
     };
     
-    return new TestClientManager(createWebSocketClient, createWebhook, 30000);
+    return new TestClientManager(graphqlEndpoint, createWebhook, 30000);
   }
 }

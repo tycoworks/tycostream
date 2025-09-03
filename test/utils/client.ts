@@ -1,10 +1,20 @@
-import { Client as WSClient } from 'graphql-ws';
+import { ApolloClient, InMemoryCache, gql } from '@apollo/client';
+import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
+import { createClient } from 'graphql-ws';
+import * as WebSocket from 'ws';
 import { StateTracker } from './tracker';
+
+// GraphQL endpoint configuration
+export interface GraphQLEndpoint {
+  host: string;  // e.g., "localhost"
+  port: number;  // e.g., 4001
+  path: string;  // e.g., "/graphql"
+}
 
 // Constructor options - just configuration and callbacks
 export interface TestClientOptions {
   clientId: string;
-  createWebSocketClient: () => WSClient;
+  graphqlEndpoint: GraphQLEndpoint;
   createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
   livenessTimeoutMs: number;
   onFinished: () => void; // Called when client converges to expected state
@@ -28,7 +38,8 @@ export interface TriggerOptions<TData = any> {
 }
 
 export class TestClient<TData = any> {
-  private client: WSClient;
+  private graphqlClient: ApolloClient;
+  private subscription?: any;
   
   // === Subscription State ===
   private subscriptionTracker?: StateTracker<TData>;
@@ -48,13 +59,24 @@ export class TestClient<TData = any> {
   private fail!: (error: Error) => void;
   private readyPromise!: Promise<void>;
   private readyResolve!: () => void;
-  private isReady = false;
   
   // === Liveness Tracking ===
   private livenessTimeout?: NodeJS.Timeout;
 
   constructor(private options: TestClientOptions) {
-    this.client = options.createWebSocketClient();
+    // Create Apollo client with WebSocket support using graphql-ws
+    const { host, port, path } = options.graphqlEndpoint;
+    const wsUrl = `ws://${host}:${port}${path}`;
+    
+    const wsClient = createClient({
+      url: wsUrl,
+      webSocketImpl: WebSocket as any
+    });
+    
+    this.graphqlClient = new ApolloClient({
+      link: new GraphQLWsLink(wsClient),
+      cache: new InMemoryCache()
+    });
     
     // Create the completion promise
     this.completionPromise = new Promise<void>((complete, fail) => {
@@ -99,30 +121,35 @@ export class TestClient<TData = any> {
       this.subscriptionTracker = new StateTracker<TData>(this.subscriptionOptions.expectedState);
       
       // Mark as ready once subscription is set up (not waiting for first data)
-      // The subscribe call is synchronous, so we can resolve immediately after
-      this.client.subscribe(
-        { query: this.subscriptionOptions.query },
-        {
-          next: (data: any) => {
-            this.processData(() => {
-              this.processSubscriptionData(data, this.subscriptionOptions!, this.subscriptionTracker!);
-            });
-          },
-          error: (error: any) => {
-            const errorMessage = error?.message || error?.toString() || 'Unknown error';
-            const contextError = new Error(`Client ${this.options.clientId}: Subscription error: ${errorMessage}`);
+      this.subscription = this.graphqlClient.subscribe({
+        query: gql`${this.subscriptionOptions.query}`
+      }).subscribe({
+        next: (result) => {
+          if (result.error) {
+            const errorMessage = result.error?.message || 'Unknown GraphQL error';
+            const contextError = new Error(`Client ${this.options.clientId}: GraphQL error: ${errorMessage}`);
             this.handleError(contextError);
-          },
-          complete: () => {
-            // Stream closed - this is an error condition for subscriptions
-            const stats = this.stats;
-            const error = new Error(
-              `Client ${this.options.clientId}: Stream closed prematurely - events: ${stats.eventCount}, state size: ${stats.stateSize}`
-            );
-            this.handleError(error);
-          },
+            return;
+          }
+          // Apollo wraps the data, pass result.data instead of result
+          this.processData(() => {
+            this.processSubscriptionData(result.data, this.subscriptionOptions!, this.subscriptionTracker!);
+          });
+        },
+        error: (error) => {
+          const errorMessage = error?.message || error?.toString() || 'Unknown error';
+          const contextError = new Error(`Client ${this.options.clientId}: Subscription error: ${errorMessage}`);
+          this.handleError(contextError);
+        },
+        complete: () => {
+          // Stream closed - this is an error condition for subscriptions
+          const stats = this.stats;
+          const error = new Error(
+            `Client ${this.options.clientId}: Stream closed prematurely - events: ${stats.eventCount}, state size: ${stats.stateSize}`
+          );
+          this.handleError(error);
         }
-      );
+      });
     }
     
     // Set up webhook and execute trigger mutation if configured
@@ -159,7 +186,6 @@ export class TestClient<TData = any> {
     }
     
     // All setup is complete (subscription and/or webhook), mark as ready
-    this.isReady = true;
     this.readyResolve();
     
     // Return the ready promise (resolves when client is ready)
@@ -172,10 +198,8 @@ export class TestClient<TData = any> {
 
   dispose() {
     this.clearLivenessTimeout();
-    try {
-      this.client.dispose();
-    } catch (e) {
-      // Ignore disposal errors
+    if (this.subscription) {
+      this.subscription.unsubscribe();
     }
   }
 
@@ -268,7 +292,7 @@ export class TestClient<TData = any> {
   
   private processSubscriptionData(data: any, subscriptionOptions: SubscriptionOptions<TData>, stateTracker: StateTracker<TData>): void {
     // Extract operation and data from standard GraphQL response structure
-    const responseData = data.data[subscriptionOptions.dataPath];
+    const responseData = data[subscriptionOptions.dataPath];
     if (!responseData) return;
     
     const { operation, data: rowData, fields } = responseData;
@@ -278,7 +302,12 @@ export class TestClient<TData = any> {
       throw new Error(`Received ${operation} operation without data`);
     }
     
-    const id = rowData[subscriptionOptions.idField];
+    // Apollo 4 always adds __typename even with fetchPolicy: 'no-cache'
+    // We need to filter it out for clean state comparison
+    const cleanData = { ...rowData };
+    delete cleanData.__typename;
+    
+    const id = cleanData[subscriptionOptions.idField];
     
     switch (operation) {
       case 'DELETE':
@@ -286,11 +315,11 @@ export class TestClient<TData = any> {
         break;
         
       case 'INSERT':
-        stateTracker.insert(id, rowData);
+        stateTracker.insert(id, cleanData);
         break;
         
       case 'UPDATE':
-        stateTracker.update(id, fields, rowData);
+        stateTracker.update(id, fields, cleanData);
         break;
       
       default:
