@@ -154,14 +154,19 @@ export class TestClient<TData = any> {
     
     // Set up webhook and execute trigger mutation if configured
     if (this.triggerOptions) {
-      // Convert array to Map for StateTracker, preserving order via insertion sequence
+      // Convert array to Map for StateTracker, with order tracking
       const expectedStateMap = new Map<string | number, TData>();
+      const expectedOrder: Array<string | number> = [];
       const idField = this.triggerOptions.idField;
+      
       this.triggerOptions.expectedEvents.forEach((event, index) => {
         const id = event[idField] || index;
         expectedStateMap.set(id, event);
+        expectedOrder.push(id);
       });
-      this.triggerTracker = new StateTracker<TData>(expectedStateMap);
+      
+      // Create tracker with both expected state and expected order
+      this.triggerTracker = new StateTracker<TData>(expectedStateMap, expectedOrder);
       
       // Generate unique trigger name based on client ID
       const triggerName = `trigger_${this.options.clientId}_${Date.now()}`;
@@ -180,9 +185,27 @@ export class TestClient<TData = any> {
       
       console.log(`Registered webhook endpoint: ${webhookUrl}`);
       
-      // TODO: Execute the GraphQL mutation to create the trigger
-      // The mutation query should include the webhookUrl in its variables
-      // e.g., replacing $webhook placeholder with the actual webhookUrl
+      // Execute the GraphQL mutation to create the trigger
+      try {
+        const result = await this.graphqlClient.mutate({
+          mutation: gql`${this.triggerOptions.query}`,
+          variables: { webhookUrl }
+        });
+        
+        if (result.error) {
+          const errorMessage = result.error?.message || 'Unknown GraphQL error';
+          const contextError = new Error(`Client ${this.options.clientId}: Trigger mutation error: ${errorMessage}`);
+          this.handleError(contextError);
+          return;
+        }
+        
+        console.log(`Client ${this.options.clientId}: Trigger created successfully with webhook URL: ${webhookUrl}`);
+      } catch (error) {
+        const errorMessage = error?.message || error?.toString() || 'Unknown error';
+        const contextError = new Error(`Client ${this.options.clientId}: Failed to create trigger: ${errorMessage}`);
+        this.handleError(contextError);
+        return;
+      }
     }
     
     // All setup is complete (subscription and/or webhook), mark as ready
