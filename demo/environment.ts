@@ -56,16 +56,15 @@ Starting test environment:
     graphqlUI: false,
     logLevel: 'error',
     webhook: {
-      port: 3001,
-      endpoint: '/webhook',
-      handler: async (payload) => {
-        console.log('Webhook received:', JSON.stringify(payload, null, 2));
-        const eventType = payload.event_type === 'MATCH' ? 'TRIGGERED' : 'CLEARED';
-        await insertAlert(payload.trigger_name, eventType, payload.data);
-      }
+      port: 3001
     }
   });
   console.log('Test environment created successfully');
+  
+  // Set up webhook handler for demo alerts
+  console.log('Setting up webhook handler...');
+  await setupWebhook();
+  console.log('Webhook handler setup complete');
   
   // Initialize database schema and tables
   console.log('Setting up database schema...');
@@ -113,6 +112,18 @@ Starting test environment:
     await testEnv.stop();
     process.exit(0);
   });
+}
+
+/**
+ * Set up webhook handler for alerts
+ */
+async function setupWebhook() {
+  testEnv.registerWebhook('/webhook', async (payload) => {
+    console.log('Webhook received:', JSON.stringify(payload, null, 2));
+    const eventType = payload.event_type === 'MATCH' ? 'TRIGGERED' : 'CLEARED';
+    await insertAlert(payload.trigger_name, eventType, payload.data);
+  });
+  console.log('Webhook handler registered at http://localhost:3001/webhook');
 }
 
 /**

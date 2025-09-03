@@ -50,7 +50,10 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         workers: '4'  // More workers for better stress test performance
       },
       graphqlUI: false,
-      logLevel: 'error'
+      logLevel: 'error',
+      webhook: {
+        port: 3001
+      }
     });
     
     // Create test table with multiple columns for testing partial updates
@@ -105,25 +108,27 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         
         console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
         
-        const client = testEnv.getClient(`stress-client-${i}`);
-        await client.subscribe({
-          query: `
-            subscription {
-              stress_test(where: {department: {_eq: "${clientDepartment}"}}) {
-                operation
-                data {
-                  id
-                  value
-                  status
-                  department
+        await testEnv.startClient({
+          id: `stress-client-${i}`,
+          subscription: {
+            query: `
+              subscription {
+                stress_test(where: {department: {_eq: "${clientDepartment}"}}) {
+                  operation
+                  data {
+                    id
+                    value
+                    status
+                    department
+                  }
+                  fields
                 }
-                fields
               }
-            }
-          `,
-          expectedState: departmentExpectedState,
-          dataPath: 'stress_test',
-          idField: 'id'
+            `,
+            expectedState: departmentExpectedState,
+            dataPath: 'stress_test',
+            idField: 'id'
+          }
         });
         
         // Stagger client creation to avoid thundering herd
@@ -144,7 +149,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       console.log(`Stress test completed successfully. All ${NUM_CLIENTS} clients received their department-filtered data.`);
       
       // Log final stats
-      const stats = testEnv.clientStats;
+      const stats = testEnv.stats;
       console.log('Client statistics:');
       stats.forEach(stat => {
         console.log(`  Client ${stat.clientId}: ${stat.eventCount} events, state size: ${stat.stateSize}`);
@@ -154,7 +159,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       console.error('Test failed:', error);
       
       // Log client stats on failure
-      const stats = testEnv.clientStats;
+      const stats = testEnv.stats;
       console.log('Client statistics at failure:');
       stats.forEach(stat => {
         console.log(`  Client ${stat.clientId}: ${stat.eventCount} events, state size: ${stat.stateSize}, finished: ${stat.isFinished}`);

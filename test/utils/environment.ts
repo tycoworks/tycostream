@@ -9,7 +9,7 @@ import { AppModule } from '../../src/app.module';
 import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
 import { TestClientManager } from './manager';
-import { TestClient } from './client';
+import { SubscriptionOptions, TriggerOptions } from './client';
 import { createClient, Client as WSClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
 import sourcesConfig from '../../src/config/sources.config';
@@ -27,12 +27,19 @@ export interface DatabaseConfig {
 }
 
 /**
- * Webhook receiver configuration
+ * Webhook server configuration
  */
 export interface WebhookConfig {
   port: number;
-  endpoint: string;
-  handler: (payload: any) => Promise<void>;
+}
+
+/**
+ * Configuration for a test client
+ */
+export interface TestClientConfig<TData = any> {
+  id: string;
+  subscription?: SubscriptionOptions<TData>;
+  trigger?: TriggerOptions<TData>;
 }
 
 /**
@@ -44,7 +51,7 @@ export interface TestEnvironmentConfig {
   database: DatabaseConfig;
   graphqlUI: boolean;        // Enable GraphQL UI
   logLevel: 'verbose' | 'debug' | 'log' | 'warn' | 'error' | 'fatal';  // Log level
-  webhook?: WebhookConfig;
+  webhook: WebhookConfig;  // Webhook server configuration (always required)
 }
 
 /**
@@ -55,9 +62,9 @@ export class TestEnvironment {
   private app: INestApplication;
   private databaseContainer: StartedTestContainer;
   private databaseClient: Client;
-  private databasePort: number;
-  private webhookApp?: express.Application;
-  private webhookServer?: Server;
+  private databasePort: number;  // Mapped port from Docker container
+  private webhookApp: express.Application;
+  private webhookServer: Server;
   private config: TestEnvironmentConfig;
   private clientManager: TestClientManager;
 
@@ -88,20 +95,15 @@ export class TestEnvironment {
     await this.app.listen(this.config.appPort);
     console.log(`Application listening on port ${this.config.appPort}`);
     
-    // Start webhook receiver if configured
-    if (this.config.webhook) {
-      console.log('Starting webhook receiver...');
-      await this.setupWebhookReceiver();
-      console.log(`Webhook receiver listening on port ${this.config.webhook.port} at endpoint ${this.config.webhook.endpoint}`);
-    }
+    // Start webhook server
+    console.log('Starting webhook server...');
+    this.createWebhookServer();
+    console.log(`Webhook server listening on port ${this.config.webhook.port}`);
     
-    // Create client manager with WebSocket factory
-    const createWebSocketClient = () => createClient({
-      url: `ws://localhost:${this.config.appPort}/graphql`,
-      webSocketImpl: WebSocket as any,
-    });
-    
-    this.clientManager = new TestClientManager(createWebSocketClient, 30000);
+    // Create client manager with all dependencies configured
+    console.log('Creating client manager...');
+    this.clientManager = this.createClientManager();
+    console.log('Client manager created');
     
     // Wait for server to stabilize
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -109,10 +111,28 @@ export class TestEnvironment {
   }
 
   /**
-   * Get or create a test client
+   * Register a webhook endpoint
    */
-  getClient<TData = any>(id: string): TestClient<TData> {
-    return this.clientManager.getClient(id);
+  registerWebhook(endpoint: string, handler: (payload: any) => Promise<void>): string {
+    // Register the endpoint
+    this.webhookApp.post(endpoint, async (req, res) => {
+      try {
+        await handler(req.body);
+        res.status(200).send('OK');
+      } catch (error) {
+        console.error('Webhook handler error:', error);
+        res.status(500).send('Handler error');
+      }
+    });
+    
+    return `http://localhost:${this.config.webhook.port}${endpoint}`;
+  }
+  
+  /**
+   * Start a client with configuration
+   */
+  async startClient<TData = any>(config: TestClientConfig<TData>): Promise<void> {
+    await this.clientManager.startClient(config);
   }
   
   /**
@@ -125,7 +145,7 @@ export class TestEnvironment {
   /**
    * Get statistics for all clients
    */
-  get clientStats() {
+  get stats() {
     return this.clientManager.stats;
   }
   
@@ -133,25 +153,38 @@ export class TestEnvironment {
    * Stop and clean up all test resources
    */
   async stop(): Promise<void> {
-    // Dispose all clients
-    this.clientManager?.dispose();
+    console.log('Starting test environment shutdown...');
     
-    // Close webhook server if running
-    if (this.webhookServer) {
-      console.log('Stopping webhook receiver...');
-      this.webhookServer.close();
-    }
+    // Dispose all clients
+    console.log('Disposing all test clients...');
+    this.clientManager.dispose();
+    console.log('Test clients disposed');
+    
+    // Close webhook server
+    console.log('Stopping webhook server...');
+    this.webhookServer.close();
+    console.log('Webhook server stopped');
     
     // Close app first
+    console.log('Closing NestJS application...');
     await this.app.close();
+    console.log('NestJS application closed');
+    
     // Wait for connections to close
+    console.log('Waiting for connections to close...');
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Close database connection
+    console.log('Closing database connection...');
     await this.databaseClient.end();
+    console.log('Database connection closed');
     
     // Stop container last
+    console.log('Stopping database container...');
     await this.databaseContainer.stop();
+    console.log('Database container stopped');
+    
+    console.log('Test environment shutdown complete');
   }
 
   /**
@@ -244,29 +277,6 @@ export class TestEnvironment {
     process.env.LOG_LEVEL = this.config.logLevel;
   }
 
-  /**
-   * Setup webhook receiver for handling triggers
-   */
-  private async setupWebhookReceiver(): Promise<void> {
-    if (!this.config.webhook) return;
-    
-    this.webhookApp = express();
-    this.webhookApp.use(express.json());
-    
-    const webhookConfig = this.config.webhook;
-    this.webhookApp.post(webhookConfig.endpoint, async (req, res) => {
-      console.log(`Webhook received at ${webhookConfig.endpoint}`);
-      try {
-        await webhookConfig.handler(req.body);
-        res.status(200).send('OK');
-      } catch (error) {
-        console.error('Webhook handler error:', error);
-        res.status(500).send('Handler error');
-      }
-    });
-    
-    this.webhookServer = this.webhookApp.listen(webhookConfig.port);
-  }
 
   /**
    * Create and configure the NestJS application for testing
@@ -293,5 +303,30 @@ export class TestEnvironment {
     app.useLogger([this.config.logLevel]);
     
     return app;
+  }
+
+  /**
+   * Create webhook server
+   */
+  private createWebhookServer(): void {
+    this.webhookApp = express();
+    this.webhookApp.use(express.json());
+    this.webhookServer = this.webhookApp.listen(this.config.webhook.port);
+  }
+  
+  /**
+   * Create a configured TestClientManager
+   */
+  private createClientManager(): TestClientManager {
+    const createWebSocketClient = () => createClient({
+      url: `ws://localhost:${this.config.appPort}/graphql`,
+      webSocketImpl: WebSocket as any,
+    });
+    
+    const createWebhook = (endpoint: string, handler: (payload: any) => Promise<void>) => {
+      return this.registerWebhook(endpoint, handler);
+    };
+    
+    return new TestClientManager(createWebSocketClient, createWebhook, 30000);
   }
 }

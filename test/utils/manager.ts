@@ -1,5 +1,6 @@
 import { TestClient } from './client';
 import { Client as WSClient } from 'graphql-ws';
+import { TestClientConfig } from './environment';
 
 export class TestClientManager<TData = any> {
   // === Client Management ===
@@ -8,6 +9,7 @@ export class TestClientManager<TData = any> {
   // === Configuration ===
   private livenessTimeoutMs: number;
   private createWebSocketClient: () => WSClient;
+  private createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
   
   // === Lifecycle State ===
   private finishedCount = 0;
@@ -18,9 +20,11 @@ export class TestClientManager<TData = any> {
 
   constructor(
     createWebSocketClient: () => WSClient,
+    createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string,
     livenessTimeoutMs: number = 30000
   ) {
     this.createWebSocketClient = createWebSocketClient;
+    this.createWebhook = createWebhook;
     this.livenessTimeoutMs = livenessTimeoutMs;
     this.completionPromise = new Promise((complete, fail) => {
       this.complete = complete;
@@ -28,29 +32,59 @@ export class TestClientManager<TData = any> {
     });
   }
 
-  getClient(id: string): TestClient<TData> {
-    let client = this.clients.get(id);
-    
-    if (!client) {
-      // Create new client
-      client = new TestClient<TData>({
-        clientId: id,
-        createWebSocketClient: this.createWebSocketClient,
-        livenessTimeoutMs: this.livenessTimeoutMs,
-        onFinished: () => {
-          this.onClientFinished();
-        },
-        onStalled: (clientId: string) => {
-          this.onClientStalled(clientId);
-        },
-        onRecovered: (clientId: string) => {
-          this.onClientRecovered(clientId);
-        }
-      });
-
-      this.clients.set(id, client);
-      console.log(`Created client '${id}' (${this.clients.size} total clients)`);
+  async startClient(config: TestClientConfig<TData>): Promise<void> {
+    if (this.clients.has(config.id)) {
+      throw new Error(`Client ${config.id} already started`);
     }
+    
+    // Create, configure, and start the client immediately
+    const client = this.createClient(config);
+    
+    // Start the client and wait for it to be ready (subscription/webhook established)
+    await client.start();
+    
+    // Track completion separately
+    client.waitForCompletion().catch(error => {
+      // Client errored out - check if we should fail the test
+      console.error(`Client ${config.id} error:`, error.message);
+      this.checkIfAllStalled();
+    });
+  }
+
+  async waitForCompletion(): Promise<void> {
+    // Wait for all clients to finish
+    return this.completionPromise;
+  }
+
+  private createClient(config: TestClientConfig<TData>): TestClient<TData> {
+    // Create new client
+    const client = new TestClient<TData>({
+      clientId: config.id,
+      createWebSocketClient: this.createWebSocketClient,
+      createWebhook: this.createWebhook,
+      livenessTimeoutMs: this.livenessTimeoutMs,
+      onFinished: () => {
+        this.onClientFinished();
+      },
+      onStalled: (clientId: string) => {
+        this.onClientStalled(clientId);
+      },
+      onRecovered: (clientId: string) => {
+        this.onClientRecovered(clientId);
+      }
+    });
+
+    // Configure the client
+    if (config.subscription) {
+      client.configureSubscription(config.subscription);
+    }
+    if (config.trigger) {
+      client.configureTrigger(config.trigger);
+    }
+
+    // Store the client
+    this.clients.set(config.id, client);
+    console.log(`Created client '${config.id}' (${this.clients.size} total clients)`);
     
     return client;
   }
@@ -90,20 +124,6 @@ export class TestClientManager<TData = any> {
         `All active clients are stalled! No data flowing to any client.\n  ${summary}`
       ));
     }
-  }
-
-  async waitForCompletion(): Promise<void> {
-    // Set up completion tracking for all existing clients
-    this.clients.forEach(client => {
-      client.waitForCompletion().catch(error => {
-        // Client errored out - check if we should fail the test
-        console.error(`Client error:`, error.message);
-        this.checkIfAllStalled();
-      });
-    });
-    
-    // Wait for all clients to finish
-    return this.completionPromise;
   }
 
   dispose() {

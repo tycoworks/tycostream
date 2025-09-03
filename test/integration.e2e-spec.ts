@@ -18,7 +18,10 @@ describe('Integration Test', () => {
         workers: '1'
       },
       graphqlUI: false,
-      logLevel: 'error'
+      logLevel: 'error',
+      webhook: {
+        port: 3001
+      }
     });
 
     // Create test tables matching our schema
@@ -81,25 +84,27 @@ describe('Integration Test', () => {
     ]);
     
     // Create ONE client with active=true filter for the entire test
-    const client = testEnv.getClient('integration-test-client');
-    await client.subscribe({
-      query: `
-        subscription {
-          users(where: { active: { _eq: true } }) {
-            operation
-            data {
-              user_id
-              name
-              email
-              active
+    await testEnv.startClient({
+      id: 'integration-test-client',
+      subscription: {
+        query: `
+          subscription {
+            users(where: { active: { _eq: true } }) {
+              operation
+              data {
+                user_id
+                name
+                email
+                active
+              }
+              fields
             }
-            fields
           }
-        }
-      `,
-      expectedState,
-      dataPath: 'users',
-      idField: 'user_id'
+        `,
+        expectedState,
+        dataPath: 'users',
+        idField: 'user_id'
+      }
     });
 
     // === BASIC OPERATIONS ===
