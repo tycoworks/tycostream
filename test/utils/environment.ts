@@ -9,7 +9,7 @@ import { AppModule } from '../../src/app.module';
 import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
 import { TestClientManager } from './manager';
-import { SubscriptionOptions, TriggerOptions } from './client';
+import { TestClient } from './client';
 import sourcesConfig from '../../src/config/sources.config';
 
 /**
@@ -31,14 +31,6 @@ export interface WebhookConfig {
   port: number;
 }
 
-/**
- * Configuration for a test client
- */
-export interface TestClientConfig<TData = any> {
-  id: string;
-  subscription?: SubscriptionOptions<TData>;
-  trigger?: TriggerOptions<TData>;
-}
 
 /**
  * Complete test environment configuration
@@ -127,10 +119,10 @@ export class TestEnvironment {
   }
   
   /**
-   * Start a client with configuration
+   * Create a client and return it for direct use
    */
-  async startClient<TData = any>(config: TestClientConfig<TData>): Promise<void> {
-    await this.clientManager.startClient(config);
+  createClient<TData = any>(id: string): TestClient<TData> {
+    return this.clientManager.createClient(id);
   }
   
   /**

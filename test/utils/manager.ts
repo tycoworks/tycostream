@@ -1,5 +1,4 @@
 import { TestClient, GraphQLEndpoint } from './client';
-import { TestClientConfig } from './environment';
 
 export class TestClientManager<TData = any> {
   // === Client Management ===
@@ -31,39 +30,20 @@ export class TestClientManager<TData = any> {
     });
   }
 
-  async startClient(config: TestClientConfig<TData>): Promise<void> {
-    if (this.clients.has(config.id)) {
-      throw new Error(`Client ${config.id} already started`);
-    }
-    
-    // Create the client
-    const client = this.createClient(config);
-    
-    // Start subscription and/or trigger based on config
-    if (config.subscription) {
-      await client.subscribe(config.subscription);
-    }
-    if (config.trigger) {
-      await client.trigger(config.trigger);
-    }
-    
-    // Track completion separately
-    client.waitForCompletion().catch(error => {
-      // Client errored out - check if we should fail the test
-      console.error(`Client ${config.id} error:`, error.message);
-      this.checkIfAllStalled();
-    });
-  }
 
   async waitForCompletion(): Promise<void> {
     // Wait for all clients to finish
     return this.completionPromise;
   }
 
-  private createClient(config: TestClientConfig<TData>): TestClient<TData> {
+  createClient(id: string): TestClient<TData> {
+    if (this.clients.has(id)) {
+      throw new Error(`Client ${id} already exists`);
+    }
+    
     // Create new client
     const client = new TestClient<TData>({
-      clientId: config.id,
+      clientId: id,
       graphqlEndpoint: this.graphqlEndpoint,
       createWebhook: this.createWebhook,
       livenessTimeoutMs: this.livenessTimeoutMs,
@@ -79,8 +59,14 @@ export class TestClientManager<TData = any> {
     });
 
     // Store the client
-    this.clients.set(config.id, client);
-    console.log(`Created client '${config.id}' (${this.clients.size} total clients)`);
+    this.clients.set(id, client);
+    console.log(`Created client '${id}' (${this.clients.size} total clients)`);
+    
+    // Track completion
+    client.waitForCompletion().catch(error => {
+      console.error(`Client ${id} error:`, error.message);
+      this.checkIfAllStalled();
+    });
     
     return client;
   }
@@ -128,8 +114,8 @@ export class TestClientManager<TData = any> {
 
   get stats() {
     return Array.from(this.clients.entries()).map(([id, client]) => ({
-      clientId: id,
-      ...client.stats
+      ...client.stats,
+      clientId: id
     }));
   }
 }

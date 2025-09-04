@@ -108,27 +108,25 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         
         console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
         
-        await testEnv.startClient({
-          id: `stress-client-${i}`,
-          subscription: {
-            query: `
-              subscription {
-                stress_test(where: {department: {_eq: "${clientDepartment}"}}) {
-                  operation
-                  data {
-                    id
-                    value
-                    status
-                    department
-                  }
-                  fields
+        const client = testEnv.createClient(`stress-client-${i}`);
+        await client.subscribe('department-filter', {
+          query: `
+            subscription {
+              stress_test(where: {department: {_eq: "${clientDepartment}"}}) {
+                operation
+                data {
+                  id
+                  value
+                  status
+                  department
                 }
+                fields
               }
-            `,
-            expectedState: departmentExpectedState,
-            dataPath: 'stress_test',
-            idField: 'id'
-          }
+            }
+          `,
+          expectedState: departmentExpectedState,
+          dataPath: 'stress_test',
+          idField: 'id'
         });
         
         // Stagger client creation to avoid thundering herd

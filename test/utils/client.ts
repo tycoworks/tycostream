@@ -43,8 +43,7 @@ export class TestClient<TData = any> {
   private graphqlClient: ApolloClient;
   
   // === Handlers ===
-  private subscriptionHandler?: EventStreamHandler;
-  private triggerHandler?: EventStreamHandler;
+  private handlers = new Map<string, EventStreamHandler>();
   
   // === Lifecycle State ===
   private finished = false;
@@ -82,18 +81,18 @@ export class TestClient<TData = any> {
 
   // === Public Methods ===
   
-  async subscribe(options: SubscriptionOptions<TData>): Promise<void> {
-    if (this.subscriptionHandler) {
-      throw new Error(`Client ${this.options.clientId}: Subscription already active`);
+  async subscribe(id: string, options: SubscriptionOptions<TData>): Promise<void> {
+    if (this.handlers.has(id)) {
+      throw new Error(`Client ${this.options.clientId}: Handler '${id}' already exists`);
     }
     
     // Start liveness monitoring if this is the first handler
-    if (!this.subscriptionHandler && !this.triggerHandler) {
+    if (this.handlers.size === 0) {
       this.resetLiveness();
     }
     
     // Create and start subscription handler
-    this.subscriptionHandler = new SubscriptionHandler<TData>({
+    const handler = new SubscriptionHandler<TData>({
       clientId: this.options.clientId,
       query: options.query,
       dataPath: options.dataPath,
@@ -103,21 +102,22 @@ export class TestClient<TData = any> {
       callbacks: this.createHandlerCallbacks()
     });
     
-    await this.subscriptionHandler.start();
+    await handler.start();
+    this.handlers.set(id, handler);
   }
   
-  async trigger(options: TriggerOptions<TData>): Promise<void> {
-    if (this.triggerHandler) {
-      throw new Error(`Client ${this.options.clientId}: Trigger already active`);
+  async trigger(id: string, options: TriggerOptions<TData>): Promise<void> {
+    if (this.handlers.has(id)) {
+      throw new Error(`Client ${this.options.clientId}: Handler '${id}' already exists`);
     }
     
     // Start liveness monitoring if this is the first handler
-    if (!this.subscriptionHandler && !this.triggerHandler) {
+    if (this.handlers.size === 0) {
       this.resetLiveness();
     }
     
     // Create and start trigger handler
-    this.triggerHandler = new TriggerHandler<TData>({
+    const handler = new TriggerHandler<TData>({
       clientId: this.options.clientId,
       query: options.query,
       idField: options.idField,
@@ -127,7 +127,8 @@ export class TestClient<TData = any> {
       callbacks: this.createHandlerCallbacks()
     });
     
-    await this.triggerHandler.start();
+    await handler.start();
+    this.handlers.set(id, handler);
   }
   
   async waitForCompletion(): Promise<void> {
@@ -136,22 +137,26 @@ export class TestClient<TData = any> {
 
   dispose() {
     this.clearLivenessTimeout();
-    if (this.subscriptionHandler) {
-      this.subscriptionHandler.dispose();
+    
+    // Dispose all handlers
+    for (const handler of this.handlers.values()) {
+      handler.dispose();
     }
-    if (this.triggerHandler) {
-      this.triggerHandler.dispose();
-    }
+    this.handlers.clear();
   }
 
   get stats() {
-    // Combine stats from both handlers
-    const subStats = this.subscriptionHandler?.getStats() || { totalReceived: 0 };
-    const triggerStats = this.triggerHandler?.getStats() || { totalReceived: 0 };
+    let totalReceived = 0;
+    
+    for (const handler of this.handlers.values()) {
+      const stats = handler.getStats();
+      totalReceived += stats.totalReceived;
+    }
     
     return {
+      clientId: this.options.clientId,
       eventCount: this.eventCount,
-      stateSize: subStats.totalReceived + triggerStats.totalReceived,
+      stateSize: totalReceived,
       lastEventTime: this.lastEventTime,
       isFinished: this.finished,
       isStalled: this.stalled
@@ -186,10 +191,9 @@ export class TestClient<TData = any> {
     if (this.finished) return;
     
     // Check if ALL handlers are complete
-    const subscriptionComplete = !this.subscriptionHandler || this.subscriptionHandler.isComplete();
-    const triggerComplete = !this.triggerHandler || this.triggerHandler.isComplete();
+    const allComplete = Array.from(this.handlers.values()).every(handler => handler.isComplete());
     
-    if (subscriptionComplete && triggerComplete) {
+    if (allComplete && this.handlers.size > 0) {
       this.finished = true;
       console.log(`Client ${this.options.clientId} finished successfully - events: ${this.eventCount}, state size: ${this.stats.stateSize}`);
       
