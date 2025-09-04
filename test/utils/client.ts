@@ -4,7 +4,7 @@ import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
 import { SubscriptionHandler } from './subscription';
 import { TriggerHandler } from './trigger';
-import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
+import { EventStreamHandler, HandlerCallbacks, Stats } from './events';
 import { State } from './tracker';
 import { GraphQLEndpoint } from './environment';
 import { WebhookEndpoint } from './webhook';

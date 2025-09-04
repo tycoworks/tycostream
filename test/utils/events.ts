@@ -10,6 +10,27 @@ export interface Stats {
 }
 
 /**
+ * Interface for processing events and checking completion
+ * Different implementations for different event patterns (Map vs List)
+ */
+export interface EventProcessor<TData = any> {
+  /**
+   * Process an incoming event
+   */
+  processEvent(data: any): void;
+  
+  /**
+   * Check if we've reached the expected completion state
+   */
+  isComplete(): boolean;
+  
+  /**
+   * Get statistics about processed events
+   */
+  getStats(): Stats;
+}
+
+/**
  * Interface for event sources (GraphQL subscriptions, webhooks, etc.)
  * Handles setting up the transport and delivering events via callback
  */

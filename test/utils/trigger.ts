@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
+import { EventStreamHandler, HandlerCallbacks, Stats } from './events';
 import { StateTracker, State } from './tracker';
 import { WebhookEndpoint } from './webhook';
 

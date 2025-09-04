@@ -8,7 +8,7 @@ import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
 import { TestClientManager } from './manager';
 import { TestClient } from './client';
-import { Stats } from './handler';
+import { Stats } from './events';
 import sourcesConfig from '../../src/config/sources.config';
 import { WebhookServer } from './webhook';
 

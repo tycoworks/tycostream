@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, EventStream, HandlerCallbacks, Stats } from './handler';
+import { EventStreamHandler, EventStream, EventProcessor, HandlerCallbacks, Stats } from './events';
 import { StateTracker, State } from './tracker';
 
 /**
@@ -66,6 +66,87 @@ class GraphQLSubscriptionStream implements EventStream<any> {
   }
 }
 
+/**
+ * Processes subscription events by maintaining a state map
+ * Handles INSERT/UPDATE/DELETE operations
+ */
+class SubscriptionProcessor<TData = any> implements EventProcessor<TData> {
+  private currentState = new Map<string | number, TData>();
+  
+  constructor(
+    private expectedState: Map<string | number, TData>,
+    private dataPath: string,
+    private idField: string
+  ) {}
+  
+  processEvent(data: any): void {
+    // Extract operation and data from standard GraphQL response structure
+    const responseData = data[this.dataPath];
+    if (!responseData) {
+      return;
+    }
+    
+    const { operation, data: rowData, fields } = responseData;
+    
+    if (!rowData) {
+      console.error(`Received ${operation} operation without data`);
+      throw new Error(`Invalid operation data`);
+    }
+    
+    // Apollo 4 always adds __typename - filter it out for clean state comparison
+    const cleanData = { ...rowData };
+    delete cleanData.__typename;
+    
+    const id = cleanData[this.idField];
+    
+    // Update current state directly
+    switch (operation) {
+      case 'DELETE':
+        this.currentState.delete(id);
+        break;
+        
+      case 'INSERT':
+        this.currentState.set(id, cleanData);
+        break;
+        
+      case 'UPDATE':
+        const existing = this.currentState.get(id);
+        if (existing) {
+          const updated = { ...existing };
+          for (const field of fields) {
+            updated[field as keyof TData] = cleanData[field];
+          }
+          this.currentState.set(id, updated);
+        }
+        break;
+      
+      default:
+        console.error(`Unknown operation: ${operation}`);
+        throw new Error(`Unknown operation: ${operation}`);
+    }
+  }
+  
+  isComplete(): boolean {
+    if (this.currentState.size === this.expectedState.size) {
+      for (const [id, expectedData] of this.expectedState) {
+        const currentData = this.currentState.get(id);
+        if (!currentData || JSON.stringify(currentData) !== JSON.stringify(expectedData)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+  
+  getStats(): Stats {
+    return {
+      totalExpected: this.expectedState.size,
+      totalReceived: this.currentState.size
+    };
+  }
+}
+
 export interface SubscriptionConfig<TData = any> {
   id: string; // The subscription ID
   clientId: string;
@@ -84,13 +165,17 @@ export interface SubscriptionConfig<TData = any> {
  */
 export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   private stream?: GraphQLSubscriptionStream;
-  private currentState = new Map<string | number, TData>();
-  private expectedState: Map<string | number, TData>;
+  private processor: SubscriptionProcessor<TData>;
   private startPromise?: Promise<void>;
   private stateTracker: StateTracker;
   
   constructor(private config: SubscriptionConfig<TData>) {
-    this.expectedState = config.expectedState;
+    // Create the processor with expected state
+    this.processor = new SubscriptionProcessor<TData>(
+      config.expectedState,
+      config.dataPath,
+      config.idField
+    );
     
     // Initialize state tracker with callbacks that include our ID
     this.stateTracker = new StateTracker({
@@ -148,76 +233,18 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
     // Record activity for liveness tracking
     this.stateTracker.recordActivity();
     
-    // Extract operation and data from standard GraphQL response structure
-    const responseData = data[this.config.dataPath];
-    if (!responseData) {
-      // No data at expected path, check if we're done
-      this.checkCompletion();
-      return;
-    }
-    
-    const { operation, data: rowData, fields } = responseData;
-    
-    if (!rowData) {
-      console.error(`Received ${operation} operation without data`);
-      this.stateTracker.markFailed();
-      return;
-    }
-    
-    // Apollo 4 always adds __typename - filter it out for clean state comparison
-    const cleanData = { ...rowData };
-    delete cleanData.__typename;
-    
-    const id = cleanData[this.config.idField];
-    
-    // Update current state directly
-    switch (operation) {
-      case 'DELETE':
-        this.currentState.delete(id);
-        break;
-        
-      case 'INSERT':
-        this.currentState.set(id, cleanData);
-        break;
-        
-      case 'UPDATE':
-        const existing = this.currentState.get(id);
-        if (existing) {
-          const updated = { ...existing };
-          for (const field of fields) {
-            updated[field as keyof TData] = cleanData[field];
-          }
-          this.currentState.set(id, updated);
-        }
-        break;
+    try {
+      // Delegate processing to the processor
+      this.processor.processEvent(data);
       
-      default:
-        console.error(`Unknown operation: ${operation}`);
-        this.stateTracker.markFailed();
-        return;
-    }
-    
-    // Check if we're finished after state update
-    this.checkCompletion();
-  }
-  
-  private checkCompletion(): void {
-    if (this.isComplete()) {
-      this.stateTracker.markCompleted();
-    }
-  }
-  
-  private isComplete(): boolean {
-    if (this.currentState.size === this.expectedState.size) {
-      for (const [id, expectedData] of this.expectedState) {
-        const currentData = this.currentState.get(id);
-        if (!currentData || JSON.stringify(currentData) !== JSON.stringify(expectedData)) {
-          return false;
-        }
+      // Check if we're finished after state update
+      if (this.processor.isComplete()) {
+        this.stateTracker.markCompleted();
       }
-      return true;
+    } catch (error) {
+      // If processing fails, mark as failed
+      this.stateTracker.markFailed();
     }
-    return false;
   }
   
   getState(): State {
@@ -225,10 +252,7 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   }
   
   getStats(): Stats {
-    return {
-      totalExpected: this.expectedState.size,
-      totalReceived: this.currentState.size
-    };
+    return this.processor.getStats();
   }
   
   private async cleanupSubscription(): Promise<void> {
