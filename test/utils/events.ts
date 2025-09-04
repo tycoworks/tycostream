@@ -152,6 +152,10 @@ export class EventHandler<TData = any> {
     return this.processor.getStats();
   }
   
+  private isInTerminalState(): boolean {
+    return this.state === State.Completed || this.state === State.Failed;
+  }
+  
   private async cleanup(): Promise<void> {
     console.log(`Cleaning up ${this.config.id}`);
     await this.stream.unsubscribe();
@@ -165,7 +169,7 @@ export class EventHandler<TData = any> {
   // State transition methods
   private recordActivity(): void {
     // Can't record activity if we're in a terminal state
-    if (this.state === State.Completed || this.state === State.Failed) return;
+    if (this.isInTerminalState()) return;
     
     // If we were stalled, recover
     if (this.state === State.Stalled) {
@@ -178,7 +182,7 @@ export class EventHandler<TData = any> {
   }
   
   private markCompleted(): void {
-    if (this.state === State.Completed || this.state === State.Failed) return;
+    if (this.isInTerminalState()) return;
     
     this.clearLivenessTimer();
     this.state = State.Completed;
@@ -187,7 +191,7 @@ export class EventHandler<TData = any> {
   }
   
   private markFailed(): void {
-    if (this.state === State.Completed || this.state === State.Failed) return;
+    if (this.isInTerminalState()) return;
     
     this.clearLivenessTimer();
     this.state = State.Failed;

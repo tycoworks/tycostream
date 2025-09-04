@@ -161,9 +161,6 @@ export class TestClient<TData = any> {
   }
 
   private handleStalled(handlerId: string): void {
-    // Only update state if we're not in a terminal state
-    if (this.state === State.Completed || this.state === State.Failed) return;
-    
     // Check if ALL handlers are now stalled
     const allStalled = Array.from(this.handlers.values()).every(
       handler => handler.getState() === State.Stalled
@@ -191,9 +188,6 @@ export class TestClient<TData = any> {
   }
   
   private checkIfCompleted(): void {
-    // Only check if we're not in a terminal state
-    if (this.state === State.Completed || this.state === State.Failed) return;
-    
     // Check if ALL handlers are complete
     const allComplete = Array.from(this.handlers.values()).every(
       handler => handler.getState() === State.Completed

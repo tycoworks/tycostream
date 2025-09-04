@@ -77,9 +77,6 @@ export class TestClientManager<TData = any> {
   }
 
   private onClientCompleted() {
-    // Only process if not in a terminal state
-    if (this.state === State.Completed || this.state === State.Failed) return;
-    
     // Check if ALL clients are completed
     const allCompleted = Array.from(this.clients.values()).every(
       client => client.getState() === State.Completed
@@ -98,9 +95,6 @@ export class TestClientManager<TData = any> {
   }
   
   private onClientStalled(clientId: string) {
-    // Only process if not in a terminal state
-    if (this.state === State.Completed || this.state === State.Failed) return;
-    
     // Check if ALL clients are stalled
     const allStalled = Array.from(this.clients.values()).every(
       client => client.getState() === State.Stalled
