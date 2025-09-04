@@ -10,6 +10,27 @@ export interface Stats {
 }
 
 /**
+ * Interface for event sources (GraphQL subscriptions, webhooks, etc.)
+ * Handles setting up the transport and delivering events via callback
+ */
+export interface EventStream<TData = any> {
+  /**
+   * Subscribe to the stream with event handlers
+   * @param onData Handler for data events
+   * @param onError Optional handler for errors
+   */
+  subscribe(
+    onData: (data: TData) => void,
+    onError?: (error: Error) => void
+  ): Promise<void>;
+  
+  /**
+   * Unsubscribe from the stream and clean up resources
+   */
+  unsubscribe(): Promise<void>;
+}
+
+/**
  * Callbacks for lifecycle events
  */
 export interface HandlerCallbacks {

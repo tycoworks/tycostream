@@ -1,6 +1,70 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
+import { EventStreamHandler, EventStream, HandlerCallbacks, Stats } from './handler';
 import { StateTracker, State } from './tracker';
+
+/**
+ * GraphQL subscription event stream
+ * Manages the WebSocket subscription and delivers events
+ */
+class GraphQLSubscriptionStream implements EventStream<any> {
+  private subscription?: any;
+  
+  constructor(
+    private client: ApolloClient,
+    private query: string,
+    private clientId: string
+  ) {}
+  
+  async subscribe(
+    onData: (data: any) => void,
+    onError?: (error: Error) => void
+  ): Promise<void> {
+    this.subscription = this.client.subscribe({
+      query: gql`${this.query}`
+    }).subscribe({
+      next: (result) => {
+        if (result.error) {
+          const errorMessage = result.error?.message || 'Unknown GraphQL error';
+          console.error(
+            `Client ${this.clientId}: GraphQL error: ${errorMessage}`
+          );
+          if (onError) {
+            onError(new Error(errorMessage));
+          }
+          return;
+        }
+        
+        // Deliver the data via callback
+        onData(result.data);
+      },
+      error: (error) => {
+        const errorMessage = error?.message || error?.toString() || 'Unknown error';
+        console.error(
+          `Client ${this.clientId}: Subscription error: ${errorMessage}`
+        );
+        if (onError) {
+          onError(error instanceof Error ? error : new Error(errorMessage));
+        }
+      },
+      complete: () => {
+        // Stream closed - this is an error condition for subscriptions
+        console.error(
+          `Client ${this.clientId}: Stream closed prematurely`
+        );
+        if (onError) {
+          onError(new Error('Stream closed prematurely'));
+        }
+      }
+    });
+  }
+  
+  async unsubscribe(): Promise<void> {
+    if (this.subscription) {
+      this.subscription.unsubscribe();
+      this.subscription = undefined;
+    }
+  }
+}
 
 export interface SubscriptionConfig<TData = any> {
   id: string; // The subscription ID
@@ -19,7 +83,7 @@ export interface SubscriptionConfig<TData = any> {
  * Parses GraphQL subscription events and calls appropriate callbacks
  */
 export class SubscriptionHandler<TData = any> implements EventStreamHandler {
-  private subscription?: any; // The Apollo subscription
+  private stream?: GraphQLSubscriptionStream;
   private currentState = new Map<string | number, TData>();
   private expectedState: Map<string | number, TData>;
   private startPromise?: Promise<void>;
@@ -39,14 +103,14 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
         console.log(`Subscription ${config.id} for client ${config.clientId} recovered`);
         config.callbacks.onRecovered(config.id);
       },
-      onCompleted: () => {
+      onCompleted: async () => {
         console.log(`Subscription ${config.id} for client ${config.clientId} completed`);
-        this.cleanupSubscription();
+        await this.cleanupSubscription();
         config.callbacks.onCompleted(config.id);
       },
-      onFailed: () => {
+      onFailed: async () => {
         // The error is already logged when we detect it
-        this.cleanupSubscription();
+        await this.cleanupSubscription();
         config.callbacks.onFailed(config.id, new Error(`Subscription ${config.id} failed`));
       }
     });
@@ -60,37 +124,24 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   }
   
   private async doStart(): Promise<void> {
-    this.subscription = this.config.graphqlClient.subscribe({
-      query: gql`${this.config.query}`
-    }).subscribe({
-      next: (result) => {
-        if (result.error) {
-          const errorMessage = result.error?.message || 'Unknown GraphQL error';
-          console.error(
-            `Client ${this.config.clientId}: GraphQL error: ${errorMessage}`
-          );
-          this.stateTracker.markFailed();
-          return;
-        }
-        
+    // Create the stream
+    this.stream = new GraphQLSubscriptionStream(
+      this.config.graphqlClient,
+      this.config.query,
+      this.config.clientId
+    );
+    
+    // Subscribe to the stream
+    await this.stream.subscribe(
+      (data) => {
         // Process the subscription data
-        this.processEvent(result.data);
+        this.processEvent(data);
       },
-      error: (error) => {
-        const errorMessage = error?.message || error?.toString() || 'Unknown error';
-        console.error(
-          `Client ${this.config.clientId}: Subscription error: ${errorMessage}`
-        );
-        this.stateTracker.markFailed();
-      },
-      complete: () => {
-        // Stream closed - this is an error condition for subscriptions
-        console.error(
-          `Client ${this.config.clientId}: Stream closed prematurely`
-        );
+      (error) => {
+        // Stream error - mark as failed
         this.stateTracker.markFailed();
       }
-    });
+    );
   }
   
   private processEvent(data: any): void {
@@ -180,16 +231,16 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
     };
   }
   
-  private cleanupSubscription(): void {
-    if (this.subscription) {
+  private async cleanupSubscription(): Promise<void> {
+    if (this.stream) {
       console.log(`Unsubscribing from GraphQL subscription for ${this.config.id}`);
-      this.subscription.unsubscribe();
-      this.subscription = undefined;
+      await this.stream.unsubscribe();
+      this.stream = undefined;
     }
   }
   
   async dispose(): Promise<void> {
     this.stateTracker.dispose();
-    this.cleanupSubscription();
+    await this.cleanupSubscription();
   }
 }
