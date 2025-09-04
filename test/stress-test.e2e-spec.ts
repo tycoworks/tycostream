@@ -147,21 +147,15 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       console.log(`Stress test completed successfully. All ${NUM_CLIENTS} clients received their department-filtered data.`);
       
       // Log final stats
-      const stats = testEnv.stats;
-      console.log('Client statistics:');
-      stats.forEach(stat => {
-        console.log(`  Client ${stat.clientId}: state size: ${stat.stateSize}`);
-      });
+      const stats = testEnv.getStats();
+      console.log(`Test completed: received ${stats.totalReceived}/${stats.totalExpected} total items across all clients`);
       
     } catch (error) {
       console.error('Test failed:', error);
       
-      // Log client stats on failure
-      const stats = testEnv.stats;
-      console.log('Client statistics at failure:');
-      stats.forEach(stat => {
-        console.log(`  Client ${stat.clientId}: state size: ${stat.stateSize}, finished: ${stat.isFinished}`);
-      });
+      // Log stats on failure
+      const stats = testEnv.getStats();
+      console.log(`Test failed: received ${stats.totalReceived}/${stats.totalExpected} total items`);
       
       throw error;
     }

@@ -1,4 +1,6 @@
 import { TestClient, GraphQLEndpoint } from './client';
+import { State } from './tracker';
+import { Stats } from './handler';
 
 export class TestClientManager<TData = any> {
   // === Client Management ===
@@ -10,8 +12,7 @@ export class TestClientManager<TData = any> {
   private createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
   
   // === Lifecycle State ===
-  private finishedCount = 0;
-  private stalledClients = new Set<string>();
+  private state: State = State.Active;
   private completionPromise: Promise<void>;
   private complete!: () => void;
   private fail!: (error: Error) => void;
@@ -47,8 +48,11 @@ export class TestClientManager<TData = any> {
       graphqlEndpoint: this.graphqlEndpoint,
       createWebhook: this.createWebhook,
       livenessTimeoutMs: this.livenessTimeoutMs,
-      onFinished: () => {
-        this.onClientFinished();
+      onCompleted: () => {
+        this.onClientCompleted();
+      },
+      onFailed: (error: Error) => {
+        this.onClientFailed(id, error);
       },
       onStalled: (clientId: string) => {
         this.onClientStalled(clientId);
@@ -62,60 +66,98 @@ export class TestClientManager<TData = any> {
     this.clients.set(id, client);
     console.log(`Created client '${id}' (${this.clients.size} total clients)`);
     
-    // Track completion
+    // Track completion (for catching unexpected errors)
     client.waitForCompletion().catch(error => {
-      console.error(`Client ${id} error:`, error.message);
-      this.checkIfAllStalled();
+      // This should rarely happen since we handle failures via onFailed callback
+      console.error(`Unexpected error from client ${id}: ${error.message}`);
     });
     
     return client;
   }
 
-  private onClientFinished() {
-    this.finishedCount++;
-    console.log(`Progress: ${this.finishedCount}/${this.clients.size} clients finished`);
+  private onClientCompleted() {
+    // Only process if not in a terminal state
+    if (this.state === State.Completed || this.state === State.Failed) return;
     
-    if (this.finishedCount === this.clients.size) {
+    // Check if ALL clients are completed
+    const allCompleted = Array.from(this.clients.values()).every(
+      client => client.getState() === State.Completed
+    );
+    
+    const finishedCount = Array.from(this.clients.values()).filter(
+      client => client.getState() === State.Completed
+    ).length;
+    
+    console.log(`Progress: ${finishedCount}/${this.clients.size} clients completed`);
+    
+    if (allCompleted) {
+      this.state = State.Completed;
       this.complete();
     }
   }
   
   private onClientStalled(clientId: string) {
-    this.stalledClients.add(clientId);
-    console.warn(`Client ${clientId} stalled. Total stalled: ${this.stalledClients.size}/${this.clients.size}`);
-    this.checkIfAllStalled();
+    // Only process if not in a terminal state
+    if (this.state === State.Completed || this.state === State.Failed) return;
+    
+    // Check if ALL clients are stalled
+    const allStalled = Array.from(this.clients.values()).every(
+      client => client.getState() === State.Stalled
+    );
+    
+    const stalledCount = Array.from(this.clients.values()).filter(
+      client => client.getState() === State.Stalled
+    ).length;
+    
+    console.warn(`Client ${clientId} stalled. Total stalled: ${stalledCount}/${this.clients.size}`);
+    
+    if (allStalled) {
+      this.state = State.Stalled;
+      // When all clients are stalled, fail the manager
+      this.fail(new Error(`All clients stalled - no data flowing to any client`));
+    }
+  }
+  
+  private onClientFailed(clientId: string, error: Error) {
+    // If any client fails, the manager fails
+    if (this.state !== State.Failed) {
+      this.state = State.Failed;
+      console.error(`Manager failed due to client ${clientId}: ${error.message}`);
+      this.fail(error);
+    }
   }
   
   private onClientRecovered(clientId: string) {
-    this.stalledClients.delete(clientId);
-    console.log(`Client ${clientId} recovered! Remaining stalled: ${this.stalledClients.size}`);
-  }
-  
-  private checkIfAllStalled() {
-    const stats = this.stats;
-    const activeClients = stats.filter(s => !s.isFinished && !s.isStalled);
-    const finishedCount = stats.filter(s => s.isFinished).length;
-    
-    // Check if ALL unfinished clients are stalled
-    if (activeClients.length === 0 && finishedCount < this.clients.size) {
-      const summary = stats.map(s => 
-        `Client ${s.clientId}: ${s.stateSize} rows, ${s.isFinished ? 'finished' : s.isStalled ? 'STALLED' : 'active'}`
-      ).join('\n  ');
+    // If we were stalled, we're now active again
+    if (this.state === State.Stalled) {
+      this.state = State.Active;
       
-      this.fail(new Error(
-        `All active clients are stalled! No data flowing to any client.\n  ${summary}`
-      ));
+      const stalledCount = Array.from(this.clients.values()).filter(
+        client => client.getState() === State.Stalled
+      ).length;
+      
+      console.log(`Client ${clientId} recovered! Remaining stalled: ${stalledCount}`);
     }
   }
+  
 
   dispose() {
     this.clients.forEach(client => client.dispose());
   }
 
-  get stats() {
-    return Array.from(this.clients.entries()).map(([id, client]) => ({
-      ...client.stats,
-      clientId: id
-    }));
+  getStats(): Stats {
+    let totalExpected = 0;
+    let totalReceived = 0;
+    
+    for (const client of this.clients.values()) {
+      const stats = client.getStats();
+      totalExpected += stats.totalExpected;
+      totalReceived += stats.totalReceived;
+    }
+    
+    return {
+      totalExpected,
+      totalReceived
+    };
   }
 }

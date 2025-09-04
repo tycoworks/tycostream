@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, HandlerCallbacks } from './handler';
+import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
 import { StateTracker, State } from './tracker';
 
 export interface TriggerConfig<TData = any> {
@@ -44,6 +44,10 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
       onCompleted: () => {
         console.log(`Trigger ${config.id} for client ${config.clientId} completed`);
         config.callbacks.onCompleted(config.id);
+      },
+      onFailed: () => {
+        // The error is already logged when we detect it
+        config.callbacks.onFailed(config.id, new Error(`Trigger ${config.id} failed`));
       }
     });
   }
@@ -74,20 +78,20 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
       
       if (result.error) {
         const errorMessage = result.error?.message || 'Unknown GraphQL error';
-        const contextError = new Error(
+        console.error(
           `Client ${this.config.clientId}: Trigger mutation error: ${errorMessage}`
         );
-        this.config.callbacks.onError(contextError);
+        this.stateTracker.markFailed();
         return;
       }
       
       console.log(`Client ${this.config.clientId}: Trigger created successfully with webhook URL: ${webhookUrl}`);
     } catch (error: any) {
       const errorMessage = error?.message || error?.toString() || 'Unknown error';
-      const contextError = new Error(
+      console.error(
         `Client ${this.config.clientId}: Failed to create trigger: ${errorMessage}`
       );
-      this.config.callbacks.onError(contextError);
+      this.stateTracker.markFailed();
     }
   }
   
@@ -129,7 +133,7 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
     return this.stateTracker.getState();
   }
   
-  getStats() {
+  getStats(): Stats {
     return {
       totalExpected: this.expectedEvents.length,
       totalReceived: this.receivedEvents.length

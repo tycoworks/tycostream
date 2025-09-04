@@ -2,6 +2,14 @@ import { ApolloClient } from '@apollo/client';
 import { State } from './tracker';
 
 /**
+ * Statistics for progress tracking
+ */
+export interface Stats {
+  totalExpected: number;
+  totalReceived: number;
+}
+
+/**
  * Callbacks for lifecycle events
  */
 export interface HandlerCallbacks {
@@ -9,9 +17,7 @@ export interface HandlerCallbacks {
   onStalled: (handlerId: string) => void;
   onRecovered: (handlerId: string) => void;
   onCompleted: (handlerId: string) => void;
-  
-  // Error callback
-  onError: (error: Error) => void;
+  onFailed: (handlerId: string, error: Error) => void;
 }
 
 /**
@@ -36,12 +42,8 @@ export interface EventStreamHandler {
   
   /**
    * Get statistics about received vs expected data
-   * @returns Object with totalExpected and totalReceived
    */
-  getStats(): {
-    totalExpected: number;
-    totalReceived: number;
-  };
+  getStats(): Stats;
   
   /**
    * Clean up any resources (unsubscribe, close connections, etc.)

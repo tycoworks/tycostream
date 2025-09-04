@@ -10,6 +10,7 @@ import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
 import { TestClientManager } from './manager';
 import { TestClient } from './client';
+import { Stats } from './handler';
 import sourcesConfig from '../../src/config/sources.config';
 
 /**
@@ -133,10 +134,10 @@ export class TestEnvironment {
   }
   
   /**
-   * Get statistics for all clients
+   * Get aggregated statistics for all clients
    */
-  get stats() {
-    return this.clientManager.stats;
+  getStats(): Stats {
+    return this.clientManager.getStats();
   }
   
   /**

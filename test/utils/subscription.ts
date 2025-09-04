@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, HandlerCallbacks } from './handler';
+import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
 import { StateTracker, State } from './tracker';
 
 export interface SubscriptionConfig<TData = any> {
@@ -42,6 +42,10 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
       onCompleted: () => {
         console.log(`Subscription ${config.id} for client ${config.clientId} completed`);
         config.callbacks.onCompleted(config.id);
+      },
+      onFailed: () => {
+        // The error is already logged when we detect it
+        config.callbacks.onFailed(config.id, new Error(`Subscription ${config.id} failed`));
       }
     });
   }
@@ -60,10 +64,10 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
       next: (result) => {
         if (result.error) {
           const errorMessage = result.error?.message || 'Unknown GraphQL error';
-          const contextError = new Error(
+          console.error(
             `Client ${this.config.clientId}: GraphQL error: ${errorMessage}`
           );
-          this.config.callbacks.onError(contextError);
+          this.stateTracker.markFailed();
           return;
         }
         
@@ -72,17 +76,17 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
       },
       error: (error) => {
         const errorMessage = error?.message || error?.toString() || 'Unknown error';
-        const contextError = new Error(
+        console.error(
           `Client ${this.config.clientId}: Subscription error: ${errorMessage}`
         );
-        this.config.callbacks.onError(contextError);
+        this.stateTracker.markFailed();
       },
       complete: () => {
         // Stream closed - this is an error condition for subscriptions
-        const error = new Error(
+        console.error(
           `Client ${this.config.clientId}: Stream closed prematurely`
         );
-        this.config.callbacks.onError(error);
+        this.stateTracker.markFailed();
       }
     });
   }
@@ -102,8 +106,8 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
     const { operation, data: rowData, fields } = responseData;
     
     if (!rowData) {
-      const error = new Error(`Received ${operation} operation without data`);
-      this.config.callbacks.onError(error);
+      console.error(`Received ${operation} operation without data`);
+      this.stateTracker.markFailed();
       return;
     }
     
@@ -135,8 +139,8 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
         break;
       
       default:
-        const error = new Error(`Unknown operation: ${operation}`);
-        this.config.callbacks.onError(error);
+        console.error(`Unknown operation: ${operation}`);
+        this.stateTracker.markFailed();
         return;
     }
     
@@ -167,7 +171,7 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
     return this.stateTracker.getState();
   }
   
-  getStats() {
+  getStats(): Stats {
     return {
       totalExpected: this.expectedState.size,
       totalReceived: this.currentState.size

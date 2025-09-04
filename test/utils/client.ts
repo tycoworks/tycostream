@@ -4,7 +4,7 @@ import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
 import { SubscriptionHandler } from './subscription';
 import { TriggerHandler } from './trigger';
-import { EventStreamHandler, HandlerCallbacks } from './handler';
+import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
 import { State } from './tracker';
 
 // GraphQL endpoint configuration
@@ -20,9 +20,10 @@ export interface TestClientOptions {
   graphqlEndpoint: GraphQLEndpoint;
   createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
   livenessTimeoutMs: number;
-  onFinished: () => void; // Called when client converges to expected state
-  onStalled: (clientId: string) => void; // Called when no data received for timeout period
-  onRecovered: (clientId: string) => void; // Called when data arrives after a stall
+  onCompleted: () => void; // Called when client completes successfully
+  onFailed: (error: Error) => void; // Called when client fails
+  onStalled: (clientId: string) => void; // Called when all handlers are stalled
+  onRecovered: (clientId: string) => void; // Called when data resumes after a stall
 }
 
 // Subscription options
@@ -47,7 +48,7 @@ export class TestClient<TData = any> {
   private handlers = new Map<string, EventStreamHandler>();
   
   // === Lifecycle State ===
-  private finished = false;
+  private state: State = State.Active;
   private completionPromise: Promise<void>;
   private complete!: () => void;
   private fail!: (error: Error) => void;
@@ -132,24 +133,23 @@ export class TestClient<TData = any> {
     this.handlers.clear();
   }
 
-  get stats() {
+  getState(): State {
+    return this.state;
+  }
+  
+  getStats(): Stats {
+    let totalExpected = 0;
     let totalReceived = 0;
     
     for (const handler of this.handlers.values()) {
       const stats = handler.getStats();
+      totalExpected += stats.totalExpected;
       totalReceived += stats.totalReceived;
     }
     
-    // Check if any handler is stalled
-    const isStalled = Array.from(this.handlers.values()).some(
-      handler => handler.getState() === State.Stalled
-    );
-    
     return {
-      clientId: this.options.clientId,
-      stateSize: totalReceived,
-      isFinished: this.finished,
-      isStalled
+      totalExpected,
+      totalReceived
     };
   }
 
@@ -160,43 +160,43 @@ export class TestClient<TData = any> {
       onStalled: (handlerId) => this.handleStalled(handlerId),
       onRecovered: (handlerId) => this.handleRecovered(handlerId),
       onCompleted: (handlerId) => this.handleCompleted(handlerId),
-      onError: (error) => this.handleError(error)
+      onFailed: (handlerId, error) => this.handleFailed(handlerId, error)
     };
   }
 
   private handleStalled(handlerId: string): void {
+    // Only update state if we're not in a terminal state
+    if (this.state === State.Completed || this.state === State.Failed) return;
+    
     // Check if ALL handlers are now stalled
     const allStalled = Array.from(this.handlers.values()).every(
       handler => handler.getState() === State.Stalled
     );
     
-    // Only notify if ALL handlers are stalled
-    if (allStalled) {
+    // Update state and notify if ALL handlers are stalled
+    if (allStalled && this.state !== State.Stalled) {
+      this.state = State.Stalled;
       console.log(`Client ${this.options.clientId} stalled - all handlers stopped receiving data`);
       this.options.onStalled(this.options.clientId);
     }
   }
   
   private handleRecovered(handlerId: string): void {
-    // Check if we were stalled before this recovery
-    // We need to check all OTHER handlers (not including this one that just recovered)
-    const wasStalled = Array.from(this.handlers.entries()).every(
-      ([id, handler]) => id === handlerId || handler.getState() === State.Stalled
-    );
-    
-    // Only notify if we're recovering from a fully stalled state
-    if (wasStalled) {
+    // Only process recovery if we were stalled
+    if (this.state === State.Stalled) {
+      this.state = State.Active;
       console.log(`Client ${this.options.clientId} recovered - at least one handler receiving data again`);
       this.options.onRecovered(this.options.clientId);
     }
   }
   
   private handleCompleted(handlerId: string): void {
-    this.checkIfFinished();
+    this.checkIfCompleted();
   }
   
-  private checkIfFinished(): void {
-    if (this.finished) return;
+  private checkIfCompleted(): void {
+    // Only check if we're not in a terminal state
+    if (this.state === State.Completed || this.state === State.Failed) return;
     
     // Check if ALL handlers are complete
     const allComplete = Array.from(this.handlers.values()).every(
@@ -204,19 +204,29 @@ export class TestClient<TData = any> {
     );
     
     if (allComplete && this.handlers.size > 0) {
-      this.finished = true;
-      console.log(`Client ${this.options.clientId} finished successfully - state size: ${this.stats.stateSize}`);
+      this.state = State.Completed;
+      const stats = this.getStats();
+      console.log(`Client ${this.options.clientId} completed successfully - received ${stats.totalReceived}/${stats.totalExpected} items`);
       
       // Notify manager
-      this.options.onFinished();
+      this.options.onCompleted();
       
       // Resolve the completion promise
       this.complete();
     }
   }
 
-  private handleError(error: Error) {
-    this.finished = true; // Prevent further processing
-    this.fail(error);
+  private handleFailed(handlerId: string, error: Error): void {
+    // If any handler fails, the client fails
+    if (this.state !== State.Failed) {
+      this.state = State.Failed;
+      console.error(`Client ${this.options.clientId} failed due to handler ${handlerId}: ${error.message}`);
+      
+      // Notify manager
+      this.options.onFailed(error);
+      
+      // Reject the completion promise
+      this.fail(error);
+    }
   }
 }
