@@ -99,7 +99,7 @@ export class TestClientManager<TData = any> {
     // Check if ALL unfinished clients are stalled
     if (activeClients.length === 0 && finishedCount < this.clients.size) {
       const summary = stats.map(s => 
-        `Client ${s.clientId}: ${s.eventCount} events, ${s.stateSize} rows, ${s.isFinished ? 'finished' : s.isStalled ? 'STALLED' : 'active'}`
+        `Client ${s.clientId}: ${s.stateSize} rows, ${s.isFinished ? 'finished' : s.isStalled ? 'STALLED' : 'active'}`
       ).join('\n  ');
       
       this.fail(new Error(

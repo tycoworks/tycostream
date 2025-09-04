@@ -5,6 +5,7 @@ import * as WebSocket from 'ws';
 import { SubscriptionHandler } from './subscription';
 import { TriggerHandler } from './trigger';
 import { EventStreamHandler, HandlerCallbacks } from './handler';
+import { State } from './tracker';
 
 // GraphQL endpoint configuration
 export interface GraphQLEndpoint {
@@ -47,15 +48,9 @@ export class TestClient<TData = any> {
   
   // === Lifecycle State ===
   private finished = false;
-  private stalled = false;
-  private eventCount = 0;
-  private lastEventTime = Date.now();
   private completionPromise: Promise<void>;
   private complete!: () => void;
   private fail!: (error: Error) => void;
-  
-  // === Liveness Tracking ===
-  private livenessTimeout?: NodeJS.Timeout;
 
   constructor(private options: TestClientOptions) {
     // Create Apollo client with WebSocket support using graphql-ws
@@ -86,20 +81,17 @@ export class TestClient<TData = any> {
       throw new Error(`Client ${this.options.clientId}: Handler '${id}' already exists`);
     }
     
-    // Start liveness monitoring if this is the first handler
-    if (this.handlers.size === 0) {
-      this.resetLiveness();
-    }
-    
     // Create and start subscription handler
     const handler = new SubscriptionHandler<TData>({
+      id,
       clientId: this.options.clientId,
       query: options.query,
       dataPath: options.dataPath,
       idField: options.idField,
       expectedState: options.expectedState,
       graphqlClient: this.graphqlClient,
-      callbacks: this.createHandlerCallbacks()
+      callbacks: this.createHandlerCallbacks(),
+      livenessTimeoutMs: this.options.livenessTimeoutMs
     });
     
     await handler.start();
@@ -111,20 +103,17 @@ export class TestClient<TData = any> {
       throw new Error(`Client ${this.options.clientId}: Handler '${id}' already exists`);
     }
     
-    // Start liveness monitoring if this is the first handler
-    if (this.handlers.size === 0) {
-      this.resetLiveness();
-    }
-    
     // Create and start trigger handler
     const handler = new TriggerHandler<TData>({
+      id,
       clientId: this.options.clientId,
       query: options.query,
       idField: options.idField,
       expectedEvents: options.expectedEvents,
       createWebhook: this.options.createWebhook,
       graphqlClient: this.graphqlClient,
-      callbacks: this.createHandlerCallbacks()
+      callbacks: this.createHandlerCallbacks(),
+      livenessTimeoutMs: this.options.livenessTimeoutMs
     });
     
     await handler.start();
@@ -136,8 +125,6 @@ export class TestClient<TData = any> {
   }
 
   dispose() {
-    this.clearLivenessTimeout();
-    
     // Dispose all handlers
     for (const handler of this.handlers.values()) {
       handler.dispose();
@@ -153,13 +140,16 @@ export class TestClient<TData = any> {
       totalReceived += stats.totalReceived;
     }
     
+    // Check if any handler is stalled
+    const isStalled = Array.from(this.handlers.values()).some(
+      handler => handler.getState() === State.Stalled
+    );
+    
     return {
       clientId: this.options.clientId,
-      eventCount: this.eventCount,
       stateSize: totalReceived,
-      lastEventTime: this.lastEventTime,
       isFinished: this.finished,
-      isStalled: this.stalled
+      isStalled
     };
   }
 
@@ -167,37 +157,55 @@ export class TestClient<TData = any> {
 
   private createHandlerCallbacks(): HandlerCallbacks {
     return {
-      onDataReceived: () => this.handleDataReceived(),
-      onCheckFinished: () => this.checkIfFinished(),
+      onStalled: (handlerId) => this.handleStalled(handlerId),
+      onRecovered: (handlerId) => this.handleRecovered(handlerId),
+      onCompleted: (handlerId) => this.handleCompleted(handlerId),
       onError: (error) => this.handleError(error)
     };
   }
 
-  private handleDataReceived(): void {
-    // Track event for liveness
-    this.eventCount++;
-    this.lastEventTime = Date.now();
+  private handleStalled(handlerId: string): void {
+    // Check if ALL handlers are now stalled
+    const allStalled = Array.from(this.handlers.values()).every(
+      handler => handler.getState() === State.Stalled
+    );
     
-    // Handle stalled recovery
-    if (this.stalled) {
-      this.stalled = false;
-      console.log(`Client ${this.options.clientId} recovered after stall - resuming with event ${this.stats.eventCount}`);
+    // Only notify if ALL handlers are stalled
+    if (allStalled) {
+      console.log(`Client ${this.options.clientId} stalled - all handlers stopped receiving data`);
+      this.options.onStalled(this.options.clientId);
+    }
+  }
+  
+  private handleRecovered(handlerId: string): void {
+    // Check if we were stalled before this recovery
+    // We need to check all OTHER handlers (not including this one that just recovered)
+    const wasStalled = Array.from(this.handlers.entries()).every(
+      ([id, handler]) => id === handlerId || handler.getState() === State.Stalled
+    );
+    
+    // Only notify if we're recovering from a fully stalled state
+    if (wasStalled) {
+      console.log(`Client ${this.options.clientId} recovered - at least one handler receiving data again`);
       this.options.onRecovered(this.options.clientId);
     }
-    this.resetLiveness();
   }
-
-  private checkIfFinished() {
+  
+  private handleCompleted(handlerId: string): void {
+    this.checkIfFinished();
+  }
+  
+  private checkIfFinished(): void {
     if (this.finished) return;
     
     // Check if ALL handlers are complete
-    const allComplete = Array.from(this.handlers.values()).every(handler => handler.isComplete());
+    const allComplete = Array.from(this.handlers.values()).every(
+      handler => handler.getState() === State.Completed
+    );
     
     if (allComplete && this.handlers.size > 0) {
       this.finished = true;
-      console.log(`Client ${this.options.clientId} finished successfully - events: ${this.eventCount}, state size: ${this.stats.stateSize}`);
-      
-      this.clearLivenessTimeout();
+      console.log(`Client ${this.options.clientId} finished successfully - state size: ${this.stats.stateSize}`);
       
       // Notify manager
       this.options.onFinished();
@@ -208,32 +216,7 @@ export class TestClient<TData = any> {
   }
 
   private handleError(error: Error) {
-    this.clearLivenessTimeout();
     this.finished = true; // Prevent further processing
     this.fail(error);
-  }
-
-  private resetLiveness() {
-    this.clearLivenessTimeout();
-    if (!this.finished) {
-      const timeoutMs = this.options.livenessTimeoutMs;
-      this.livenessTimeout = setTimeout(() => {
-        // Don't error out - just mark as stalled and notify manager
-        this.stalled = true;
-        const stats = this.stats;
-        console.warn(`Client ${this.options.clientId} stalled - no messages for ${timeoutMs}ms. Events: ${stats.eventCount}, State size: ${stats.stateSize}`);
-        this.options.onStalled(this.options.clientId);
-        
-        // Keep the liveness check going in case we recover
-        this.resetLiveness();
-      }, timeoutMs);
-    }
-  }
-
-  private clearLivenessTimeout() {
-    if (this.livenessTimeout) {
-      clearTimeout(this.livenessTimeout);
-      this.livenessTimeout = undefined;
-    }
   }
 }

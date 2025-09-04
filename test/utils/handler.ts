@@ -1,12 +1,16 @@
 import { ApolloClient } from '@apollo/client';
+import { State } from './tracker';
 
 /**
  * Callbacks for lifecycle events
  */
 export interface HandlerCallbacks {
-  // Lifecycle callbacks - called by handler to notify TestClient
-  onDataReceived: () => void;      // Called when any data arrives (for liveness tracking)
-  onCheckFinished: () => void;      // Called after processing to check completion
+  // State management callbacks
+  onStalled: (handlerId: string) => void;
+  onRecovered: (handlerId: string) => void;
+  onCompleted: (handlerId: string) => void;
+  
+  // Error callback
   onError: (error: Error) => void;
 }
 
@@ -15,7 +19,7 @@ export interface HandlerCallbacks {
  * Handlers are responsible for:
  * 1. Setting up the event source (WebSocket, webhook, etc.)
  * 2. Parsing transport-specific data formats
- * 3. Calling the appropriate callbacks in the correct order
+ * 3. Managing their own state lifecycle through HandlerStateTracker
  */
 export interface EventStreamHandler {
   /**
@@ -26,19 +30,17 @@ export interface EventStreamHandler {
   start(): Promise<void>;
   
   /**
-   * Check if the handler has received all expected data
-   * @returns true if all expected data has been received and matches
+   * Get the current state of the handler
    */
-  isComplete(): boolean;
+  getState(): State;
   
   /**
    * Get statistics about received vs expected data
-   * @returns Object with totalExpected, totalReceived, and isComplete
+   * @returns Object with totalExpected and totalReceived
    */
   getStats(): {
     totalExpected: number;
     totalReceived: number;
-    isComplete: boolean;
   };
   
   /**

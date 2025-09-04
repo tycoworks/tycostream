@@ -1,7 +1,9 @@
 import { ApolloClient, gql } from '@apollo/client';
 import { EventStreamHandler, HandlerCallbacks } from './handler';
+import { StateTracker, State } from './tracker';
 
 export interface SubscriptionConfig<TData = any> {
+  id: string; // The subscription ID
   clientId: string;
   query: string;
   dataPath: string; // Path to data in GraphQL response, e.g. "users" or "all_types"
@@ -9,6 +11,7 @@ export interface SubscriptionConfig<TData = any> {
   expectedState: Map<string | number, TData>;
   graphqlClient: ApolloClient;
   callbacks: HandlerCallbacks;
+  livenessTimeoutMs: number;
 }
 
 /**
@@ -20,9 +23,27 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   private currentState = new Map<string | number, TData>();
   private expectedState: Map<string | number, TData>;
   private startPromise?: Promise<void>;
+  private stateTracker: StateTracker;
   
   constructor(private config: SubscriptionConfig<TData>) {
     this.expectedState = config.expectedState;
+    
+    // Initialize state tracker with callbacks that include our ID
+    this.stateTracker = new StateTracker({
+      livenessTimeoutMs: config.livenessTimeoutMs,
+      onStalled: () => {
+        console.log(`Subscription ${config.id} for client ${config.clientId} stalled`);
+        config.callbacks.onStalled(config.id);
+      },
+      onRecovered: () => {
+        console.log(`Subscription ${config.id} for client ${config.clientId} recovered`);
+        config.callbacks.onRecovered(config.id);
+      },
+      onCompleted: () => {
+        console.log(`Subscription ${config.id} for client ${config.clientId} completed`);
+        config.callbacks.onCompleted(config.id);
+      }
+    });
   }
   
   async start(): Promise<void> {
@@ -67,14 +88,14 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   }
   
   private processEvent(data: any): void {
-    // First: notify that data was received (for liveness tracking)
-    this.config.callbacks.onDataReceived();
+    // Record activity for liveness tracking
+    this.stateTracker.recordActivity();
     
     // Extract operation and data from standard GraphQL response structure
     const responseData = data[this.config.dataPath];
     if (!responseData) {
       // No data at expected path, check if we're done
-      this.config.callbacks.onCheckFinished();
+      this.checkCompletion();
       return;
     }
     
@@ -119,11 +140,17 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
         return;
     }
     
-    // Last: check if we're finished (after state has been updated)
-    this.config.callbacks.onCheckFinished();
+    // Check if we're finished after state update
+    this.checkCompletion();
   }
   
-  isComplete(): boolean {
+  private checkCompletion(): void {
+    if (this.isComplete()) {
+      this.stateTracker.markCompleted();
+    }
+  }
+  
+  private isComplete(): boolean {
     if (this.currentState.size === this.expectedState.size) {
       for (const [id, expectedData] of this.expectedState) {
         const currentData = this.currentState.get(id);
@@ -136,15 +163,19 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
     return false;
   }
   
+  getState(): State {
+    return this.stateTracker.getState();
+  }
+  
   getStats() {
     return {
       totalExpected: this.expectedState.size,
-      totalReceived: this.currentState.size,
-      isComplete: this.isComplete()
+      totalReceived: this.currentState.size
     };
   }
   
   dispose(): void {
+    this.stateTracker.dispose();
     if (this.subscription) {
       this.subscription.unsubscribe();
       this.subscription = undefined;

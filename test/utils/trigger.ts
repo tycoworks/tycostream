@@ -1,7 +1,9 @@
 import { ApolloClient, gql } from '@apollo/client';
 import { EventStreamHandler, HandlerCallbacks } from './handler';
+import { StateTracker, State } from './tracker';
 
 export interface TriggerConfig<TData = any> {
+  id: string; // The trigger ID
   clientId: string;
   query: string; // GraphQL mutation to create trigger
   idField: string; // Primary key field for state tracking
@@ -9,6 +11,7 @@ export interface TriggerConfig<TData = any> {
   createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
   graphqlClient: ApolloClient;
   callbacks: HandlerCallbacks;
+  livenessTimeoutMs: number;
 }
 
 /**
@@ -20,11 +23,29 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
   private receivedEvents: TData[] = [];
   private expectedEvents: TData[];
   private startPromise?: Promise<void>;
+  private stateTracker: StateTracker;
   
   constructor(private config: TriggerConfig<TData>) {
     // Generate unique trigger name
     this.triggerName = `trigger_${config.clientId}_${Date.now()}`;
     this.expectedEvents = config.expectedEvents;
+    
+    // Initialize state tracker with callbacks that include our ID
+    this.stateTracker = new StateTracker({
+      livenessTimeoutMs: config.livenessTimeoutMs,
+      onStalled: () => {
+        console.log(`Trigger ${config.id} for client ${config.clientId} stalled`);
+        config.callbacks.onStalled(config.id);
+      },
+      onRecovered: () => {
+        console.log(`Trigger ${config.id} for client ${config.clientId} recovered`);
+        config.callbacks.onRecovered(config.id);
+      },
+      onCompleted: () => {
+        console.log(`Trigger ${config.id} for client ${config.clientId} completed`);
+        config.callbacks.onCompleted(config.id);
+      }
+    });
   }
   
   async start(): Promise<void> {
@@ -71,8 +92,8 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
   }
   
   private processEvent(payload: any): void {
-    // First: notify that data was received (for liveness tracking)
-    this.config.callbacks.onDataReceived();
+    // Record activity for liveness tracking
+    this.stateTracker.recordActivity();
     
     // Remove timestamp from payload for comparison (it varies)
     // In future, also remove eventId when tycostream provides it
@@ -81,11 +102,17 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
     // Add event to received list
     this.receivedEvents.push(comparablePayload as TData);
     
-    // Last: check if we're finished (after state has been updated)
-    this.config.callbacks.onCheckFinished();
+    // Check if we're finished after state update
+    this.checkCompletion();
   }
   
-  isComplete(): boolean {
+  private checkCompletion(): void {
+    if (this.isComplete()) {
+      this.stateTracker.markCompleted();
+    }
+  }
+  
+  private isComplete(): boolean {
     if (this.receivedEvents.length === this.expectedEvents.length) {
       // Compare each event in sequence
       for (let i = 0; i < this.expectedEvents.length; i++) {
@@ -98,16 +125,19 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
     return false;
   }
   
+  getState(): State {
+    return this.stateTracker.getState();
+  }
+  
   getStats() {
     return {
       totalExpected: this.expectedEvents.length,
-      totalReceived: this.receivedEvents.length,
-      isComplete: this.isComplete()
+      totalReceived: this.receivedEvents.length
     };
   }
   
   dispose(): void {
+    this.stateTracker.dispose();
     // Webhook handlers are cleaned up by the webhook server
-    // Nothing specific to dispose here
   }
 }
