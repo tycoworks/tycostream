@@ -73,6 +73,7 @@ export class TestEnvironment {
   private databasePort: number;  // Mapped port from Docker container
   private webhookApp: express.Application;
   private webhookServer: Server;
+  private webhookHandlers = new Map<string, (payload: any) => Promise<void>>();
   private config: TestEnvironmentConfig;
   private clientManager: TestClientManager;
 
@@ -121,19 +122,17 @@ export class TestEnvironment {
   /**
    * Register a webhook endpoint
    */
-  registerWebhook(endpoint: string, handler: (payload: any) => Promise<void>): string {
-    // Register the endpoint
-    this.webhookApp.post(endpoint, async (req, res) => {
-      try {
-        await handler(req.body);
-        res.status(200).send('OK');
-      } catch (error) {
-        console.error('Webhook handler error:', error);
-        res.status(500).send('Handler error');
-      }
-    });
-    
+  private registerWebhook(endpoint: string, handler: (payload: any) => Promise<void>): string {
+    // Store the handler in the map
+    this.webhookHandlers.set(endpoint, handler);
     return `http://localhost:${this.config.webhook.port}${endpoint}`;
+  }
+  
+  /**
+   * Unregister a webhook endpoint
+   */
+  private unregisterWebhook(endpoint: string): void {
+    this.webhookHandlers.delete(endpoint);
   }
   
   /**
@@ -319,6 +318,24 @@ export class TestEnvironment {
   private createWebhookServer(): void {
     this.webhookApp = express();
     this.webhookApp.use(express.json());
+    
+    // Single wildcard route that dynamically looks up handlers
+    this.webhookApp.post('*', async (req, res) => {
+      const handler = this.webhookHandlers.get(req.path);
+      if (!handler) {
+        res.status(404).send('Webhook not found');
+        return;
+      }
+      
+      try {
+        await handler(req.body);
+        res.status(200).send('OK');
+      } catch (error) {
+        console.error('Webhook handler error:', error);
+        res.status(500).send('Handler error');
+      }
+    });
+    
     this.webhookServer = this.webhookApp.listen(this.config.webhook.port);
   }
   
@@ -337,8 +354,7 @@ export class TestEnvironment {
         return this.registerWebhook(endpoint, handler);
       },
       unregister: (endpoint: string) => {
-        // TODO: Implement webhook unregistration
-        console.log(`Unregistering webhook: ${endpoint}`);
+        this.unregisterWebhook(endpoint);
       }
     };
     

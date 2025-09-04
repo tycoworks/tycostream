@@ -105,7 +105,7 @@ export class TestClient<TData = any> {
       query: options.query,
       idField: options.idField,
       expectedEvents: options.expectedEvents,
-      createWebhook: this.options.webhookEndpoint.register,
+      webhookEndpoint: this.options.webhookEndpoint,
       graphqlClient: this.graphqlClient,
       callbacks: this.createHandlerCallbacks(),
       livenessTimeoutMs: this.options.livenessTimeoutMs

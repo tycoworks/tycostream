@@ -1,6 +1,7 @@
 import { ApolloClient, gql } from '@apollo/client';
 import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
 import { StateTracker, State } from './tracker';
+import { WebhookEndpoint } from './environment';
 
 export interface TriggerConfig<TData = any> {
   id: string; // The trigger ID
@@ -8,7 +9,7 @@ export interface TriggerConfig<TData = any> {
   query: string; // GraphQL mutation to create trigger
   idField: string; // Primary key field for state tracking
   expectedEvents: TData[]; // Expected webhook payloads in order
-  createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
+  webhookEndpoint: WebhookEndpoint;
   graphqlClient: ApolloClient;
   callbacks: HandlerCallbacks;
   livenessTimeoutMs: number;
@@ -24,6 +25,7 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
   private expectedEvents: TData[];
   private startPromise?: Promise<void>;
   private stateTracker: StateTracker;
+  private webhookPath?: string; // Store the webhook path for unregistration
   
   constructor(private config: TriggerConfig<TData>) {
     // Generate unique trigger name
@@ -61,8 +63,8 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
   
   private async doStart(): Promise<void> {
     // Step 1: Register webhook endpoint with our callback handler
-    const endpoint = `/webhook/${this.config.clientId}/${this.triggerName}`;
-    const webhookUrl = this.config.createWebhook(endpoint, async (payload) => {
+    this.webhookPath = `/webhook/${this.config.clientId}/${this.triggerName}`;
+    const webhookUrl = this.config.webhookEndpoint.register(this.webhookPath, async (payload) => {
       console.log(`Client ${this.config.clientId} received webhook for trigger ${this.triggerName}`);
       this.processEvent(payload);
     });
@@ -142,6 +144,10 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
   
   dispose(): void {
     this.stateTracker.dispose();
-    // Webhook handlers are cleaned up by the webhook server
+    // Unregister the webhook endpoint
+    if (this.webhookPath) {
+      this.config.webhookEndpoint.unregister(this.webhookPath);
+      console.log(`Unregistered webhook: ${this.webhookPath}`);
+    }
   }
 }
