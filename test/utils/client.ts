@@ -32,6 +32,7 @@ export interface SubscriptionOptions<TData = any> {
 // Trigger/webhook options
 export interface TriggerOptions<TData = any> {
   query: string;                         // GraphQL mutation to create trigger
+  deleteQuery?: string;                  // Optional GraphQL mutation to delete trigger
   expectedEvents: TData[];              // Expected webhook payloads in order
   idField: string;                      // Primary key field for state tracking
 }
@@ -104,6 +105,7 @@ export class TestClient<TData = any> {
       id,
       clientId: this.options.clientId,
       query: options.query,
+      deleteQuery: options.deleteQuery,
       idField: options.idField,
       expectedEvents: options.expectedEvents,
       webhookEndpoint: this.options.webhookEndpoint,

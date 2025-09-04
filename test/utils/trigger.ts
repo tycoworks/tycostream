@@ -7,6 +7,7 @@ export interface TriggerConfig<TData = any> {
   id: string; // The trigger ID
   clientId: string;
   query: string; // GraphQL mutation to create trigger
+  deleteQuery?: string; // Optional GraphQL mutation to delete trigger
   idField: string; // Primary key field for state tracking
   expectedEvents: TData[]; // Expected webhook payloads in order
   webhookEndpoint: WebhookEndpoint;
@@ -21,6 +22,7 @@ export interface TriggerConfig<TData = any> {
  */
 export class TriggerHandler<TData = any> implements EventStreamHandler {
   private triggerName: string;
+  private triggerData?: any; // Store the response from create mutation
   private receivedEvents: TData[] = [];
   private expectedEvents: TData[];
   private startPromise?: Promise<void>;
@@ -89,6 +91,9 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
         return;
       }
       
+      // Store the trigger data from the response (contains trigger name, ID, etc.)
+      this.triggerData = result.data;
+      
       console.log(`Client ${this.config.clientId}: Trigger created successfully with webhook URL: ${webhookUrl}`);
     } catch (error: any) {
       const errorMessage = error?.message || error?.toString() || 'Unknown error';
@@ -145,24 +150,26 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
   }
   
   private async cleanupTrigger(): Promise<void> {
-    // Delete the trigger via GraphQL mutation
-    if (this.triggerName) {
+    // Delete the trigger via GraphQL mutation if deleteQuery is provided
+    if (this.config.deleteQuery && this.triggerData) {
       try {
-        console.log(`Deleting trigger ${this.triggerName} for ${this.config.id}`);
-        const deleteMutation = gql`
-          mutation DeleteTrigger($name: String!) {
-            deleteTrigger(name: $name)
-          }
-        `;
+        console.log(`Deleting trigger for ${this.config.id}`);
         
+        // Extract the first mutation result from the data
+        // The structure is: { mutationName: { ...fields } }
+        const mutationResult = Object.values(this.triggerData)[0] as any;
+        
+        // Pass the mutation result as variables for the delete query
         await this.config.graphqlClient.mutate({
-          mutation: deleteMutation,
-          variables: { name: this.triggerName }
+          mutation: gql`${this.config.deleteQuery}`,
+          variables: mutationResult
         });
         
-        console.log(`Deleted trigger ${this.triggerName}`);
+        console.log(`Deleted trigger for ${this.config.id}`);
+        // Clear trigger data to prevent duplicate deletion
+        this.triggerData = undefined;
       } catch (error: any) {
-        console.error(`Failed to delete trigger ${this.triggerName}: ${error.message}`);
+        console.error(`Failed to delete trigger for ${this.config.id}: ${error.message}`);
       }
     }
     
