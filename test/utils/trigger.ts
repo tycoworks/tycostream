@@ -1,6 +1,6 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, EventStream, HandlerCallbacks, Stats } from './events';
-import { StateTracker, State } from './tracker';
+import { EventStreamHandler, EventStream, EventProcessor, GenericEventHandler, GenericHandlerConfig, HandlerCallbacks, Stats } from './events';
+import { State } from './tracker';
 import { WebhookEndpoint } from './webhook';
 
 /**
@@ -104,6 +104,47 @@ class TriggerStream implements EventStream<any> {
   }
 }
 
+/**
+ * Processes trigger events by collecting them in order
+ * Handles webhook payload comparison (excluding timestamp)
+ */
+class TriggerProcessor<TData = any> implements EventProcessor<TData> {
+  private receivedEvents: TData[] = [];
+  
+  constructor(
+    private expectedEvents: TData[]
+  ) {}
+  
+  processEvent(data: any): void {
+    // Remove timestamp from payload for comparison (it varies)
+    // In future, also remove eventId when tycostream provides it
+    const { timestamp, ...comparablePayload } = data;
+    
+    // Add event to received list
+    this.receivedEvents.push(comparablePayload as TData);
+  }
+  
+  isComplete(): boolean {
+    if (this.receivedEvents.length === this.expectedEvents.length) {
+      // Compare each event in sequence
+      for (let i = 0; i < this.expectedEvents.length; i++) {
+        if (JSON.stringify(this.receivedEvents[i]) !== JSON.stringify(this.expectedEvents[i])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+  
+  getStats(): Stats {
+    return {
+      totalExpected: this.expectedEvents.length,
+      totalReceived: this.receivedEvents.length
+    };
+  }
+}
+
 export interface TriggerConfig<TData = any> {
   id: string; // The trigger ID
   clientId: string;
@@ -119,23 +160,21 @@ export interface TriggerConfig<TData = any> {
 
 /**
  * Handles GraphQL triggers with webhook callbacks
- * Creates a trigger via mutation and processes webhook events
+ * Creates the appropriate stream and processor, then delegates to GenericEventHandler
  */
 export class TriggerHandler<TData = any> implements EventStreamHandler {
+  private handler: GenericEventHandler<TData>;
   private triggerName: string;
-  private stream: EventStream<any>;
-  private receivedEvents: TData[] = [];
-  private expectedEvents: TData[];
-  private startPromise?: Promise<void>;
-  private stateTracker: StateTracker;
   
   constructor(private config: TriggerConfig<TData>) {
     // Generate unique trigger name
     this.triggerName = `trigger_${config.clientId}_${Date.now()}`;
-    this.expectedEvents = config.expectedEvents;
+    
+    // Create the processor
+    const processor = new TriggerProcessor<TData>(config.expectedEvents);
     
     // Create the stream
-    this.stream = new TriggerStream(
+    const stream = new TriggerStream(
       config.clientId,
       this.triggerName,
       config.webhookEndpoint,
@@ -145,103 +184,31 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
       config.id
     );
     
-    // Initialize state tracker with callbacks that include our ID
-    this.stateTracker = new StateTracker({
-      livenessTimeoutMs: config.livenessTimeoutMs,
-      onStalled: () => {
-        console.log(`Trigger ${config.id} for client ${config.clientId} stalled`);
-        config.callbacks.onStalled(config.id);
-      },
-      onRecovered: () => {
-        console.log(`Trigger ${config.id} for client ${config.clientId} recovered`);
-        config.callbacks.onRecovered(config.id);
-      },
-      onCompleted: async () => {
-        console.log(`Trigger ${config.id} for client ${config.clientId} completed`);
-        await this.cleanupTrigger();
-        config.callbacks.onCompleted(config.id);
-      },
-      onFailed: async () => {
-        // The error is already logged when we detect it
-        await this.cleanupTrigger();
-        config.callbacks.onFailed(config.id, new Error(`Trigger ${config.id} failed`));
-      }
-    });
+    // Create the generic handler config
+    const handlerConfig: GenericHandlerConfig = {
+      id: config.id,
+      clientId: config.clientId,
+      callbacks: config.callbacks,
+      livenessTimeoutMs: config.livenessTimeoutMs
+    };
+    
+    // Create the generic handler with stream and processor
+    this.handler = new GenericEventHandler<TData>(stream, processor, handlerConfig);
   }
   
   async start(): Promise<void> {
-    if (!this.startPromise) {
-      this.startPromise = this.doStart();
-    }
-    return this.startPromise;
-  }
-  
-  private async doStart(): Promise<void> {
-    // Subscribe to the stream
-    await this.stream.subscribe(
-      (data) => {
-        // Process the webhook data
-        this.processEvent(data);
-      },
-      async (error) => {
-        // Stream error - mark as failed
-        this.stateTracker.markFailed();
-      }
-    );
-  }
-  
-  private processEvent(payload: any): void {
-    // Record activity for liveness tracking
-    this.stateTracker.recordActivity();
-    
-    // Remove timestamp from payload for comparison (it varies)
-    // In future, also remove eventId when tycostream provides it
-    const { timestamp, ...comparablePayload } = payload;
-    
-    // Add event to received list
-    this.receivedEvents.push(comparablePayload as TData);
-    
-    // Check if we're finished after state update
-    this.checkCompletion();
-  }
-  
-  private checkCompletion(): void {
-    if (this.isComplete()) {
-      this.stateTracker.markCompleted();
-    }
-  }
-  
-  private isComplete(): boolean {
-    if (this.receivedEvents.length === this.expectedEvents.length) {
-      // Compare each event in sequence
-      for (let i = 0; i < this.expectedEvents.length; i++) {
-        if (JSON.stringify(this.receivedEvents[i]) !== JSON.stringify(this.expectedEvents[i])) {
-          return false;
-        }
-      }
-      return true;
-    }
-    return false;
+    return this.handler.start();
   }
   
   getState(): State {
-    return this.stateTracker.getState();
+    return this.handler.getState();
   }
   
   getStats(): Stats {
-    return {
-      totalExpected: this.expectedEvents.length,
-      totalReceived: this.receivedEvents.length
-    };
-  }
-  
-  private async cleanupTrigger(): Promise<void> {
-    console.log(`Cleaning up trigger ${this.config.id}`);
-    await this.stream.unsubscribe();
+    return this.handler.getStats();
   }
   
   async dispose(): Promise<void> {
-    this.stateTracker.dispose();
-    await this.cleanupTrigger();
+    return this.handler.dispose();
   }
 }
