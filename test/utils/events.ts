@@ -1,4 +1,12 @@
-import { State } from './tracker';
+/**
+ * State lifecycle for event handlers
+ */
+export enum State {
+  Active = 'active',
+  Stalled = 'stalled',
+  Completed = 'completed',
+  Failed = 'failed'
+}
 
 /**
  * Statistics for progress tracking
@@ -62,9 +70,9 @@ export interface HandlerCallbacks {
 }
 
 /**
- * Configuration for GenericEventHandler
+ * Configuration for EventHandler
  */
-export interface GenericHandlerConfig {
+export interface EventHandlerConfig {
   id: string;                         // Handler ID for logging
   clientId: string;                   // Client ID for logging
   callbacks: HandlerCallbacks;        // Lifecycle callbacks
@@ -72,10 +80,10 @@ export interface GenericHandlerConfig {
 }
 
 /**
- * Generic event handler that works with any EventStream and EventProcessor
+ * Event handler that works with any EventStream and EventProcessor
  * Manages state lifecycle, liveness checking, and coordinates between stream and processor
  */
-export class GenericEventHandler<TData = any> {
+export class EventHandler<TData = any> {
   private startPromise?: Promise<void>;
   
   // State tracking fields
@@ -85,7 +93,7 @@ export class GenericEventHandler<TData = any> {
   constructor(
     private stream: EventStream<any>,
     private processor: EventProcessor<TData>,
-    private config: GenericHandlerConfig
+    private config: EventHandlerConfig
   ) {
     // Start the liveness timer immediately
     this.resetLivenessTimer();

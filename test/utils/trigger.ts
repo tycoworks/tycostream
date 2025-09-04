@@ -1,6 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStream, EventProcessor, GenericEventHandler, GenericHandlerConfig, HandlerCallbacks, Stats } from './events';
-import { State } from './tracker';
+import { EventStream, EventProcessor, EventHandler, EventHandlerConfig, HandlerCallbacks, Stats, State } from './events';
 import { WebhookEndpoint } from './webhook';
 
 /**
@@ -163,11 +162,11 @@ export interface TriggerConfig<TData = any> {
 
 /**
  * Creates a GraphQL trigger handler
- * Sets up the appropriate stream and processor, then returns a GenericEventHandler
+ * Sets up the appropriate stream and processor, then returns an EventHandler
  */
 export function createTriggerHandler<TData = any>(
   config: TriggerConfig<TData>
-): GenericEventHandler<TData> {
+): EventHandler<TData> {
   // Create the processor
   const processor = new TriggerProcessor<TData>(config.expectedEvents);
   
@@ -181,14 +180,14 @@ export function createTriggerHandler<TData = any>(
     config.id
   );
   
-  // Create the generic handler config
-  const handlerConfig: GenericHandlerConfig = {
+  // Create the handler config
+  const handlerConfig: EventHandlerConfig = {
     id: config.id,
     clientId: config.clientId,
     callbacks: config.callbacks,
     livenessTimeoutMs: config.livenessTimeoutMs
   };
   
-  // Create and return the generic handler with stream and processor
-  return new GenericEventHandler<TData>(stream, processor, handlerConfig);
+  // Create and return the handler with stream and processor
+  return new EventHandler<TData>(stream, processor, handlerConfig);
 }

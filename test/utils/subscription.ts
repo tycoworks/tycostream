@@ -1,6 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStream, EventProcessor, GenericEventHandler, GenericHandlerConfig, HandlerCallbacks, Stats } from './events';
-import { State } from './tracker';
+import { EventStream, EventProcessor, EventHandler, EventHandlerConfig, HandlerCallbacks, Stats, State } from './events';
 
 /**
  * GraphQL subscription event stream
@@ -162,11 +161,11 @@ export interface SubscriptionConfig<TData = any> {
 
 /**
  * Creates a GraphQL subscription handler
- * Sets up the appropriate stream and processor, then returns a GenericEventHandler
+ * Sets up the appropriate stream and processor, then returns an EventHandler
  */
 export function createSubscriptionHandler<TData = any>(
   config: SubscriptionConfig<TData>
-): GenericEventHandler<TData> {
+): EventHandler<TData> {
   // Create the processor with expected state
   const processor = new SubscriptionProcessor<TData>(
     config.expectedState,
@@ -182,14 +181,14 @@ export function createSubscriptionHandler<TData = any>(
     config.id
   );
   
-  // Create the generic handler config
-  const handlerConfig: GenericHandlerConfig = {
+  // Create the handler config
+  const handlerConfig: EventHandlerConfig = {
     id: config.id,
     clientId: config.clientId,
     callbacks: config.callbacks,
     livenessTimeoutMs: config.livenessTimeoutMs
   };
   
-  // Create and return the generic handler with stream and processor
-  return new GenericEventHandler<TData>(stream, processor, handlerConfig);
+  // Create and return the handler with stream and processor
+  return new EventHandler<TData>(stream, processor, handlerConfig);
 }

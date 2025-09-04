@@ -4,8 +4,7 @@ import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
 import { createSubscriptionHandler } from './subscription';
 import { createTriggerHandler } from './trigger';
-import { GenericEventHandler, HandlerCallbacks, Stats } from './events';
-import { State } from './tracker';
+import { EventHandler, HandlerCallbacks, Stats, State } from './events';
 import { GraphQLEndpoint } from './environment';
 import { WebhookEndpoint } from './webhook';
 
@@ -41,7 +40,7 @@ export class TestClient<TData = any> {
   private graphqlClient: ApolloClient;
   
   // === Handlers ===
-  private handlers = new Map<string, GenericEventHandler>();
+  private handlers = new Map<string, EventHandler>();
   
   // === Lifecycle State ===
   private state: State = State.Active;

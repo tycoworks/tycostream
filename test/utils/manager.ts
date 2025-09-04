@@ -1,6 +1,5 @@
 import { TestClient } from './client';
-import { State } from './tracker';
-import { Stats } from './events';
+import { State, Stats } from './events';
 import { GraphQLEndpoint } from './environment';
 import { WebhookEndpoint } from './webhook';
 
