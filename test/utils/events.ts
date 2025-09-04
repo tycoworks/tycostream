@@ -79,11 +79,13 @@ export interface EventHandlerConfig {
   livenessTimeoutMs: number;          // Timeout for liveness checking
 }
 
+import { StatefulItem } from './state';
+
 /**
  * Event handler that works with any EventStream and EventProcessor
  * Manages state lifecycle, liveness checking, and coordinates between stream and processor
  */
-export class EventHandler<TData = any> {
+export class EventHandler<TData = any> implements StatefulItem {
   private startPromise?: Promise<void>;
   
   // State tracking fields

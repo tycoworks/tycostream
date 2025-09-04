@@ -1,22 +1,17 @@
 import { TestClient } from './client';
-import { State, Stats } from './events';
+import { Stats } from './events';
+import { State, StateManager, StatefulItem } from './state';
 import { GraphQLEndpoint } from './environment';
 import { WebhookEndpoint } from './webhook';
 
-export class TestClientManager<TData = any> {
-  // === Client Management ===
-  private clients = new Map<string, TestClient<TData>>();
+export class TestClientManager<TData = any> implements StatefulItem {
+  // === State Management ===
+  private stateManager: StateManager<TestClient<TData>>;
   
   // === Configuration ===
   private livenessTimeoutMs: number;
   private graphqlEndpoint: GraphQLEndpoint;
   private webhookEndpoint: WebhookEndpoint;
-  
-  // === Lifecycle State ===
-  private state: State = State.Active;
-  private completionPromise: Promise<void>;
-  private complete!: () => void;
-  private fail!: (error: Error) => void;
 
   constructor(
     graphqlEndpoint: GraphQLEndpoint,
@@ -26,46 +21,40 @@ export class TestClientManager<TData = any> {
     this.graphqlEndpoint = graphqlEndpoint;
     this.webhookEndpoint = webhookEndpoint;
     this.livenessTimeoutMs = livenessTimeoutMs;
-    this.completionPromise = new Promise((complete, fail) => {
-      this.complete = complete;
-      this.fail = fail;
-    });
+    
+    // Initialize state manager
+    this.stateManager = new StateManager<TestClient<TData>>(
+      'Manager',
+      true  // Fail on stall
+    );
   }
 
 
   async waitForCompletion(): Promise<void> {
     // Wait for all clients to finish
-    return this.completionPromise;
+    return this.stateManager.waitForCompletion();
+  }
+  
+  getState(): State {
+    return this.stateManager.getState();
   }
 
   createClient(id: string): TestClient<TData> {
-    if (this.clients.has(id)) {
-      throw new Error(`Client ${id} already exists`);
-    }
-    
     // Create new client
     const client = new TestClient<TData>({
       clientId: id,
       graphqlEndpoint: this.graphqlEndpoint,
       webhookEndpoint: this.webhookEndpoint,
       livenessTimeoutMs: this.livenessTimeoutMs,
-      onCompleted: () => {
-        this.onClientCompleted();
-      },
-      onFailed: (error: Error) => {
-        this.onClientFailed(id, error);
-      },
-      onStalled: (clientId: string) => {
-        this.onClientStalled(clientId);
-      },
-      onRecovered: (clientId: string) => {
-        this.onClientRecovered(clientId);
-      }
+      onCompleted: () => this.stateManager.handleChildStateChange(),
+      onFailed: (error: Error) => this.stateManager.handleChildStateChange(),
+      onStalled: (clientId: string) => this.stateManager.handleChildStateChange(),
+      onRecovered: (clientId: string) => this.stateManager.handleChildStateChange()
     });
 
-    // Store the client
-    this.clients.set(id, client);
-    console.log(`Created client '${id}' (${this.clients.size} total clients)`);
+    // Add to state manager
+    this.stateManager.add(id, client);
+    console.log(`Created client '${id}' (${this.stateManager.getItems().size} total clients)`);
     
     // Track completion (for catching unexpected errors)
     client.waitForCompletion().catch(error => {
@@ -76,69 +65,10 @@ export class TestClientManager<TData = any> {
     return client;
   }
 
-  private onClientCompleted() {
-    // Check if ALL clients are completed
-    const allCompleted = Array.from(this.clients.values()).every(
-      client => client.getState() === State.Completed
-    );
-    
-    const finishedCount = Array.from(this.clients.values()).filter(
-      client => client.getState() === State.Completed
-    ).length;
-    
-    console.log(`Progress: ${finishedCount}/${this.clients.size} clients completed`);
-    
-    if (allCompleted) {
-      this.state = State.Completed;
-      this.complete();
-    }
-  }
-  
-  private onClientStalled(clientId: string) {
-    // Check if ALL clients are stalled
-    const allStalled = Array.from(this.clients.values()).every(
-      client => client.getState() === State.Stalled
-    );
-    
-    const stalledCount = Array.from(this.clients.values()).filter(
-      client => client.getState() === State.Stalled
-    ).length;
-    
-    console.warn(`Client ${clientId} stalled. Total stalled: ${stalledCount}/${this.clients.size}`);
-    
-    if (allStalled) {
-      this.state = State.Stalled;
-      // When all clients are stalled, fail the manager
-      this.fail(new Error(`All clients stalled - no data flowing to any client`));
-    }
-  }
-  
-  private onClientFailed(clientId: string, error: Error) {
-    // If any client fails, the manager fails
-    if (this.state !== State.Failed) {
-      this.state = State.Failed;
-      console.error(`Manager failed due to client ${clientId}: ${error.message}`);
-      this.fail(error);
-    }
-  }
-  
-  private onClientRecovered(clientId: string) {
-    // If we were stalled, we're now active again
-    if (this.state === State.Stalled) {
-      this.state = State.Active;
-      
-      const stalledCount = Array.from(this.clients.values()).filter(
-        client => client.getState() === State.Stalled
-      ).length;
-      
-      console.log(`Client ${clientId} recovered! Remaining stalled: ${stalledCount}`);
-    }
-  }
-  
-
   async dispose(): Promise<void> {
+    const clients = this.stateManager.getItems();
     await Promise.all(
-      Array.from(this.clients.values()).map(client => client.dispose())
+      Array.from(clients.values()).map(client => client.dispose())
     );
   }
 
@@ -146,7 +76,8 @@ export class TestClientManager<TData = any> {
     let totalExpected = 0;
     let totalReceived = 0;
     
-    for (const client of this.clients.values()) {
+    const clients = this.stateManager.getItems();
+    for (const client of clients.values()) {
       const stats = client.getStats();
       totalExpected += stats.totalExpected;
       totalReceived += stats.totalReceived;

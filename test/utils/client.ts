@@ -5,6 +5,7 @@ import * as WebSocket from 'ws';
 import { createSubscriptionHandler } from './subscription';
 import { createTriggerHandler } from './trigger';
 import { EventHandler, HandlerCallbacks, Stats, State } from './events';
+import { StateManager, StatefulItem } from './state';
 import { GraphQLEndpoint } from './environment';
 import { WebhookEndpoint } from './webhook';
 
@@ -36,17 +37,11 @@ export interface TriggerOptions<TData = any> {
   idField: string;                      // Primary key field for state tracking
 }
 
-export class TestClient<TData = any> {
+export class TestClient<TData = any> implements StatefulItem {
   private graphqlClient: ApolloClient;
   
-  // === Handlers ===
-  private handlers = new Map<string, EventHandler>();
-  
-  // === Lifecycle State ===
-  private state: State = State.Active;
-  private completionPromise: Promise<void>;
-  private complete!: () => void;
-  private fail!: (error: Error) => void;
+  // === State Management ===
+  private stateManager: StateManager<EventHandler>;
 
   constructor(private options: TestClientOptions) {
     // Create Apollo client with WebSocket support using graphql-ws
@@ -63,17 +58,17 @@ export class TestClient<TData = any> {
       cache: new InMemoryCache()
     });
     
-    // Create the completion promise
-    this.completionPromise = new Promise<void>((complete, fail) => {
-      this.complete = complete;
-      this.fail = fail;
-    });
+    // Initialize state manager
+    this.stateManager = new StateManager<EventHandler>(
+      `Client ${options.clientId}`,
+      false  // Don't fail on stall
+    );
   }
 
   // === Public Methods ===
   
   async subscribe(id: string, options: SubscriptionOptions<TData>): Promise<void> {
-    if (this.handlers.has(id)) {
+    if (this.stateManager.has(id)) {
       throw new Error(`Client ${this.options.clientId}: Handler '${id}' already exists`);
     }
     
@@ -91,11 +86,11 @@ export class TestClient<TData = any> {
     });
     
     await handler.start();
-    this.handlers.set(id, handler);
+    this.stateManager.add(id, handler);
   }
   
   async trigger(id: string, options: TriggerOptions<TData>): Promise<void> {
-    if (this.handlers.has(id)) {
+    if (this.stateManager.has(id)) {
       throw new Error(`Client ${this.options.clientId}: Handler '${id}' already exists`);
     }
     
@@ -114,30 +109,31 @@ export class TestClient<TData = any> {
     });
     
     await handler.start();
-    this.handlers.set(id, handler);
+    this.stateManager.add(id, handler);
   }
   
   async waitForCompletion(): Promise<void> {
-    return this.completionPromise;
+    return this.stateManager.waitForCompletion();
   }
 
   async dispose(): Promise<void> {
     // Dispose all handlers
+    const handlers = this.stateManager.getItems();
     await Promise.all(
-      Array.from(this.handlers.values()).map(handler => handler.dispose())
+      Array.from(handlers.values()).map(handler => handler.dispose())
     );
-    this.handlers.clear();
   }
 
   getState(): State {
-    return this.state;
+    return this.stateManager.getState();
   }
   
   getStats(): Stats {
     let totalExpected = 0;
     let totalReceived = 0;
     
-    for (const handler of this.handlers.values()) {
+    const handlers = this.stateManager.getItems();
+    for (const handler of handlers.values()) {
       const stats = handler.getStats();
       totalExpected += stats.totalExpected;
       totalReceived += stats.totalReceived;
@@ -153,70 +149,45 @@ export class TestClient<TData = any> {
 
   private createHandlerCallbacks(): HandlerCallbacks {
     return {
-      onStalled: (handlerId) => this.handleStalled(handlerId),
-      onRecovered: (handlerId) => this.handleRecovered(handlerId),
-      onCompleted: (handlerId) => this.handleCompleted(handlerId),
-      onFailed: (handlerId, error) => this.handleFailed(handlerId, error)
+      onStalled: (handlerId) => this.handleStateChange(),
+      onRecovered: (handlerId) => this.handleStateChange(),
+      onCompleted: (handlerId) => this.handleStateChange(),
+      onFailed: (handlerId, error) => this.handleStateChange()
     };
   }
-
-  private handleStalled(handlerId: string): void {
-    // Check if ALL handlers are now stalled
-    const allStalled = Array.from(this.handlers.values()).every(
-      handler => handler.getState() === State.Stalled
-    );
+  
+  private handleStateChange(): void {
+    const oldState = this.stateManager.getState();
+    this.stateManager.handleChildStateChange();
+    const newState = this.stateManager.getState();
     
-    // Update state and notify if ALL handlers are stalled
-    if (allStalled && this.state !== State.Stalled) {
-      this.state = State.Stalled;
-      console.log(`Client ${this.options.clientId} stalled - all handlers stopped receiving data`);
-      this.options.onStalled(this.options.clientId);
+    // Notify parent callbacks if state changed
+    if (oldState !== newState) {
+      this.notifyParent(oldState, newState);
     }
   }
   
-  private handleRecovered(handlerId: string): void {
-    // Only process recovery if we were stalled
-    if (this.state === State.Stalled) {
-      this.state = State.Active;
-      console.log(`Client ${this.options.clientId} recovered - at least one handler receiving data again`);
-      this.options.onRecovered(this.options.clientId);
-    }
-  }
-  
-  private handleCompleted(handlerId: string): void {
-    this.checkIfCompleted();
-  }
-  
-  private checkIfCompleted(): void {
-    // Check if ALL handlers are complete
-    const allComplete = Array.from(this.handlers.values()).every(
-      handler => handler.getState() === State.Completed
-    );
-    
-    if (allComplete && this.handlers.size > 0) {
-      this.state = State.Completed;
-      const stats = this.getStats();
-      console.log(`Client ${this.options.clientId} completed successfully - received ${stats.totalReceived}/${stats.totalExpected} items`);
-      
-      // Notify manager
-      this.options.onCompleted();
-      
-      // Resolve the completion promise
-      this.complete();
-    }
-  }
-
-  private handleFailed(handlerId: string, error: Error): void {
-    // If any handler fails, the client fails
-    if (this.state !== State.Failed) {
-      this.state = State.Failed;
-      console.error(`Client ${this.options.clientId} failed due to handler ${handlerId}: ${error.message}`);
-      
-      // Notify manager
-      this.options.onFailed(error);
-      
-      // Reject the completion promise
-      this.fail(error);
+  private notifyParent(oldState: State, newState: State): void {
+    switch (newState) {
+      case State.Stalled:
+        console.log(`Client ${this.options.clientId} stalled - all handlers stopped`);
+        this.options.onStalled(this.options.clientId);
+        break;
+      case State.Active:
+        if (oldState === State.Stalled) {
+          console.log(`Client ${this.options.clientId} recovered`);
+          this.options.onRecovered(this.options.clientId);
+        }
+        break;
+      case State.Completed:
+        const stats = this.getStats();
+        console.log(`Client ${this.options.clientId} completed - received ${stats.totalReceived}/${stats.totalExpected} items`);
+        this.options.onCompleted();
+        break;
+      case State.Failed:
+        console.error(`Client ${this.options.clientId} failed`);
+        this.options.onFailed(new Error(`Client ${this.options.clientId} failed`));
+        break;
     }
   }
 }
