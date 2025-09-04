@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, EventStream, EventProcessor, HandlerCallbacks, Stats } from './events';
+import { EventStreamHandler, EventStream, EventProcessor, GenericEventHandler, GenericHandlerConfig, HandlerCallbacks, Stats } from './events';
 import { State } from './tracker';
 
 /**
@@ -162,149 +162,52 @@ export interface SubscriptionConfig<TData = any> {
 
 /**
  * Handles GraphQL subscriptions over WebSocket
- * Parses GraphQL subscription events and calls appropriate callbacks
+ * Creates the appropriate stream and processor, then delegates to GenericEventHandler
  */
 export class SubscriptionHandler<TData = any> implements EventStreamHandler {
-  private stream: EventStream<any>;
-  private processor: EventProcessor<TData>;
-  private startPromise?: Promise<void>;
-  
-  // State tracking fields (from StateTracker)
-  private state: State = State.Active;
-  private livenessTimer?: NodeJS.Timeout;
+  private handler: GenericEventHandler<TData>;
   
   constructor(private config: SubscriptionConfig<TData>) {
     // Create the processor with expected state
-    this.processor = new SubscriptionProcessor<TData>(
+    const processor = new SubscriptionProcessor<TData>(
       config.expectedState,
       config.dataPath,
       config.idField
     );
     
     // Create the stream
-    this.stream = new SubscriptionStream(
+    const stream = new SubscriptionStream(
       config.graphqlClient,
       config.query,
       config.clientId,
       config.id
     );
     
-    // Start the liveness timer immediately
-    this.resetLivenessTimer();
+    // Create the generic handler config
+    const handlerConfig: GenericHandlerConfig = {
+      id: config.id,
+      clientId: config.clientId,
+      callbacks: config.callbacks,
+      livenessTimeoutMs: config.livenessTimeoutMs
+    };
+    
+    // Create the generic handler with stream and processor
+    this.handler = new GenericEventHandler<TData>(stream, processor, handlerConfig);
   }
   
   async start(): Promise<void> {
-    if (!this.startPromise) {
-      this.startPromise = this.doStart();
-    }
-    return this.startPromise;
-  }
-  
-  private async doStart(): Promise<void> {
-    // Subscribe to the stream
-    await this.stream.subscribe(
-      (data) => {
-        // Process the subscription data
-        this.processEvent(data);
-      },
-      async (error) => {
-        // Stream error - mark as failed
-        this.markFailed();
-        await this.cleanupSubscription();
-        this.config.callbacks.onFailed(this.config.id, error);
-      }
-    );
-  }
-  
-  private async processEvent(data: any): Promise<void> {
-    // Record activity for liveness tracking
-    this.recordActivity();
-    
-    try {
-      // Delegate processing to the processor
-      this.processor.processEvent(data);
-      
-      // Check if we're finished after state update
-      if (this.processor.isComplete()) {
-        this.markCompleted();
-        await this.cleanupSubscription();
-        this.config.callbacks.onCompleted(this.config.id);
-      }
-    } catch (error) {
-      // If processing fails, mark as failed
-      this.markFailed();
-      await this.cleanupSubscription();
-      this.config.callbacks.onFailed(this.config.id, new Error(`Subscription ${this.config.id} failed`));
-    }
+    return this.handler.start();
   }
   
   getState(): State {
-    return this.state;
+    return this.handler.getState();
   }
   
   getStats(): Stats {
-    return this.processor.getStats();
-  }
-  
-  private async cleanupSubscription(): Promise<void> {
-    console.log(`Unsubscribing from GraphQL subscription for ${this.config.id}`);
-    await this.stream.unsubscribe();
+    return this.handler.getStats();
   }
   
   async dispose(): Promise<void> {
-    this.clearLivenessTimer();
-    await this.cleanupSubscription();
-  }
-  
-  // State transition methods (copied from StateTracker)
-  private recordActivity(): void {
-    // Can't record activity if we're in a terminal state
-    if (this.state === State.Completed || this.state === State.Failed) return;
-    
-    // If we were stalled, recover
-    if (this.state === State.Stalled) {
-      this.state = State.Active;
-      console.log(`Subscription ${this.config.id} for client ${this.config.clientId} recovered`);
-      this.config.callbacks.onRecovered(this.config.id);
-    }
-    
-    this.resetLivenessTimer();
-  }
-  
-  private markCompleted(): void {
-    if (this.state === State.Completed || this.state === State.Failed) return;
-    
-    this.clearLivenessTimer();
-    this.state = State.Completed;
-    console.log(`Subscription ${this.config.id} for client ${this.config.clientId} completed`);
-    // Note: cleanupSubscription is called separately
-  }
-  
-  private markFailed(): void {
-    if (this.state === State.Completed || this.state === State.Failed) return;
-    
-    this.clearLivenessTimer();
-    this.state = State.Failed;
-    // Note: error is already logged by the caller
-  }
-  
-  // Liveness timeout methods (copied from StateTracker)
-  private resetLivenessTimer(): void {
-    this.clearLivenessTimer();
-    
-    this.livenessTimer = setTimeout(() => {
-      if (this.state === State.Active) {
-        this.state = State.Stalled;
-        console.log(`Subscription ${this.config.id} for client ${this.config.clientId} stalled`);
-        this.config.callbacks.onStalled(this.config.id);
-      }
-    }, this.config.livenessTimeoutMs);
-  }
-  
-  private clearLivenessTimer(): void {
-    if (this.livenessTimer) {
-      clearTimeout(this.livenessTimer);
-      this.livenessTimer = undefined;
-    }
+    return this.handler.dispose();
   }
 }
