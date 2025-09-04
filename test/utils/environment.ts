@@ -3,8 +3,6 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule, registerAs } from '@nestjs/config';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { Client } from 'pg';
-import * as express from 'express';
-import { Server } from 'http';
 import { AppModule } from '../../src/app.module';
 import databaseConfig from '../../src/config/database.config';
 import graphqlConfig from '../../src/config/graphql.config';
@@ -12,6 +10,7 @@ import { TestClientManager } from './manager';
 import { TestClient } from './client';
 import { Stats } from './handler';
 import sourcesConfig from '../../src/config/sources.config';
+import { WebhookServer } from './webhook';
 
 /**
  * Database configuration for TestEnvironment
@@ -41,14 +40,6 @@ export interface GraphQLEndpoint {
   path: string;  // e.g., "/graphql"
 }
 
-/**
- * Webhook endpoint operations
- */
-export interface WebhookEndpoint {
-  register: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
-  unregister: (endpoint: string) => void;
-}
-
 
 /**
  * Complete test environment configuration
@@ -71,9 +62,7 @@ export class TestEnvironment {
   private databaseContainer: StartedTestContainer;
   private databaseClient: Client;
   private databasePort: number;  // Mapped port from Docker container
-  private webhookApp: express.Application;
-  private webhookServer: Server;
-  private webhookHandlers = new Map<string, (payload: any) => Promise<void>>();
+  private webhookServer: WebhookServer;
   private config: TestEnvironmentConfig;
   private clientManager: TestClientManager;
 
@@ -104,9 +93,9 @@ export class TestEnvironment {
     await this.app.listen(this.config.appPort);
     console.log(`Application listening on port ${this.config.appPort}`);
     
-    // Start webhook server
+    // Create and start webhook server
     console.log('Starting webhook server...');
-    this.createWebhookServer();
+    this.webhookServer = this.createWebhookServer();
     console.log(`Webhook server listening on port ${this.config.webhook.port}`);
     
     // Create client manager with all dependencies configured
@@ -119,21 +108,6 @@ export class TestEnvironment {
     console.log('Test environment ready');
   }
 
-  /**
-   * Register a webhook endpoint
-   */
-  private registerWebhook(endpoint: string, handler: (payload: any) => Promise<void>): string {
-    // Store the handler in the map
-    this.webhookHandlers.set(endpoint, handler);
-    return `http://localhost:${this.config.webhook.port}${endpoint}`;
-  }
-  
-  /**
-   * Unregister a webhook endpoint
-   */
-  private unregisterWebhook(endpoint: string): void {
-    this.webhookHandlers.delete(endpoint);
-  }
   
   /**
    * Create a client and return it for direct use
@@ -169,9 +143,8 @@ export class TestEnvironment {
     
     // Close webhook server
     console.log('Stopping webhook server...');
-    this.webhookServer.close();
+    this.webhookServer.stop();
     console.log('Webhook server stopped');
-    
     // Close app first
     console.log('Closing NestJS application...');
     await this.app.close();
@@ -270,6 +243,15 @@ export class TestEnvironment {
   }
 
   /**
+   * Create and start a webhook server
+   */
+  private createWebhookServer(): WebhookServer {
+    const server = new WebhookServer(this.config.webhook.port);
+    server.start();
+    return server;
+  }
+
+  /**
    * Set up environment variables for the test
    */
   private setupEnvironmentVariables(): void {
@@ -313,33 +295,6 @@ export class TestEnvironment {
   }
 
   /**
-   * Create webhook server
-   */
-  private createWebhookServer(): void {
-    this.webhookApp = express();
-    this.webhookApp.use(express.json());
-    
-    // Single wildcard route that dynamically looks up handlers
-    this.webhookApp.post('*', async (req, res) => {
-      const handler = this.webhookHandlers.get(req.path);
-      if (!handler) {
-        res.status(404).send('Webhook not found');
-        return;
-      }
-      
-      try {
-        await handler(req.body);
-        res.status(200).send('OK');
-      } catch (error) {
-        console.error('Webhook handler error:', error);
-        res.status(500).send('Handler error');
-      }
-    });
-    
-    this.webhookServer = this.webhookApp.listen(this.config.webhook.port);
-  }
-  
-  /**
    * Create a configured TestClientManager
    */
   private createClientManager(): TestClientManager {
@@ -349,15 +304,6 @@ export class TestEnvironment {
       path: '/graphql'
     };
     
-    const webhookEndpoint = {
-      register: (endpoint: string, handler: (payload: any) => Promise<void>) => {
-        return this.registerWebhook(endpoint, handler);
-      },
-      unregister: (endpoint: string) => {
-        this.unregisterWebhook(endpoint);
-      }
-    };
-    
-    return new TestClientManager(graphqlEndpoint, webhookEndpoint, 30000);
+    return new TestClientManager(graphqlEndpoint, this.webhookServer, 30000);
   }
 }

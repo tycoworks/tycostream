@@ -1,7 +1,8 @@
 import { TestClient } from './client';
 import { State } from './tracker';
 import { Stats } from './handler';
-import { GraphQLEndpoint, WebhookEndpoint } from './environment';
+import { GraphQLEndpoint } from './environment';
+import { WebhookEndpoint } from './webhook';
 
 export class TestClientManager<TData = any> {
   // === Client Management ===

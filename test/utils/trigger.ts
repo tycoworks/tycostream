@@ -1,7 +1,7 @@
 import { ApolloClient, gql } from '@apollo/client';
 import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
 import { StateTracker, State } from './tracker';
-import { WebhookEndpoint } from './environment';
+import { WebhookEndpoint } from './webhook';
 
 export interface TriggerConfig<TData = any> {
   id: string; // The trigger ID

@@ -6,7 +6,8 @@ import { SubscriptionHandler } from './subscription';
 import { TriggerHandler } from './trigger';
 import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
 import { State } from './tracker';
-import { GraphQLEndpoint, WebhookEndpoint } from './environment';
+import { GraphQLEndpoint } from './environment';
+import { WebhookEndpoint } from './webhook';
 
 // Constructor options - just configuration and callbacks
 export interface TestClientOptions {
