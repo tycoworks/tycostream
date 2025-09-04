@@ -1,8 +1,7 @@
 import { ApolloClient, gql } from '@apollo/client';
 import { EventStreamHandler, HandlerCallbacks } from './handler';
-import { StateTracker } from './tracker';
 
-export interface WebhookTriggerConfig<TData = any> {
+export interface TriggerConfig<TData = any> {
   clientId: string;
   query: string; // GraphQL mutation to create trigger
   idField: string; // Primary key field for state tracking
@@ -18,25 +17,14 @@ export interface WebhookTriggerConfig<TData = any> {
  */
 export class TriggerHandler<TData = any> implements EventStreamHandler {
   private triggerName: string;
-  private tracker: StateTracker<TData>;
+  private receivedEvents: TData[] = [];
+  private expectedEvents: TData[];
   private startPromise?: Promise<void>;
   
-  constructor(private config: WebhookTriggerConfig<TData>) {
+  constructor(private config: TriggerConfig<TData>) {
     // Generate unique trigger name
     this.triggerName = `trigger_${config.clientId}_${Date.now()}`;
-    
-    // Convert array to Map for StateTracker, with order tracking
-    const expectedStateMap = new Map<string | number, TData>();
-    const expectedOrder: Array<string | number> = [];
-    
-    config.expectedEvents.forEach((event: any, index) => {
-      const id = event[config.idField] || index;
-      expectedStateMap.set(id, event);
-      expectedOrder.push(id);
-    });
-    
-    // Create tracker with both expected state and expected order
-    this.tracker = new StateTracker<TData>(expectedStateMap, expectedOrder);
+    this.expectedEvents = config.expectedEvents;
   }
   
   async start(): Promise<void> {
@@ -86,30 +74,36 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
     // First: notify that data was received (for liveness tracking)
     this.config.callbacks.onDataReceived();
     
-    // Extract ID using configured idField
-    // Try various locations where the ID might be
-    const id = payload.data?.[this.config.idField] || 
-               payload[this.config.idField] || 
-               payload.trigger_name || 
-               Date.now();
+    // Remove timestamp from payload for comparison (it varies)
+    // In future, also remove eventId when tycostream provides it
+    const { timestamp, ...comparablePayload } = payload;
     
-    // For webhooks, we typically get the full payload as the data
-    // The payload might already be the data, or it might be wrapped
-    const data = payload.data || payload;
-    
-    // Insert directly into the tracker (webhooks typically represent new events)
-    this.tracker.insert(id, data);
+    // Add event to received list
+    this.receivedEvents.push(comparablePayload as TData);
     
     // Last: check if we're finished (after state has been updated)
     this.config.callbacks.onCheckFinished();
   }
   
   isComplete(): boolean {
-    return this.tracker.isComplete();
+    if (this.receivedEvents.length === this.expectedEvents.length) {
+      // Compare each event in sequence
+      for (let i = 0; i < this.expectedEvents.length; i++) {
+        if (JSON.stringify(this.receivedEvents[i]) !== JSON.stringify(this.expectedEvents[i])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
   }
   
   getStats() {
-    return this.tracker.getStats();
+    return {
+      totalExpected: this.expectedEvents.length,
+      totalReceived: this.receivedEvents.length,
+      isComplete: this.isComplete()
+    };
   }
   
   dispose(): void {

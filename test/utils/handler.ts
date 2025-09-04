@@ -26,6 +26,22 @@ export interface EventStreamHandler {
   start(): Promise<void>;
   
   /**
+   * Check if the handler has received all expected data
+   * @returns true if all expected data has been received and matches
+   */
+  isComplete(): boolean;
+  
+  /**
+   * Get statistics about received vs expected data
+   * @returns Object with totalExpected, totalReceived, and isComplete
+   */
+  getStats(): {
+    totalExpected: number;
+    totalReceived: number;
+    isComplete: boolean;
+  };
+  
+  /**
    * Clean up any resources (unsubscribe, close connections, etc.)
    */
   dispose(): void;

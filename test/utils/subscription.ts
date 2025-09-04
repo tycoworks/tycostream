@@ -1,8 +1,7 @@
 import { ApolloClient, gql } from '@apollo/client';
 import { EventStreamHandler, HandlerCallbacks } from './handler';
-import { StateTracker } from './tracker';
 
-export interface GraphQLSubscriptionConfig<TData = any> {
+export interface SubscriptionConfig<TData = any> {
   clientId: string;
   query: string;
   dataPath: string; // Path to data in GraphQL response, e.g. "users" or "all_types"
@@ -18,11 +17,12 @@ export interface GraphQLSubscriptionConfig<TData = any> {
  */
 export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   private subscription?: any; // The Apollo subscription
-  private tracker: StateTracker<TData>;
+  private currentState = new Map<string | number, TData>();
+  private expectedState: Map<string | number, TData>;
   private startPromise?: Promise<void>;
   
-  constructor(private config: GraphQLSubscriptionConfig<TData>) {
-    this.tracker = new StateTracker<TData>(config.expectedState);
+  constructor(private config: SubscriptionConfig<TData>) {
+    this.expectedState = config.expectedState;
   }
   
   async start(): Promise<void> {
@@ -92,18 +92,25 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
     
     const id = cleanData[this.config.idField];
     
-    // Update the state tracker directly
+    // Update current state directly
     switch (operation) {
       case 'DELETE':
-        this.tracker.delete(id);
+        this.currentState.delete(id);
         break;
         
       case 'INSERT':
-        this.tracker.insert(id, cleanData);
+        this.currentState.set(id, cleanData);
         break;
         
       case 'UPDATE':
-        this.tracker.update(id, fields, cleanData);
+        const existing = this.currentState.get(id);
+        if (existing) {
+          const updated = { ...existing };
+          for (const field of fields) {
+            updated[field as keyof TData] = cleanData[field];
+          }
+          this.currentState.set(id, updated);
+        }
         break;
       
       default:
@@ -117,11 +124,24 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   }
   
   isComplete(): boolean {
-    return this.tracker.isComplete();
+    if (this.currentState.size === this.expectedState.size) {
+      for (const [id, expectedData] of this.expectedState) {
+        const currentData = this.currentState.get(id);
+        if (!currentData || JSON.stringify(currentData) !== JSON.stringify(expectedData)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
   }
   
   getStats() {
-    return this.tracker.getStats();
+    return {
+      totalExpected: this.expectedState.size,
+      totalReceived: this.currentState.size,
+      isComplete: this.isComplete()
+    };
   }
   
   dispose(): void {

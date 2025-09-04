@@ -2,9 +2,9 @@ import { ApolloClient, InMemoryCache, gql } from '@apollo/client';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
-import { SubscriptionHandler } from './subscription';
-import { TriggerHandler } from './trigger';
-import { HandlerCallbacks } from './handler';
+import { SubscriptionHandler, SubscriptionConfig } from './subscription';
+import { TriggerHandler, TriggerConfig } from './trigger';
+import { EventStreamHandler, HandlerCallbacks } from './handler';
 
 // GraphQL endpoint configuration
 export interface GraphQLEndpoint {
@@ -43,10 +43,10 @@ export class TestClient<TData = any> {
   private graphqlClient: ApolloClient;
   
   // === Handlers ===
-  private subscriptionHandler?: SubscriptionHandler<TData>;
+  private subscriptionHandler?: EventStreamHandler;
   private subscriptionOptions?: SubscriptionOptions<TData>;
 
-  private triggerHandler?: TriggerHandler<TData>;
+  private triggerHandler?: EventStreamHandler;
   private triggerOptions?: TriggerOptions<TData>;
   
   // === Lifecycle State ===

@@ -11,6 +11,14 @@ sources:
       updated_at: timestamp with time zone
       metadata: json
   
+  # Table for testing triggers with score threshold
+  user_scores:
+    primary_key: user_id
+    columns:
+      user_id: integer
+      score: integer
+      active: boolean
+  
   # Comprehensive test table with ALL PostgreSQL types
   all_types:
     primary_key: id
