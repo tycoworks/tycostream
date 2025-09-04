@@ -1,13 +1,114 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, HandlerCallbacks, Stats } from './events';
+import { EventStreamHandler, EventStream, HandlerCallbacks, Stats } from './events';
 import { StateTracker, State } from './tracker';
 import { WebhookEndpoint } from './webhook';
+
+/**
+ * Webhook-based trigger event stream
+ * Sets up webhook endpoint and creates trigger via GraphQL mutation
+ */
+class TriggerStream implements EventStream<any> {
+  private webhookPath?: string;
+  private triggerData?: any;
+  private webhookCallback?: (payload: any) => Promise<void>;
+  
+  constructor(
+    private clientId: string,
+    private triggerName: string,
+    private webhookEndpoint: WebhookEndpoint,
+    private graphqlClient: ApolloClient,
+    private createQuery: string,
+    private deleteQuery: string,  // Required for proper cleanup
+    private id: string  // Required ID for logging
+  ) {}
+  
+  async subscribe(
+    onData: (data: any) => void,
+    onError?: (error: Error) => void
+  ): Promise<void> {
+    try {
+      // Step 1: Register webhook endpoint with our callback handler
+      this.webhookPath = `/webhook/${this.clientId}/${this.triggerName}`;
+      
+      // Store the callback for later unregistration
+      this.webhookCallback = async (payload) => {
+        console.log(`Client ${this.clientId} received webhook for trigger ${this.triggerName}`);
+        onData(payload);
+      };
+      
+      const webhookUrl = this.webhookEndpoint.register(this.webhookPath, this.webhookCallback);
+      console.log(`Registered webhook endpoint: ${webhookUrl}`);
+      
+      // Step 2: Execute the GraphQL mutation to create the trigger
+      const result = await this.graphqlClient.mutate({
+        mutation: gql`${this.createQuery}`,
+        variables: { webhookUrl }
+      });
+      
+      if (result.error) {
+        const errorMessage = result.error?.message || 'Unknown GraphQL error';
+        console.error(
+          `Client ${this.clientId}: Trigger mutation error: ${errorMessage}`
+        );
+        if (onError) {
+          onError(new Error(errorMessage));
+        }
+        return;
+      }
+      
+      // Store the trigger data from the response (contains trigger name, ID, etc.)
+      this.triggerData = result.data;
+      
+      console.log(`Client ${this.clientId}: Trigger created successfully with webhook URL: ${webhookUrl}`);
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      console.error(
+        `Client ${this.clientId}: Failed to create trigger: ${errorMessage}`
+      );
+      if (onError) {
+        onError(error instanceof Error ? error : new Error(errorMessage));
+      }
+    }
+  }
+  
+  async unsubscribe(): Promise<void> {
+    // Delete the trigger via GraphQL mutation
+    if (this.triggerData) {
+      try {
+        console.log(`Deleting trigger for ${this.id}`);
+        
+        // Extract the first mutation result from the data
+        // The structure is: { mutationName: { ...fields } }
+        const mutationResult = Object.values(this.triggerData)[0] as any;
+        
+        // Pass the mutation result as variables for the delete query
+        await this.graphqlClient.mutate({
+          mutation: gql`${this.deleteQuery}`,
+          variables: mutationResult
+        });
+        
+        console.log(`Deleted trigger for ${this.id}`);
+        this.triggerData = undefined;
+      } catch (error: any) {
+        console.error(`Failed to delete trigger for ${this.id}: ${error.message}`);
+      }
+    }
+    
+    // Unregister the webhook endpoint
+    if (this.webhookPath) {
+      console.log(`Unregistering webhook for trigger ${this.id}: ${this.webhookPath}`);
+      this.webhookEndpoint.unregister(this.webhookPath);
+      this.webhookPath = undefined;
+      this.webhookCallback = undefined;
+    }
+  }
+}
 
 export interface TriggerConfig<TData = any> {
   id: string; // The trigger ID
   clientId: string;
   query: string; // GraphQL mutation to create trigger
-  deleteQuery?: string; // Optional GraphQL mutation to delete trigger
+  deleteQuery: string; // GraphQL mutation to delete trigger (required for cleanup)
   idField: string; // Primary key field for state tracking
   expectedEvents: TData[]; // Expected webhook payloads in order
   webhookEndpoint: WebhookEndpoint;
@@ -22,17 +123,27 @@ export interface TriggerConfig<TData = any> {
  */
 export class TriggerHandler<TData = any> implements EventStreamHandler {
   private triggerName: string;
-  private triggerData?: any; // Store the response from create mutation
+  private stream: EventStream<any>;
   private receivedEvents: TData[] = [];
   private expectedEvents: TData[];
   private startPromise?: Promise<void>;
   private stateTracker: StateTracker;
-  private webhookPath?: string; // Store the webhook path for unregistration
   
   constructor(private config: TriggerConfig<TData>) {
     // Generate unique trigger name
     this.triggerName = `trigger_${config.clientId}_${Date.now()}`;
     this.expectedEvents = config.expectedEvents;
+    
+    // Create the stream
+    this.stream = new TriggerStream(
+      config.clientId,
+      this.triggerName,
+      config.webhookEndpoint,
+      config.graphqlClient,
+      config.query,
+      config.deleteQuery,
+      config.id
+    );
     
     // Initialize state tracker with callbacks that include our ID
     this.stateTracker = new StateTracker({
@@ -66,42 +177,17 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
   }
   
   private async doStart(): Promise<void> {
-    // Step 1: Register webhook endpoint with our callback handler
-    this.webhookPath = `/webhook/${this.config.clientId}/${this.triggerName}`;
-    const webhookUrl = this.config.webhookEndpoint.register(this.webhookPath, async (payload) => {
-      console.log(`Client ${this.config.clientId} received webhook for trigger ${this.triggerName}`);
-      this.processEvent(payload);
-    });
-    
-    console.log(`Registered webhook endpoint: ${webhookUrl}`);
-    
-    // Step 2: Execute the GraphQL mutation to create the trigger
-    try {
-      const result = await this.config.graphqlClient.mutate({
-        mutation: gql`${this.config.query}`,
-        variables: { webhookUrl }
-      });
-      
-      if (result.error) {
-        const errorMessage = result.error?.message || 'Unknown GraphQL error';
-        console.error(
-          `Client ${this.config.clientId}: Trigger mutation error: ${errorMessage}`
-        );
+    // Subscribe to the stream
+    await this.stream.subscribe(
+      (data) => {
+        // Process the webhook data
+        this.processEvent(data);
+      },
+      async (error) => {
+        // Stream error - mark as failed
         this.stateTracker.markFailed();
-        return;
       }
-      
-      // Store the trigger data from the response (contains trigger name, ID, etc.)
-      this.triggerData = result.data;
-      
-      console.log(`Client ${this.config.clientId}: Trigger created successfully with webhook URL: ${webhookUrl}`);
-    } catch (error: any) {
-      const errorMessage = error?.message || error?.toString() || 'Unknown error';
-      console.error(
-        `Client ${this.config.clientId}: Failed to create trigger: ${errorMessage}`
-      );
-      this.stateTracker.markFailed();
-    }
+    );
   }
   
   private processEvent(payload: any): void {
@@ -150,35 +236,8 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
   }
   
   private async cleanupTrigger(): Promise<void> {
-    // Delete the trigger via GraphQL mutation if deleteQuery is provided
-    if (this.config.deleteQuery && this.triggerData) {
-      try {
-        console.log(`Deleting trigger for ${this.config.id}`);
-        
-        // Extract the first mutation result from the data
-        // The structure is: { mutationName: { ...fields } }
-        const mutationResult = Object.values(this.triggerData)[0] as any;
-        
-        // Pass the mutation result as variables for the delete query
-        await this.config.graphqlClient.mutate({
-          mutation: gql`${this.config.deleteQuery}`,
-          variables: mutationResult
-        });
-        
-        console.log(`Deleted trigger for ${this.config.id}`);
-        // Clear trigger data to prevent duplicate deletion
-        this.triggerData = undefined;
-      } catch (error: any) {
-        console.error(`Failed to delete trigger for ${this.config.id}: ${error.message}`);
-      }
-    }
-    
-    // Unregister the webhook endpoint
-    if (this.webhookPath) {
-      console.log(`Unregistering webhook for trigger ${this.config.id}: ${this.webhookPath}`);
-      this.config.webhookEndpoint.unregister(this.webhookPath);
-      this.webhookPath = undefined;
-    }
+    console.log(`Cleaning up trigger ${this.config.id}`);
+    await this.stream.unsubscribe();
   }
   
   async dispose(): Promise<void> {

@@ -12,7 +12,8 @@ class SubscriptionStream implements EventStream<any> {
   constructor(
     private client: ApolloClient,
     private query: string,
-    private clientId: string
+    private clientId: string,
+    private id: string  // Required ID for logging
   ) {}
   
   async subscribe(
@@ -26,7 +27,7 @@ class SubscriptionStream implements EventStream<any> {
         if (result.error) {
           const errorMessage = result.error?.message || 'Unknown GraphQL error';
           console.error(
-            `Client ${this.clientId}: GraphQL error: ${errorMessage}`
+            `${this.id} for client ${this.clientId}: GraphQL error: ${errorMessage}`
           );
           if (onError) {
             onError(new Error(errorMessage));
@@ -40,7 +41,7 @@ class SubscriptionStream implements EventStream<any> {
       error: (error) => {
         const errorMessage = error?.message || error?.toString() || 'Unknown error';
         console.error(
-          `Client ${this.clientId}: Subscription error: ${errorMessage}`
+          `${this.id} for client ${this.clientId}: Subscription error: ${errorMessage}`
         );
         if (onError) {
           onError(error instanceof Error ? error : new Error(errorMessage));
@@ -49,7 +50,7 @@ class SubscriptionStream implements EventStream<any> {
       complete: () => {
         // Stream closed - this is an error condition for subscriptions
         console.error(
-          `Client ${this.clientId}: Stream closed prematurely`
+          `${this.id} for client ${this.clientId}: Stream closed prematurely`
         );
         if (onError) {
           onError(new Error('Stream closed prematurely'));
@@ -184,7 +185,8 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
     this.stream = new SubscriptionStream(
       config.graphqlClient,
       config.query,
-      config.clientId
+      config.clientId,
+      config.id
     );
     
     // Start the liveness timer immediately

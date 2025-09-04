@@ -32,7 +32,7 @@ export interface SubscriptionOptions<TData = any> {
 // Trigger/webhook options
 export interface TriggerOptions<TData = any> {
   query: string;                         // GraphQL mutation to create trigger
-  deleteQuery?: string;                  // Optional GraphQL mutation to delete trigger
+  deleteQuery: string;                   // GraphQL mutation to delete trigger (required for cleanup)
   expectedEvents: TData[];              // Expected webhook payloads in order
   idField: string;                      // Primary key field for state tracking
 }
