@@ -20,10 +20,10 @@ export interface HandlerCallbacks {
 export interface EventStreamHandler {
   /**
    * Start the event stream (subscribe to WebSocket, register webhook, etc.)
-   * @param graphqlClient The Apollo GraphQL client to use for operations
+   * Can be called multiple times safely - will return the same promise
    * @returns Promise that resolves when the stream is established
    */
-  start(graphqlClient: ApolloClient): Promise<void>;
+  start(): Promise<void>;
   
   /**
    * Clean up any resources (unsubscribe, close connections, etc.)

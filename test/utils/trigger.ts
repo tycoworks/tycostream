@@ -8,6 +8,7 @@ export interface WebhookTriggerConfig<TData = any> {
   idField: string; // Primary key field for state tracking
   expectedEvents: TData[]; // Expected webhook payloads in order
   createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
+  graphqlClient: ApolloClient;
   callbacks: HandlerCallbacks;
 }
 
@@ -18,6 +19,7 @@ export interface WebhookTriggerConfig<TData = any> {
 export class TriggerHandler<TData = any> implements EventStreamHandler {
   private triggerName: string;
   private tracker: StateTracker<TData>;
+  private startPromise?: Promise<void>;
   
   constructor(private config: WebhookTriggerConfig<TData>) {
     // Generate unique trigger name
@@ -37,7 +39,14 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
     this.tracker = new StateTracker<TData>(expectedStateMap, expectedOrder);
   }
   
-  async start(graphqlClient: ApolloClient): Promise<void> {
+  async start(): Promise<void> {
+    if (!this.startPromise) {
+      this.startPromise = this.doStart();
+    }
+    return this.startPromise;
+  }
+  
+  private async doStart(): Promise<void> {
     // Step 1: Register webhook endpoint with our callback handler
     const endpoint = `/webhook/${this.config.clientId}/${this.triggerName}`;
     const webhookUrl = this.config.createWebhook(endpoint, async (payload) => {
@@ -49,7 +58,7 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
     
     // Step 2: Execute the GraphQL mutation to create the trigger
     try {
-      const result = await graphqlClient.mutate({
+      const result = await this.config.graphqlClient.mutate({
         mutation: gql`${this.config.query}`,
         variables: { webhookUrl }
       });

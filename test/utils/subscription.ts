@@ -8,6 +8,7 @@ export interface GraphQLSubscriptionConfig<TData = any> {
   dataPath: string; // Path to data in GraphQL response, e.g. "users" or "all_types"
   idField: string; // Field name for ID in the data (e.g., "id", "user_id")
   expectedState: Map<string | number, TData>;
+  graphqlClient: ApolloClient;
   callbacks: HandlerCallbacks;
 }
 
@@ -18,13 +19,21 @@ export interface GraphQLSubscriptionConfig<TData = any> {
 export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   private subscription?: any; // The Apollo subscription
   private tracker: StateTracker<TData>;
+  private startPromise?: Promise<void>;
   
   constructor(private config: GraphQLSubscriptionConfig<TData>) {
     this.tracker = new StateTracker<TData>(config.expectedState);
   }
   
-  async start(graphqlClient: ApolloClient): Promise<void> {
-    this.subscription = graphqlClient.subscribe({
+  async start(): Promise<void> {
+    if (!this.startPromise) {
+      this.startPromise = this.doStart();
+    }
+    return this.startPromise;
+  }
+  
+  private async doStart(): Promise<void> {
+    this.subscription = this.config.graphqlClient.subscribe({
       query: gql`${this.config.query}`
     }).subscribe({
       next: (result) => {

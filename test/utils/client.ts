@@ -124,11 +124,12 @@ export class TestClient<TData = any> {
         dataPath: this.subscriptionOptions.dataPath,
         idField: this.subscriptionOptions.idField,
         expectedState: this.subscriptionOptions.expectedState,
+        graphqlClient: this.graphqlClient,
         callbacks: this.createHandlerCallbacks()
       });
       
       // Start the subscription
-      await this.subscriptionHandler.start(this.graphqlClient);
+      await this.subscriptionHandler.start();
     }
     
     // Set up webhook and execute trigger mutation if configured
@@ -140,11 +141,12 @@ export class TestClient<TData = any> {
         idField: this.triggerOptions.idField,
         expectedEvents: this.triggerOptions.expectedEvents,
         createWebhook: this.options.createWebhook,
+        graphqlClient: this.graphqlClient,
         callbacks: this.createHandlerCallbacks()
       });
       
       // Start the trigger (register webhook and execute mutation)
-      await this.triggerHandler.start(this.graphqlClient);
+      await this.triggerHandler.start();
     }
     
     // All setup is complete (subscription and/or webhook), mark as ready
