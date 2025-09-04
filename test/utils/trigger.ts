@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, EventStream, EventProcessor, GenericEventHandler, GenericHandlerConfig, HandlerCallbacks, Stats } from './events';
+import { EventStream, EventProcessor, GenericEventHandler, GenericHandlerConfig, HandlerCallbacks, Stats } from './events';
 import { State } from './tracker';
 import { WebhookEndpoint } from './webhook';
 
@@ -11,16 +11,19 @@ class TriggerStream implements EventStream<any> {
   private webhookPath?: string;
   private triggerData?: any;
   private webhookCallback?: (payload: any) => Promise<void>;
+  private triggerName: string;
   
   constructor(
     private clientId: string,
-    private triggerName: string,
     private webhookEndpoint: WebhookEndpoint,
     private graphqlClient: ApolloClient,
     private createQuery: string,
     private deleteQuery: string,  // Required for proper cleanup
     private id: string  // Required ID for logging
-  ) {}
+  ) {
+    // Generate unique trigger name
+    this.triggerName = `trigger_${clientId}_${Date.now()}`;
+  }
   
   async subscribe(
     onData: (data: any) => void,
@@ -159,56 +162,33 @@ export interface TriggerConfig<TData = any> {
 }
 
 /**
- * Handles GraphQL triggers with webhook callbacks
- * Creates the appropriate stream and processor, then delegates to GenericEventHandler
+ * Creates a GraphQL trigger handler
+ * Sets up the appropriate stream and processor, then returns a GenericEventHandler
  */
-export class TriggerHandler<TData = any> implements EventStreamHandler {
-  private handler: GenericEventHandler<TData>;
-  private triggerName: string;
+export function createTriggerHandler<TData = any>(
+  config: TriggerConfig<TData>
+): GenericEventHandler<TData> {
+  // Create the processor
+  const processor = new TriggerProcessor<TData>(config.expectedEvents);
   
-  constructor(private config: TriggerConfig<TData>) {
-    // Generate unique trigger name
-    this.triggerName = `trigger_${config.clientId}_${Date.now()}`;
-    
-    // Create the processor
-    const processor = new TriggerProcessor<TData>(config.expectedEvents);
-    
-    // Create the stream
-    const stream = new TriggerStream(
-      config.clientId,
-      this.triggerName,
-      config.webhookEndpoint,
-      config.graphqlClient,
-      config.query,
-      config.deleteQuery,
-      config.id
-    );
-    
-    // Create the generic handler config
-    const handlerConfig: GenericHandlerConfig = {
-      id: config.id,
-      clientId: config.clientId,
-      callbacks: config.callbacks,
-      livenessTimeoutMs: config.livenessTimeoutMs
-    };
-    
-    // Create the generic handler with stream and processor
-    this.handler = new GenericEventHandler<TData>(stream, processor, handlerConfig);
-  }
+  // Create the stream (trigger name is generated internally)
+  const stream = new TriggerStream(
+    config.clientId,
+    config.webhookEndpoint,
+    config.graphqlClient,
+    config.query,
+    config.deleteQuery,
+    config.id
+  );
   
-  async start(): Promise<void> {
-    return this.handler.start();
-  }
+  // Create the generic handler config
+  const handlerConfig: GenericHandlerConfig = {
+    id: config.id,
+    clientId: config.clientId,
+    callbacks: config.callbacks,
+    livenessTimeoutMs: config.livenessTimeoutMs
+  };
   
-  getState(): State {
-    return this.handler.getState();
-  }
-  
-  getStats(): Stats {
-    return this.handler.getStats();
-  }
-  
-  async dispose(): Promise<void> {
-    return this.handler.dispose();
-  }
+  // Create and return the generic handler with stream and processor
+  return new GenericEventHandler<TData>(stream, processor, handlerConfig);
 }

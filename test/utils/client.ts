@@ -2,9 +2,9 @@ import { ApolloClient, InMemoryCache, gql } from '@apollo/client';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
-import { SubscriptionHandler } from './subscription';
-import { TriggerHandler } from './trigger';
-import { EventStreamHandler, HandlerCallbacks, Stats } from './events';
+import { createSubscriptionHandler } from './subscription';
+import { createTriggerHandler } from './trigger';
+import { GenericEventHandler, HandlerCallbacks, Stats } from './events';
 import { State } from './tracker';
 import { GraphQLEndpoint } from './environment';
 import { WebhookEndpoint } from './webhook';
@@ -41,7 +41,7 @@ export class TestClient<TData = any> {
   private graphqlClient: ApolloClient;
   
   // === Handlers ===
-  private handlers = new Map<string, EventStreamHandler>();
+  private handlers = new Map<string, GenericEventHandler>();
   
   // === Lifecycle State ===
   private state: State = State.Active;
@@ -79,7 +79,7 @@ export class TestClient<TData = any> {
     }
     
     // Create and start subscription handler
-    const handler = new SubscriptionHandler<TData>({
+    const handler = createSubscriptionHandler<TData>({
       id,
       clientId: this.options.clientId,
       query: options.query,
@@ -101,7 +101,7 @@ export class TestClient<TData = any> {
     }
     
     // Create and start trigger handler
-    const handler = new TriggerHandler<TData>({
+    const handler = createTriggerHandler<TData>({
       id,
       clientId: this.options.clientId,
       query: options.query,

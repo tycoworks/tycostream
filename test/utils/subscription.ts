@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStreamHandler, EventStream, EventProcessor, GenericEventHandler, GenericHandlerConfig, HandlerCallbacks, Stats } from './events';
+import { EventStream, EventProcessor, GenericEventHandler, GenericHandlerConfig, HandlerCallbacks, Stats } from './events';
 import { State } from './tracker';
 
 /**
@@ -161,53 +161,35 @@ export interface SubscriptionConfig<TData = any> {
 }
 
 /**
- * Handles GraphQL subscriptions over WebSocket
- * Creates the appropriate stream and processor, then delegates to GenericEventHandler
+ * Creates a GraphQL subscription handler
+ * Sets up the appropriate stream and processor, then returns a GenericEventHandler
  */
-export class SubscriptionHandler<TData = any> implements EventStreamHandler {
-  private handler: GenericEventHandler<TData>;
+export function createSubscriptionHandler<TData = any>(
+  config: SubscriptionConfig<TData>
+): GenericEventHandler<TData> {
+  // Create the processor with expected state
+  const processor = new SubscriptionProcessor<TData>(
+    config.expectedState,
+    config.dataPath,
+    config.idField
+  );
   
-  constructor(private config: SubscriptionConfig<TData>) {
-    // Create the processor with expected state
-    const processor = new SubscriptionProcessor<TData>(
-      config.expectedState,
-      config.dataPath,
-      config.idField
-    );
-    
-    // Create the stream
-    const stream = new SubscriptionStream(
-      config.graphqlClient,
-      config.query,
-      config.clientId,
-      config.id
-    );
-    
-    // Create the generic handler config
-    const handlerConfig: GenericHandlerConfig = {
-      id: config.id,
-      clientId: config.clientId,
-      callbacks: config.callbacks,
-      livenessTimeoutMs: config.livenessTimeoutMs
-    };
-    
-    // Create the generic handler with stream and processor
-    this.handler = new GenericEventHandler<TData>(stream, processor, handlerConfig);
-  }
+  // Create the stream
+  const stream = new SubscriptionStream(
+    config.graphqlClient,
+    config.query,
+    config.clientId,
+    config.id
+  );
   
-  async start(): Promise<void> {
-    return this.handler.start();
-  }
+  // Create the generic handler config
+  const handlerConfig: GenericHandlerConfig = {
+    id: config.id,
+    clientId: config.clientId,
+    callbacks: config.callbacks,
+    livenessTimeoutMs: config.livenessTimeoutMs
+  };
   
-  getState(): State {
-    return this.handler.getState();
-  }
-  
-  getStats(): Stats {
-    return this.handler.getStats();
-  }
-  
-  async dispose(): Promise<void> {
-    return this.handler.dispose();
-  }
+  // Create and return the generic handler with stream and processor
+  return new GenericEventHandler<TData>(stream, processor, handlerConfig);
 }

@@ -1,4 +1,3 @@
-import { ApolloClient } from '@apollo/client';
 import { State } from './tracker';
 
 /**
@@ -63,37 +62,6 @@ export interface HandlerCallbacks {
 }
 
 /**
- * Interface for handling event streams from various sources (GraphQL subscriptions, webhooks, etc.)
- * Handlers are responsible for:
- * 1. Setting up the event source (WebSocket, webhook, etc.)
- * 2. Parsing transport-specific data formats
- * 3. Managing their own state lifecycle through HandlerStateTracker
- */
-export interface EventStreamHandler {
-  /**
-   * Start the event stream (subscribe to WebSocket, register webhook, etc.)
-   * Can be called multiple times safely - will return the same promise
-   * @returns Promise that resolves when the stream is established
-   */
-  start(): Promise<void>;
-  
-  /**
-   * Get the current state of the handler
-   */
-  getState(): State;
-  
-  /**
-   * Get statistics about received vs expected data
-   */
-  getStats(): Stats;
-  
-  /**
-   * Clean up any resources (unsubscribe, close connections, etc.)
-   */
-  dispose(): Promise<void>;
-}
-
-/**
  * Configuration for GenericEventHandler
  */
 export interface GenericHandlerConfig {
@@ -104,10 +72,10 @@ export interface GenericHandlerConfig {
 }
 
 /**
- * Generic implementation of EventStreamHandler that works with any EventStream and EventProcessor
+ * Generic event handler that works with any EventStream and EventProcessor
  * Manages state lifecycle, liveness checking, and coordinates between stream and processor
  */
-export class GenericEventHandler<TData = any> implements EventStreamHandler {
+export class GenericEventHandler<TData = any> {
   private startPromise?: Promise<void>;
   
   // State tracking fields
