@@ -48,5 +48,5 @@ export interface EventStreamHandler {
   /**
    * Clean up any resources (unsubscribe, close connections, etc.)
    */
-  dispose(): void;
+  dispose(): Promise<void>;
 }

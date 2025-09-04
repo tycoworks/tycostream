@@ -41,10 +41,12 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
       },
       onCompleted: () => {
         console.log(`Subscription ${config.id} for client ${config.clientId} completed`);
+        this.cleanupSubscription();
         config.callbacks.onCompleted(config.id);
       },
       onFailed: () => {
         // The error is already logged when we detect it
+        this.cleanupSubscription();
         config.callbacks.onFailed(config.id, new Error(`Subscription ${config.id} failed`));
       }
     });
@@ -178,11 +180,16 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
     };
   }
   
-  dispose(): void {
-    this.stateTracker.dispose();
+  private cleanupSubscription(): void {
     if (this.subscription) {
+      console.log(`Unsubscribing from GraphQL subscription for ${this.config.id}`);
       this.subscription.unsubscribe();
       this.subscription = undefined;
     }
+  }
+  
+  async dispose(): Promise<void> {
+    this.stateTracker.dispose();
+    this.cleanupSubscription();
   }
 }

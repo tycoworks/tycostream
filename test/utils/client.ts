@@ -120,11 +120,11 @@ export class TestClient<TData = any> {
     return this.completionPromise;
   }
 
-  dispose() {
+  async dispose(): Promise<void> {
     // Dispose all handlers
-    for (const handler of this.handlers.values()) {
-      handler.dispose();
-    }
+    await Promise.all(
+      Array.from(this.handlers.values()).map(handler => handler.dispose())
+    );
     this.handlers.clear();
   }
 

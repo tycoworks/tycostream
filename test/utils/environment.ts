@@ -138,7 +138,7 @@ export class TestEnvironment {
     
     // Dispose all clients
     console.log('Disposing all test clients...');
-    this.clientManager.dispose();
+    await this.clientManager.dispose();
     console.log('Test clients disposed');
     
     // Close webhook server

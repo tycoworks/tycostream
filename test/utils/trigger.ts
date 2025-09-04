@@ -43,12 +43,14 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
         console.log(`Trigger ${config.id} for client ${config.clientId} recovered`);
         config.callbacks.onRecovered(config.id);
       },
-      onCompleted: () => {
+      onCompleted: async () => {
         console.log(`Trigger ${config.id} for client ${config.clientId} completed`);
+        await this.cleanupTrigger();
         config.callbacks.onCompleted(config.id);
       },
-      onFailed: () => {
+      onFailed: async () => {
         // The error is already logged when we detect it
+        await this.cleanupTrigger();
         config.callbacks.onFailed(config.id, new Error(`Trigger ${config.id} failed`));
       }
     });
@@ -142,12 +144,38 @@ export class TriggerHandler<TData = any> implements EventStreamHandler {
     };
   }
   
-  dispose(): void {
-    this.stateTracker.dispose();
+  private async cleanupTrigger(): Promise<void> {
+    // Delete the trigger via GraphQL mutation
+    if (this.triggerName) {
+      try {
+        console.log(`Deleting trigger ${this.triggerName} for ${this.config.id}`);
+        const deleteMutation = gql`
+          mutation DeleteTrigger($name: String!) {
+            deleteTrigger(name: $name)
+          }
+        `;
+        
+        await this.config.graphqlClient.mutate({
+          mutation: deleteMutation,
+          variables: { name: this.triggerName }
+        });
+        
+        console.log(`Deleted trigger ${this.triggerName}`);
+      } catch (error: any) {
+        console.error(`Failed to delete trigger ${this.triggerName}: ${error.message}`);
+      }
+    }
+    
     // Unregister the webhook endpoint
     if (this.webhookPath) {
+      console.log(`Unregistering webhook for trigger ${this.config.id}: ${this.webhookPath}`);
       this.config.webhookEndpoint.unregister(this.webhookPath);
-      console.log(`Unregistered webhook: ${this.webhookPath}`);
+      this.webhookPath = undefined;
     }
+  }
+  
+  async dispose(): Promise<void> {
+    this.stateTracker.dispose();
+    await this.cleanupTrigger();
   }
 }

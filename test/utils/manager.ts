@@ -143,8 +143,10 @@ export class TestClientManager<TData = any> {
   }
   
 
-  dispose() {
-    this.clients.forEach(client => client.dispose());
+  async dispose(): Promise<void> {
+    await Promise.all(
+      Array.from(this.clients.values()).map(client => client.dispose())
+    );
   }
 
   getStats(): Stats {
