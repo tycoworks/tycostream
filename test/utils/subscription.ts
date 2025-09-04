@@ -1,6 +1,6 @@
 import { ApolloClient, gql } from '@apollo/client';
 import { EventStreamHandler, EventStream, EventProcessor, HandlerCallbacks, Stats } from './events';
-import { StateTracker, State } from './tracker';
+import { State } from './tracker';
 
 /**
  * GraphQL subscription event stream
@@ -167,7 +167,10 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   private stream?: GraphQLSubscriptionStream;
   private processor: SubscriptionProcessor<TData>;
   private startPromise?: Promise<void>;
-  private stateTracker: StateTracker;
+  
+  // State tracking fields (from StateTracker)
+  private state: State = State.Active;
+  private livenessTimer?: NodeJS.Timeout;
   
   constructor(private config: SubscriptionConfig<TData>) {
     // Create the processor with expected state
@@ -177,28 +180,8 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
       config.idField
     );
     
-    // Initialize state tracker with callbacks that include our ID
-    this.stateTracker = new StateTracker({
-      livenessTimeoutMs: config.livenessTimeoutMs,
-      onStalled: () => {
-        console.log(`Subscription ${config.id} for client ${config.clientId} stalled`);
-        config.callbacks.onStalled(config.id);
-      },
-      onRecovered: () => {
-        console.log(`Subscription ${config.id} for client ${config.clientId} recovered`);
-        config.callbacks.onRecovered(config.id);
-      },
-      onCompleted: async () => {
-        console.log(`Subscription ${config.id} for client ${config.clientId} completed`);
-        await this.cleanupSubscription();
-        config.callbacks.onCompleted(config.id);
-      },
-      onFailed: async () => {
-        // The error is already logged when we detect it
-        await this.cleanupSubscription();
-        config.callbacks.onFailed(config.id, new Error(`Subscription ${config.id} failed`));
-      }
-    });
+    // Start the liveness timer immediately
+    this.resetLivenessTimer();
   }
   
   async start(): Promise<void> {
@@ -222,16 +205,18 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
         // Process the subscription data
         this.processEvent(data);
       },
-      (error) => {
+      async (error) => {
         // Stream error - mark as failed
-        this.stateTracker.markFailed();
+        this.markFailed();
+        await this.cleanupSubscription();
+        this.config.callbacks.onFailed(this.config.id, error);
       }
     );
   }
   
-  private processEvent(data: any): void {
+  private async processEvent(data: any): Promise<void> {
     // Record activity for liveness tracking
-    this.stateTracker.recordActivity();
+    this.recordActivity();
     
     try {
       // Delegate processing to the processor
@@ -239,16 +224,20 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
       
       // Check if we're finished after state update
       if (this.processor.isComplete()) {
-        this.stateTracker.markCompleted();
+        this.markCompleted();
+        await this.cleanupSubscription();
+        this.config.callbacks.onCompleted(this.config.id);
       }
     } catch (error) {
       // If processing fails, mark as failed
-      this.stateTracker.markFailed();
+      this.markFailed();
+      await this.cleanupSubscription();
+      this.config.callbacks.onFailed(this.config.id, new Error(`Subscription ${this.config.id} failed`));
     }
   }
   
   getState(): State {
-    return this.stateTracker.getState();
+    return this.state;
   }
   
   getStats(): Stats {
@@ -264,7 +253,59 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   }
   
   async dispose(): Promise<void> {
-    this.stateTracker.dispose();
+    this.clearLivenessTimer();
     await this.cleanupSubscription();
+  }
+  
+  // State transition methods (copied from StateTracker)
+  private recordActivity(): void {
+    // Can't record activity if we're in a terminal state
+    if (this.state === State.Completed || this.state === State.Failed) return;
+    
+    // If we were stalled, recover
+    if (this.state === State.Stalled) {
+      this.state = State.Active;
+      console.log(`Subscription ${this.config.id} for client ${this.config.clientId} recovered`);
+      this.config.callbacks.onRecovered(this.config.id);
+    }
+    
+    this.resetLivenessTimer();
+  }
+  
+  private markCompleted(): void {
+    if (this.state === State.Completed || this.state === State.Failed) return;
+    
+    this.clearLivenessTimer();
+    this.state = State.Completed;
+    console.log(`Subscription ${this.config.id} for client ${this.config.clientId} completed`);
+    // Note: cleanupSubscription is called separately
+  }
+  
+  private markFailed(): void {
+    if (this.state === State.Completed || this.state === State.Failed) return;
+    
+    this.clearLivenessTimer();
+    this.state = State.Failed;
+    // Note: error is already logged by the caller
+  }
+  
+  // Liveness timeout methods (copied from StateTracker)
+  private resetLivenessTimer(): void {
+    this.clearLivenessTimer();
+    
+    this.livenessTimer = setTimeout(() => {
+      if (this.state === State.Active) {
+        this.state = State.Stalled;
+        console.log(`Subscription ${this.config.id} for client ${this.config.clientId} stalled`);
+        this.config.callbacks.onStalled(this.config.id);
+      }
+    }, this.config.livenessTimeoutMs);
+  }
+  
+  private clearLivenessTimer(): void {
+    if (this.livenessTimer) {
+      clearTimeout(this.livenessTimer);
+      this.livenessTimer = undefined;
+    }
   }
 }
