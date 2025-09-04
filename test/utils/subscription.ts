@@ -6,7 +6,7 @@ import { State } from './tracker';
  * GraphQL subscription event stream
  * Manages the WebSocket subscription and delivers events
  */
-class GraphQLSubscriptionStream implements EventStream<any> {
+class SubscriptionStream implements EventStream<any> {
   private subscription?: any;
   
   constructor(
@@ -164,8 +164,8 @@ export interface SubscriptionConfig<TData = any> {
  * Parses GraphQL subscription events and calls appropriate callbacks
  */
 export class SubscriptionHandler<TData = any> implements EventStreamHandler {
-  private stream?: GraphQLSubscriptionStream;
-  private processor: SubscriptionProcessor<TData>;
+  private stream: EventStream<any>;
+  private processor: EventProcessor<TData>;
   private startPromise?: Promise<void>;
   
   // State tracking fields (from StateTracker)
@@ -180,6 +180,13 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
       config.idField
     );
     
+    // Create the stream
+    this.stream = new SubscriptionStream(
+      config.graphqlClient,
+      config.query,
+      config.clientId
+    );
+    
     // Start the liveness timer immediately
     this.resetLivenessTimer();
   }
@@ -192,13 +199,6 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   }
   
   private async doStart(): Promise<void> {
-    // Create the stream
-    this.stream = new GraphQLSubscriptionStream(
-      this.config.graphqlClient,
-      this.config.query,
-      this.config.clientId
-    );
-    
     // Subscribe to the stream
     await this.stream.subscribe(
       (data) => {
@@ -245,11 +245,8 @@ export class SubscriptionHandler<TData = any> implements EventStreamHandler {
   }
   
   private async cleanupSubscription(): Promise<void> {
-    if (this.stream) {
-      console.log(`Unsubscribing from GraphQL subscription for ${this.config.id}`);
-      await this.stream.unsubscribe();
-      this.stream = undefined;
-    }
+    console.log(`Unsubscribing from GraphQL subscription for ${this.config.id}`);
+    await this.stream.unsubscribe();
   }
   
   async dispose(): Promise<void> {
