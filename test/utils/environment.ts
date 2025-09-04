@@ -32,6 +32,23 @@ export interface WebhookConfig {
   port: number;
 }
 
+/**
+ * GraphQL endpoint configuration
+ */
+export interface GraphQLEndpoint {
+  host: string;  // e.g., "localhost"
+  port: number;  // e.g., 4001
+  path: string;  // e.g., "/graphql"
+}
+
+/**
+ * Webhook endpoint operations
+ */
+export interface WebhookEndpoint {
+  register: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
+  unregister: (endpoint: string) => void;
+}
+
 
 /**
  * Complete test environment configuration
@@ -315,10 +332,16 @@ export class TestEnvironment {
       path: '/graphql'
     };
     
-    const createWebhook = (endpoint: string, handler: (payload: any) => Promise<void>) => {
-      return this.registerWebhook(endpoint, handler);
+    const webhookEndpoint = {
+      register: (endpoint: string, handler: (payload: any) => Promise<void>) => {
+        return this.registerWebhook(endpoint, handler);
+      },
+      unregister: (endpoint: string) => {
+        // TODO: Implement webhook unregistration
+        console.log(`Unregistering webhook: ${endpoint}`);
+      }
     };
     
-    return new TestClientManager(graphqlEndpoint, createWebhook, 30000);
+    return new TestClientManager(graphqlEndpoint, webhookEndpoint, 30000);
   }
 }

@@ -6,19 +6,13 @@ import { SubscriptionHandler } from './subscription';
 import { TriggerHandler } from './trigger';
 import { EventStreamHandler, HandlerCallbacks, Stats } from './handler';
 import { State } from './tracker';
-
-// GraphQL endpoint configuration
-export interface GraphQLEndpoint {
-  host: string;  // e.g., "localhost"
-  port: number;  // e.g., 4001
-  path: string;  // e.g., "/graphql"
-}
+import { GraphQLEndpoint, WebhookEndpoint } from './environment';
 
 // Constructor options - just configuration and callbacks
 export interface TestClientOptions {
   clientId: string;
   graphqlEndpoint: GraphQLEndpoint;
-  createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
+  webhookEndpoint: WebhookEndpoint;
   livenessTimeoutMs: number;
   onCompleted: () => void; // Called when client completes successfully
   onFailed: (error: Error) => void; // Called when client fails
@@ -111,7 +105,7 @@ export class TestClient<TData = any> {
       query: options.query,
       idField: options.idField,
       expectedEvents: options.expectedEvents,
-      createWebhook: this.options.createWebhook,
+      createWebhook: this.options.webhookEndpoint.register,
       graphqlClient: this.graphqlClient,
       callbacks: this.createHandlerCallbacks(),
       livenessTimeoutMs: this.options.livenessTimeoutMs

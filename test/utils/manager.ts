@@ -1,6 +1,7 @@
-import { TestClient, GraphQLEndpoint } from './client';
+import { TestClient } from './client';
 import { State } from './tracker';
 import { Stats } from './handler';
+import { GraphQLEndpoint, WebhookEndpoint } from './environment';
 
 export class TestClientManager<TData = any> {
   // === Client Management ===
@@ -9,7 +10,7 @@ export class TestClientManager<TData = any> {
   // === Configuration ===
   private livenessTimeoutMs: number;
   private graphqlEndpoint: GraphQLEndpoint;
-  private createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string;
+  private webhookEndpoint: WebhookEndpoint;
   
   // === Lifecycle State ===
   private state: State = State.Active;
@@ -19,11 +20,11 @@ export class TestClientManager<TData = any> {
 
   constructor(
     graphqlEndpoint: GraphQLEndpoint,
-    createWebhook: (endpoint: string, handler: (payload: any) => Promise<void>) => string,
+    webhookEndpoint: WebhookEndpoint,
     livenessTimeoutMs: number = 30000
   ) {
     this.graphqlEndpoint = graphqlEndpoint;
-    this.createWebhook = createWebhook;
+    this.webhookEndpoint = webhookEndpoint;
     this.livenessTimeoutMs = livenessTimeoutMs;
     this.completionPromise = new Promise((complete, fail) => {
       this.complete = complete;
@@ -46,7 +47,7 @@ export class TestClientManager<TData = any> {
     const client = new TestClient<TData>({
       clientId: id,
       graphqlEndpoint: this.graphqlEndpoint,
-      createWebhook: this.createWebhook,
+      webhookEndpoint: this.webhookEndpoint,
       livenessTimeoutMs: this.livenessTimeoutMs,
       onCompleted: () => {
         this.onClientCompleted();
