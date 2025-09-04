@@ -36,11 +36,16 @@ export class TestClientManager<TData = any> {
       throw new Error(`Client ${config.id} already started`);
     }
     
-    // Create, configure, and start the client immediately
+    // Create the client
     const client = this.createClient(config);
     
-    // Start the client and wait for it to be ready (subscription/webhook established)
-    await client.start();
+    // Start subscription and/or trigger based on config
+    if (config.subscription) {
+      await client.subscribe(config.subscription);
+    }
+    if (config.trigger) {
+      await client.trigger(config.trigger);
+    }
     
     // Track completion separately
     client.waitForCompletion().catch(error => {
@@ -72,14 +77,6 @@ export class TestClientManager<TData = any> {
         this.onClientRecovered(clientId);
       }
     });
-
-    // Configure the client
-    if (config.subscription) {
-      client.configureSubscription(config.subscription);
-    }
-    if (config.trigger) {
-      client.configureTrigger(config.trigger);
-    }
 
     // Store the client
     this.clients.set(config.id, client);

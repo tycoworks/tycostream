@@ -2,8 +2,8 @@ import { ApolloClient, InMemoryCache, gql } from '@apollo/client';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
-import { SubscriptionHandler, SubscriptionConfig } from './subscription';
-import { TriggerHandler, TriggerConfig } from './trigger';
+import { SubscriptionHandler } from './subscription';
+import { TriggerHandler } from './trigger';
 import { EventStreamHandler, HandlerCallbacks } from './handler';
 
 // GraphQL endpoint configuration
@@ -44,10 +44,7 @@ export class TestClient<TData = any> {
   
   // === Handlers ===
   private subscriptionHandler?: EventStreamHandler;
-  private subscriptionOptions?: SubscriptionOptions<TData>;
-
   private triggerHandler?: EventStreamHandler;
-  private triggerOptions?: TriggerOptions<TData>;
   
   // === Lifecycle State ===
   private finished = false;
@@ -57,8 +54,6 @@ export class TestClient<TData = any> {
   private completionPromise: Promise<void>;
   private complete!: () => void;
   private fail!: (error: Error) => void;
-  private readyPromise!: Promise<void>;
-  private readyResolve!: () => void;
   
   // === Liveness Tracking ===
   private livenessTimeout?: NodeJS.Timeout;
@@ -87,73 +82,52 @@ export class TestClient<TData = any> {
 
   // === Public Methods ===
   
-  configureSubscription(subscriptionOptions: SubscriptionOptions<TData>): void {
-    if (this.subscriptionOptions) {
-      throw new Error(`Client ${this.options.clientId}: Subscription already configured`);
-    }
-    this.subscriptionOptions = subscriptionOptions;
-  }
-  
-  configureTrigger(triggerOptions: TriggerOptions<TData>): void {
-    if (this.triggerOptions) {
-      throw new Error(`Client ${this.options.clientId}: Trigger already configured`);
-    }
-    this.triggerOptions = triggerOptions;
-  }
-  
-  async start(): Promise<void> {
-    // Must have at least one configuration
-    if (!this.subscriptionOptions && !this.triggerOptions) {
-      throw new Error(`Client ${this.options.clientId}: No subscription or trigger configured`);
+  async subscribe(options: SubscriptionOptions<TData>): Promise<void> {
+    if (this.subscriptionHandler) {
+      throw new Error(`Client ${this.options.clientId}: Subscription already active`);
     }
     
-    // Create ready promise
-    this.readyPromise = new Promise<void>(resolve => {
-      this.readyResolve = resolve;
+    // Start liveness monitoring if this is the first handler
+    if (!this.subscriptionHandler && !this.triggerHandler) {
+      this.resetLiveness();
+    }
+    
+    // Create and start subscription handler
+    this.subscriptionHandler = new SubscriptionHandler<TData>({
+      clientId: this.options.clientId,
+      query: options.query,
+      dataPath: options.dataPath,
+      idField: options.idField,
+      expectedState: options.expectedState,
+      graphqlClient: this.graphqlClient,
+      callbacks: this.createHandlerCallbacks()
     });
     
-    // Start liveness monitoring
-    this.resetLiveness();
-    
-    // Start subscription if configured
-    if (this.subscriptionOptions) {
-      // Create handler with expected state and callbacks
-      this.subscriptionHandler = new SubscriptionHandler<TData>({
-        clientId: this.options.clientId,
-        query: this.subscriptionOptions.query,
-        dataPath: this.subscriptionOptions.dataPath,
-        idField: this.subscriptionOptions.idField,
-        expectedState: this.subscriptionOptions.expectedState,
-        graphqlClient: this.graphqlClient,
-        callbacks: this.createHandlerCallbacks()
-      });
-      
-      // Start the subscription
-      await this.subscriptionHandler.start();
+    await this.subscriptionHandler.start();
+  }
+  
+  async trigger(options: TriggerOptions<TData>): Promise<void> {
+    if (this.triggerHandler) {
+      throw new Error(`Client ${this.options.clientId}: Trigger already active`);
     }
     
-    // Set up webhook and execute trigger mutation if configured
-    if (this.triggerOptions) {
-      // Create handler with expected events and callbacks
-      this.triggerHandler = new TriggerHandler<TData>({
-        clientId: this.options.clientId,
-        query: this.triggerOptions.query,
-        idField: this.triggerOptions.idField,
-        expectedEvents: this.triggerOptions.expectedEvents,
-        createWebhook: this.options.createWebhook,
-        graphqlClient: this.graphqlClient,
-        callbacks: this.createHandlerCallbacks()
-      });
-      
-      // Start the trigger (register webhook and execute mutation)
-      await this.triggerHandler.start();
+    // Start liveness monitoring if this is the first handler
+    if (!this.subscriptionHandler && !this.triggerHandler) {
+      this.resetLiveness();
     }
     
-    // All setup is complete (subscription and/or webhook), mark as ready
-    this.readyResolve();
+    // Create and start trigger handler
+    this.triggerHandler = new TriggerHandler<TData>({
+      clientId: this.options.clientId,
+      query: options.query,
+      idField: options.idField,
+      expectedEvents: options.expectedEvents,
+      createWebhook: this.options.createWebhook,
+      graphqlClient: this.graphqlClient,
+      callbacks: this.createHandlerCallbacks()
+    });
     
-    // Return the ready promise (resolves when client is ready)
-    return this.readyPromise;
+    await this.triggerHandler.start();
   }
   
   async waitForCompletion(): Promise<void> {
