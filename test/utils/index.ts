@@ -2,3 +2,4 @@
 export { TestClient, TestClientOptions } from './client';
 export { TestClientManager } from './manager';
 export { TestEnvironment } from './environment';
+export { OperationType, OperationTemplate, TestOperations } from './operations';

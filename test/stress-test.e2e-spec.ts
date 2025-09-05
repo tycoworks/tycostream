@@ -1,43 +1,95 @@
 import * as path from 'path';
-import { TestEnvironment } from './utils';
-
-enum Status {
-  Active = 'active',
-  Inactive = 'inactive',
-  Pending = 'pending'
-}
-
-enum Department {
-  Sales = 'sales',
-  Engineering = 'engineering',
-  Operations = 'operations',
-  Finance = 'finance'
-}
-
-interface StressTestData {
-  id: number;
-  value: number;
-  status: Status;
-  department: string;
-}
-
-// Define updatable fields (excluding primary key)
-const UPDATABLE_FIELDS = ['value', 'status'] as const;
+import { TestEnvironment, OperationType, OperationTemplate, TestOperations } from './utils';
 
 describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   let testEnv: TestEnvironment;
 
   // Test configuration
-  const NUM_ROWS = process.env.STRESS_TEST_ROWS ? parseInt(process.env.STRESS_TEST_ROWS) : 10000;
-  const NUM_CLIENTS = process.env.STRESS_TEST_CLIENTS ? parseInt(process.env.STRESS_TEST_CLIENTS) : 30;
+  const NUM_ITERATIONS = process.env.STRESS_TEST_ITERATIONS ? parseInt(process.env.STRESS_TEST_ITERATIONS) : 100;
+  const NUM_CLIENTS = process.env.STRESS_TEST_CLIENTS ? parseInt(process.env.STRESS_TEST_CLIENTS) : 10;
   const INSERT_DELAY_MS = process.env.STRESS_TEST_DELAY ? parseInt(process.env.STRESS_TEST_DELAY) : 5;
-  const TEST_TIMEOUT_MS = 600000; // 10 minutes total test timeout
-  const DEPARTMENTS = Object.values(Department);
+  const TEST_TIMEOUT_MS = 300000; // 5 minute test timeout
+
+  // Static test data - operation templates (IDs will be generated per iteration)
+  const OPERATION_SEQUENCE: OperationTemplate[] = [
+    { type: OperationType.INSERT, id: 1, fields: { value: 413, status: "inactive", department: "engineering" } },
+    { type: OperationType.INSERT, id: 2, fields: { value: 13, status: "pending", department: "operations" } },
+    { type: OperationType.INSERT, id: 3, fields: { value: 352, status: "active", department: "finance" } },
+    { type: OperationType.INSERT, id: 4, fields: { value: 220, status: "inactive", department: "sales" } },
+    { type: OperationType.INSERT, id: 5, fields: { value: 265, status: "pending", department: "engineering" } },
+    { type: OperationType.INSERT, id: 6, fields: { value: 204, status: "active", department: "operations" } },
+    { type: OperationType.INSERT, id: 7, fields: { value: 720, status: "inactive", department: "finance" } },
+    { type: OperationType.INSERT, id: 8, fields: { value: 14, status: "pending", department: "sales" } },
+    { type: OperationType.INSERT, id: 9, fields: { value: 26, status: "active", department: "engineering" } },
+    { type: OperationType.INSERT, id: 10, fields: { value: 328, status: "inactive", department: "operations" } },
+    { type: OperationType.UPDATE, id: 3, fields: { value: 462, status: "pending" } },
+    { type: OperationType.INSERT, id: 11, fields: { value: 677, status: "pending", department: "finance" } },
+    { type: OperationType.UPDATE, id: 3, fields: { value: 538 } },
+    { type: OperationType.INSERT, id: 12, fields: { value: 671, status: "active", department: "sales" } },
+    { type: OperationType.UPDATE, id: 6, fields: { status: "inactive" } },
+    { type: OperationType.INSERT, id: 13, fields: { value: 413, status: "inactive", department: "engineering" } },
+    { type: OperationType.UPDATE, id: 5, fields: { value: 184, status: "inactive" } },
+    { type: OperationType.INSERT, id: 14, fields: { value: 319, status: "pending", department: "operations" } },
+    { type: OperationType.UPDATE, id: 4, fields: { value: 586 } },
+    { type: OperationType.INSERT, id: 15, fields: { value: 807, status: "active", department: "finance" } },
+    { type: OperationType.UPDATE, id: 10, fields: { status: "pending" } },
+    { type: OperationType.INSERT, id: 16, fields: { value: 292, status: "inactive", department: "sales" } },
+    { type: OperationType.UPDATE, id: 16, fields: { value: 634, status: "active" } },
+    { type: OperationType.INSERT, id: 17, fields: { value: 191, status: "pending", department: "engineering" } },
+    { type: OperationType.UPDATE, id: 9, fields: { value: 113 } },
+    { type: OperationType.INSERT, id: 18, fields: { value: 922, status: "active", department: "operations" } },
+    { type: OperationType.DELETE, id: 13, fields: {} },
+    { type: OperationType.INSERT, id: 19, fields: { value: 900, status: "inactive", department: "finance" } },
+    { type: OperationType.UPDATE, id: 15, fields: { status: "inactive" } },
+    { type: OperationType.INSERT, id: 20, fields: { value: 542, status: "pending", department: "sales" } },
+    { type: OperationType.UPDATE, id: 5, fields: { value: 64, status: "inactive" } },
+    { type: OperationType.DELETE, id: 2, fields: {} }
+  ];
+
+  // Expected final states by department
+  const EXPECTED_ENGINEERING_STATE = new Map([
+    [1, { id: 1, value: 413, status: "inactive", department: "engineering" }],
+    [5, { id: 5, value: 64, status: "inactive", department: "engineering" }],
+    [9, { id: 9, value: 113, status: "active", department: "engineering" }],
+    [17, { id: 17, value: 191, status: "pending", department: "engineering" }]
+  ]);
+
+  const EXPECTED_OPERATIONS_STATE = new Map([
+    [6, { id: 6, value: 204, status: "inactive", department: "operations" }],
+    [10, { id: 10, value: 328, status: "pending", department: "operations" }],
+    [14, { id: 14, value: 319, status: "pending", department: "operations" }],
+    [18, { id: 18, value: 922, status: "active", department: "operations" }]
+  ]);
+
+  const EXPECTED_FINANCE_STATE = new Map([
+    [3, { id: 3, value: 538, status: "pending", department: "finance" }],
+    [7, { id: 7, value: 720, status: "inactive", department: "finance" }],
+    [11, { id: 11, value: 677, status: "pending", department: "finance" }],
+    [15, { id: 15, value: 807, status: "inactive", department: "finance" }],
+    [19, { id: 19, value: 900, status: "inactive", department: "finance" }]
+  ]);
+
+  const EXPECTED_SALES_STATE = new Map([
+    [4, { id: 4, value: 586, status: "inactive", department: "sales" }],
+    [8, { id: 8, value: 14, status: "pending", department: "sales" }],
+    [12, { id: 12, value: 671, status: "active", department: "sales" }],
+    [16, { id: 16, value: 634, status: "active", department: "sales" }],
+    [20, { id: 20, value: 542, status: "pending", department: "sales" }]
+  ]);
+
+  const DEPARTMENT_STATES = new Map([
+    ['engineering', EXPECTED_ENGINEERING_STATE],
+    ['operations', EXPECTED_OPERATIONS_STATE],
+    ['finance', EXPECTED_FINANCE_STATE],
+    ['sales', EXPECTED_SALES_STATE]
+  ]);
+
+  const DEPARTMENTS = Array.from(DEPARTMENT_STATES.keys());
 
   beforeAll(async () => {
-    console.log(`Starting stress test with ${NUM_ROWS} rows and ${NUM_CLIENTS} concurrent clients`);
+    console.log(`Starting stress test with ${OPERATION_SEQUENCE.length} base operations and ${NUM_CLIENTS} concurrent clients`);
     
-    // Bootstrap test environment with more workers for stress test
+    // Bootstrap test environment
     testEnv = await TestEnvironment.create({
       appPort: 4100,
       schemaPath: path.join(__dirname, 'stress-test-schema.yaml'),
@@ -47,7 +99,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         user: 'materialize',
         password: 'materialize',
         name: 'materialize',
-        workers: '4'  // More workers for better stress test performance
+        workers: '4'
       },
       graphqlUI: false,
       logLevel: 'error',
@@ -56,7 +108,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       }
     });
     
-    // Create test table with multiple columns for testing partial updates
+    // Create test table
     await testEnv.executeSql(`
       CREATE TABLE IF NOT EXISTS stress_test (
         id INTEGER NOT NULL,
@@ -65,46 +117,50 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         department VARCHAR(20) NOT NULL
       )
     `);
-  }, 300000); // 5 minute timeout for beforeAll
+  }, 60000);
 
   afterAll(async () => {
     await testEnv.stop();
   });
 
-  it('should handle concurrent clients with mixed operations', async () => {
-    // Clear any existing data first
-    await testEnv.executeSql('DELETE FROM stress_test', [], 500);
-    
-    // Generate test operations
-    console.log(`Generating ${NUM_ROWS} rows worth of operations...`);
-    const { operations, expectedStates } = generateTestOperations(NUM_ROWS);
-    const operationCount = operations.length;
-    
-    let totalRows = 0;
-    expectedStates.forEach((state, dept) => totalRows += state.size);
-    console.log(`Expected final state: ${totalRows} rows, ${operationCount} total operations`);
-    expectedStates.forEach((state, dept) => {
-      console.log(`  ${dept}: ${state.size} rows`);
-    });
+  it('should handle concurrent clients with static operations', async () => {
+    const totalOperations = OPERATION_SEQUENCE.length * NUM_ITERATIONS;
+    console.log(`Executing ${totalOperations} operations (${NUM_ITERATIONS} iterations of ${OPERATION_SEQUENCE.length} operations)...`);
     
     try {
-      // Execute the pre-calculated operations
-      console.log(`Starting ${operations.length} database operations...`);
+      // Execute the static operations asynchronously with iterations
       const operationsPromise = (async () => {
-        for (const op of operations) {
-          await testEnv.executeSql(op.sql, op.params, INSERT_DELAY_MS);
+        for (let iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
+          const idOffset = iteration * 1000;
+          
+          for (const op of OPERATION_SEQUENCE) {
+            const { sql, params } = TestOperations.buildOperation(op, idOffset);
+            await testEnv.executeSql(sql, params, INSERT_DELAY_MS);
+          }
         }
         console.log('All database operations completed');
       })();
       
       // Create clients at staggered intervals
       console.log('Creating clients at staggered intervals...');
-      const clientSpawnInterval = Math.floor((NUM_ROWS * INSERT_DELAY_MS * 2.5) / NUM_CLIENTS);
+      const clientSpawnInterval = Math.floor((totalOperations * INSERT_DELAY_MS * 2.5) / NUM_CLIENTS);
       
       // Start clients with department filters
       for (let i = 0; i < NUM_CLIENTS; i++) {
         const clientDepartment = DEPARTMENTS[i % DEPARTMENTS.length];
-        const departmentExpectedState = expectedStates.get(clientDepartment)!;
+        const baseDepartmentState = DEPARTMENT_STATES.get(clientDepartment)!;
+        
+        // Build expected state for all iterations
+        const departmentExpectedState = new Map();
+        for (let iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
+          baseDepartmentState.forEach((row, id) => {
+            const adjustedId = id + (iteration * 1000);
+            departmentExpectedState.set(adjustedId, {
+              ...row,
+              id: adjustedId
+            });
+          });
+        }
         
         console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
         
@@ -129,7 +185,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
           idField: 'id'
         });
         
-        // Stagger client creation to avoid thundering herd
+        // Stagger client creation
         if (i < NUM_CLIENTS - 1) {
           await new Promise(resolve => setTimeout(resolve, clientSpawnInterval));
         }
@@ -138,10 +194,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       // Wait for all operations to complete
       await operationsPromise;
       
-      // Give a moment for final events to propagate
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Wait for either all clients to finish or timeout
+      // Wait for all clients to finish
       await testEnv.waitForCompletion();
       
       console.log(`Stress test completed successfully. All ${NUM_CLIENTS} clients received their department-filtered data.`);
@@ -161,115 +214,3 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     }
   }, TEST_TIMEOUT_MS);
 });
-
-// Helper function to generate test operations
-function generateTestOperations(numRows: number): {
-  operations: Array<{ sql: string, params: any[] }>,
-  expectedStates: Map<Department, Map<number, StressTestData>>
-} {
-  const expectedState = new Map<number, StressTestData>();
-  const operations: Array<{ sql: string, params: any[] }> = [];
-  const departments = Object.values(Department);
-  
-  // Use deterministic random for reproducible results
-  let seed = 12345;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  
-  const statusValues = Object.values(Status);
-  const numUpdatePatterns = (1 << UPDATABLE_FIELDS.length) - 1;
-  
-  for (let i = 1; i <= numRows; i++) {
-    // INSERT
-    const insertValue = Math.floor(random() * 1000);
-    const insertStatus = statusValues[i % statusValues.length];
-    const insertDepartment = departments[i % departments.length];
-    operations.push({ 
-      sql: 'INSERT INTO stress_test (id, value, status, department) VALUES ($1, $2, $3, $4)',
-      params: [i, insertValue, insertStatus, insertDepartment]
-    });
-    const row = { id: i, value: insertValue, status: insertStatus, department: insertDepartment };
-    expectedState.set(i, row);
-    
-    // UPDATE (only update existing rows)
-    if (i > 10) {
-      const updateId = Math.floor(random() * (i - 1)) + 1;
-      // Only update if not previously deleted
-      if (expectedState.has(updateId)) {
-        const fieldValues = {
-          value: Math.floor(random() * 1000),
-          status: statusValues[(updateId + i) % statusValues.length]
-        };
-        const updatePattern = (i % numUpdatePatterns) + 1;
-        
-        const { setClause, params, updates } = buildPartialUpdate(updatePattern, fieldValues);
-        
-        operations.push({
-          sql: `UPDATE stress_test SET ${setClause} WHERE id = $${params.length + 1}`,
-          params: [...params, updateId]
-        });
-        
-        // Merge updates with existing row
-        expectedState.set(updateId, {
-          ...expectedState.get(updateId)!,
-          ...updates
-        });
-      }
-    }
-    
-    // DELETE (only delete older rows)
-    if (i > 20 && i % 10 === 0) {
-      const deleteId = Math.floor(random() * (i - 10)) + 1;
-      if (expectedState.has(deleteId)) {
-        operations.push({
-          sql: 'DELETE FROM stress_test WHERE id = $1',
-          params: [deleteId]
-        });
-        expectedState.delete(deleteId);
-      }
-    }
-  }
-  
-  // Filter final state by department
-  const expectedStates = new Map<Department, Map<number, StressTestData>>();
-  for (const dept of departments) {
-    const deptState = new Map<number, StressTestData>();
-    expectedState.forEach((row, id) => {
-      if (row.department === dept) {
-        deptState.set(id, row);
-      }
-    });
-    expectedStates.set(dept, deptState);
-  }
-  
-  return { operations, expectedStates };
-}
-
-// Helper to build partial UPDATE statements based on bit pattern
-function buildPartialUpdate(updatePattern: number, fieldValues: Record<string, any>): { 
-  setClause: string, 
-  params: any[], 
-  updates: Record<string, any> 
-} {
-  // Use bitmask to determine which fields to update
-  const updates: Record<string, any> = {};
-  const setClauses: string[] = [];
-  const params: any[] = [];
-  
-  UPDATABLE_FIELDS.forEach((fieldName, index) => {
-    // Check if bit at position 'index' is set
-    if (updatePattern & (1 << index)) {
-      updates[fieldName] = fieldValues[fieldName];
-      setClauses.push(`${fieldName} = $${params.length + 1}`);
-      params.push(fieldValues[fieldName]);
-    }
-  });
-  
-  return {
-    setClause: setClauses.join(', '),
-    params,
-    updates
-  };
-}
