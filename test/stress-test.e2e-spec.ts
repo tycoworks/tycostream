@@ -196,6 +196,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       });
       
       // Engineering Active Trigger: Match when department = "engineering" AND status = "active"
+      // Unmatch when still in engineering but status changes to non-active
       await triggerClient2.trigger('engineering-active', {
         query: `
           mutation CreateEngineeringActiveTrigger($webhookUrl: String!) {
@@ -207,10 +208,8 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
                 status: { _eq: "active" }
               }
               unmatch: {
-                _or: [
-                  { department: { _neq: "engineering" } }
-                  { status: { _neq: "active" } }
-                ]
+                department: { _eq: "engineering" }
+                status: { _neq: "active" }
               }
             }) {
               name
@@ -229,7 +228,8 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         idField: 'event_id'
       });
       
-      // Operations Value Trigger: Match when department = "operations" AND value >= 300, unmatch when department != "operations" OR value < 250
+      // Operations Value Trigger: Match when department = "operations" AND value >= 300
+      // Unmatch when still in operations but value drops below 250 (hysteresis)
       await triggerClient3.trigger('operations-value', {
         query: `
           mutation CreateOperationsValueTrigger($webhookUrl: String!) {
@@ -241,10 +241,8 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
                 value: { _gte: 300 }
               }
               unmatch: {
-                _or: [
-                  { department: { _neq: "operations" } }
-                  { value: { _lt: 250 } }
-                ]
+                department: { _eq: "operations" }
+                value: { _lt: 250 }
               }
             }) {
               name
