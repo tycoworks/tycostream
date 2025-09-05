@@ -70,7 +70,7 @@ class SubscriptionStream implements EventStream<any> {
  * Processes subscription events by maintaining a state map
  * Handles INSERT/UPDATE/DELETE operations
  */
-class SubscriptionProcessor<TData = any> implements EventProcessor<TData> {
+export class SubscriptionProcessor<TData = any> implements EventProcessor<TData> {
   private currentState = new Map<string | number, TData>();
   
   constructor(

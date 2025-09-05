@@ -13,6 +13,7 @@
     "build": "nest build",
     "start": "node dist/main",
     "test": "jest",
+    "test:utils": "jest --config ./test/jest-utils.json",
     "e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "demo": "(cd demo && ts-node environment.ts &) && cd demo && vite"
   },

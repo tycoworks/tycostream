@@ -9,6 +9,15 @@ export enum State {
 }
 
 /**
+ * GraphQL row operation types
+ */
+export enum GraphQLRowOperation {
+  Insert = 'INSERT',
+  Update = 'UPDATE',
+  Delete = 'DELETE'
+}
+
+/**
  * Statistics for progress tracking
  */
 export interface Stats {
