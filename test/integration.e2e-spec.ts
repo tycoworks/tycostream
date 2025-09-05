@@ -195,7 +195,8 @@ describe('Integration Test', () => {
   
   it('should handle triggers with score threshold and hysteresis', async () => {
     // Test GraphQL triggers with webhook callbacks
-    // Trigger fires when score >= 100, tests hysteresis (no re-firing while condition remains true)
+    // Hysteresis: Trigger fires when score >= 100, unmatch when score < 90
+    // This prevents rapid firing/unfiring when score hovers around a single threshold
     
     // Expected webhook events in order
     // Each webhook will receive event_type (MATCH/UNMATCH), trigger_name, timestamp, and data
@@ -208,8 +209,8 @@ describe('Integration Test', () => {
       { event_type: 'UNMATCH', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: null, active: null }}
     ];
     
-    // Create a client and add trigger for score threshold
-    // Using hysteresis: match at score >= 100, unmatch at score < 100 (same threshold for simplicity)
+    // Create a client and add trigger for score threshold with hysteresis
+    // Match at score >= 100, unmatch at score < 90 (10-point hysteresis band)
     const client = testEnv.createClient('trigger-test-client');
     
     await client.trigger('score-threshold', {
@@ -220,6 +221,9 @@ describe('Integration Test', () => {
             webhook: $webhookUrl
             match: {
               score: { _gte: 100 }
+            }
+            unmatch: {
+              score: { _lt: 90 }
             }
           }) {
             name
@@ -255,12 +259,17 @@ describe('Integration Test', () => {
       "UPDATE user_scores SET score = 160 WHERE user_id = 1"
     );
     
-    // User 1: Drop below threshold (should trigger)
+    // User 1: Drop below unmatch threshold (should trigger UNMATCH)
     await testEnv.executeSql(
       "UPDATE user_scores SET score = 80 WHERE user_id = 1"
     );
     
-    // User 1: Cross threshold again (should trigger)
+    // User 1: Update to hysteresis band (95 is between 90 and 100 - should NOT trigger)
+    await testEnv.executeSql(
+      "UPDATE user_scores SET score = 95 WHERE user_id = 1"
+    );
+    
+    // User 1: Cross match threshold again (should trigger MATCH)
     await testEnv.executeSql(
       "UPDATE user_scores SET score = 120 WHERE user_id = 1"
     );
