@@ -4,21 +4,17 @@ import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
 import { createSubscriptionHandler } from './subscription';
 import { createTriggerHandler } from './trigger';
-import { EventHandler, HandlerCallbacks, Stats, State } from './events';
+import { EventHandler, Stats, State } from './events';
 import { StateManager, StatefulItem } from './state';
 import { GraphQLEndpoint } from './environment';
 import { WebhookEndpoint } from './webhook';
 
-// Constructor options - just configuration and callbacks
+// Constructor options - just configuration
 export interface TestClientOptions {
   clientId: string;
   graphqlEndpoint: GraphQLEndpoint;
   webhookEndpoint: WebhookEndpoint;
   livenessTimeoutMs: number;
-  onCompleted: () => void; // Called when client completes successfully
-  onFailed: (error: Error) => void; // Called when client fails
-  onStalled: (clientId: string) => void; // Called when all handlers are stalled
-  onRecovered: (clientId: string) => void; // Called when data resumes after a stall
 }
 
 // Subscription options
@@ -40,8 +36,8 @@ export interface TriggerOptions<TData = any> {
 export class TestClient<TData = any> implements StatefulItem {
   private graphqlClient: ApolloClient;
   
-  // === State Management ===
-  private stateManager: StateManager<EventHandler>;
+  // === State Management (public for parent access) ===
+  stateManager: StateManager<EventHandler>;
 
   constructor(private options: TestClientOptions) {
     // Create Apollo client with WebSocket support using graphql-ws
@@ -81,7 +77,7 @@ export class TestClient<TData = any> implements StatefulItem {
       idField: options.idField,
       expectedState: options.expectedState,
       graphqlClient: this.graphqlClient,
-      callbacks: this.createHandlerCallbacks(),
+      onStateChange: () => this.handleStateChange(),
       livenessTimeoutMs: this.options.livenessTimeoutMs
     });
     
@@ -104,7 +100,7 @@ export class TestClient<TData = any> implements StatefulItem {
       expectedEvents: options.expectedEvents,
       webhookEndpoint: this.options.webhookEndpoint,
       graphqlClient: this.graphqlClient,
-      callbacks: this.createHandlerCallbacks(),
+      onStateChange: () => this.handleStateChange(),
       livenessTimeoutMs: this.options.livenessTimeoutMs
     });
     
@@ -146,48 +142,17 @@ export class TestClient<TData = any> implements StatefulItem {
   }
 
   // === Private Methods ===
-
-  private createHandlerCallbacks(): HandlerCallbacks {
-    return {
-      onStalled: (handlerId) => this.handleStateChange(),
-      onRecovered: (handlerId) => this.handleStateChange(),
-      onCompleted: (handlerId) => this.handleStateChange(),
-      onFailed: (handlerId, error) => this.handleStateChange()
-    };
-  }
   
   private handleStateChange(): void {
     const oldState = this.stateManager.getState();
     this.stateManager.handleChildStateChange();
     const newState = this.stateManager.getState();
     
-    // Notify parent callbacks if state changed
-    if (oldState !== newState) {
-      this.notifyParent(oldState, newState);
+    // Log completion with stats
+    if (oldState !== newState && newState === State.Completed) {
+      const stats = this.getStats();
+      console.log(`Client ${this.options.clientId} completed - received ${stats.totalReceived}/${stats.totalExpected} items`);
     }
-  }
-  
-  private notifyParent(oldState: State, newState: State): void {
-    switch (newState) {
-      case State.Stalled:
-        console.log(`Client ${this.options.clientId} stalled - all handlers stopped`);
-        this.options.onStalled(this.options.clientId);
-        break;
-      case State.Active:
-        if (oldState === State.Stalled) {
-          console.log(`Client ${this.options.clientId} recovered`);
-          this.options.onRecovered(this.options.clientId);
-        }
-        break;
-      case State.Completed:
-        const stats = this.getStats();
-        console.log(`Client ${this.options.clientId} completed - received ${stats.totalReceived}/${stats.totalExpected} items`);
-        this.options.onCompleted();
-        break;
-      case State.Failed:
-        console.error(`Client ${this.options.clientId} failed`);
-        this.options.onFailed(new Error(`Client ${this.options.clientId} failed`));
-        break;
-    }
+    // Parent notification happens automatically via StateManager chain
   }
 }

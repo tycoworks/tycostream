@@ -59,23 +59,12 @@ export interface EventStream<TData = any> {
 }
 
 /**
- * Callbacks for lifecycle events
- */
-export interface HandlerCallbacks {
-  // State management callbacks
-  onStalled: (handlerId: string) => void;
-  onRecovered: (handlerId: string) => void;
-  onCompleted: (handlerId: string) => void;
-  onFailed: (handlerId: string, error: Error) => void;
-}
-
-/**
  * Configuration for EventHandler
  */
 export interface EventHandlerConfig {
   id: string;                         // Handler ID for logging
   clientId: string;                   // Client ID for logging
-  callbacks: HandlerCallbacks;        // Lifecycle callbacks
+  onStateChange?: () => void;          // Optional callback for state changes
   livenessTimeoutMs: number;          // Timeout for liveness checking
 }
 
@@ -119,7 +108,7 @@ export class EventHandler<TData = any> implements StatefulItem {
         // Stream error - mark as failed
         this.markFailed();
         await this.cleanup();
-        this.config.callbacks.onFailed(this.config.id, error);
+        this.config.onStateChange?.();
       }
     );
   }
@@ -136,13 +125,13 @@ export class EventHandler<TData = any> implements StatefulItem {
       if (this.processor.isComplete()) {
         this.markCompleted();
         await this.cleanup();
-        this.config.callbacks.onCompleted(this.config.id);
+        this.config.onStateChange?.();
       }
     } catch (error) {
       // If processing fails, mark as failed
       this.markFailed();
       await this.cleanup();
-      this.config.callbacks.onFailed(this.config.id, new Error(`Handler ${this.config.id} failed`));
+      this.config.onStateChange?.();
     }
   }
   
@@ -177,7 +166,7 @@ export class EventHandler<TData = any> implements StatefulItem {
     if (this.state === State.Stalled) {
       this.state = State.Active;
       console.log(`${this.config.id} for client ${this.config.clientId} recovered`);
-      this.config.callbacks.onRecovered(this.config.id);
+      this.config.onStateChange?.();
     }
     
     this.resetLivenessTimer();
@@ -189,7 +178,7 @@ export class EventHandler<TData = any> implements StatefulItem {
     this.clearLivenessTimer();
     this.state = State.Completed;
     console.log(`${this.config.id} for client ${this.config.clientId} completed`);
-    // Note: cleanup is called separately
+    this.config.onStateChange?.();
   }
   
   private markFailed(): void {
@@ -197,7 +186,7 @@ export class EventHandler<TData = any> implements StatefulItem {
     
     this.clearLivenessTimer();
     this.state = State.Failed;
-    // Note: error is already logged by the caller
+    this.config.onStateChange?.();
   }
   
   // Liveness timeout methods
@@ -208,7 +197,7 @@ export class EventHandler<TData = any> implements StatefulItem {
       if (this.state === State.Active) {
         this.state = State.Stalled;
         console.log(`${this.config.id} for client ${this.config.clientId} stalled`);
-        this.config.callbacks.onStalled(this.config.id);
+        this.config.onStateChange?.();
       }
     }, this.config.livenessTimeoutMs);
   }

@@ -45,14 +45,11 @@ export class TestClientManager<TData = any> implements StatefulItem {
       clientId: id,
       graphqlEndpoint: this.graphqlEndpoint,
       webhookEndpoint: this.webhookEndpoint,
-      livenessTimeoutMs: this.livenessTimeoutMs,
-      onCompleted: () => this.stateManager.handleChildStateChange(),
-      onFailed: (error: Error) => this.stateManager.handleChildStateChange(),
-      onStalled: (clientId: string) => this.stateManager.handleChildStateChange(),
-      onRecovered: (clientId: string) => this.stateManager.handleChildStateChange()
+      livenessTimeoutMs: this.livenessTimeoutMs
     });
 
-    // Add to state manager
+    // Connect the StateManagers directly
+    client.stateManager.setParent(this.stateManager);
     this.stateManager.add(id, client);
     console.log(`Created client '${id}' (${this.stateManager.getItems().size} total clients)`);
     

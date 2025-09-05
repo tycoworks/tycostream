@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStream, EventProcessor, EventHandler, EventHandlerConfig, HandlerCallbacks, Stats, State } from './events';
+import { EventStream, EventProcessor, EventHandler, EventHandlerConfig, Stats, State } from './events';
 import { WebhookEndpoint } from './webhook';
 
 /**
@@ -156,7 +156,7 @@ export interface TriggerConfig<TData = any> {
   expectedEvents: TData[]; // Expected webhook payloads in order
   webhookEndpoint: WebhookEndpoint;
   graphqlClient: ApolloClient;
-  callbacks: HandlerCallbacks;
+  onStateChange?: () => void;
   livenessTimeoutMs: number;
 }
 
@@ -184,7 +184,7 @@ export function createTriggerHandler<TData = any>(
   const handlerConfig: EventHandlerConfig = {
     id: config.id,
     clientId: config.clientId,
-    callbacks: config.callbacks,
+    onStateChange: config.onStateChange,
     livenessTimeoutMs: config.livenessTimeoutMs
   };
   

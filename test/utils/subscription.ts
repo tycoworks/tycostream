@@ -1,5 +1,5 @@
 import { ApolloClient, gql } from '@apollo/client';
-import { EventStream, EventProcessor, EventHandler, EventHandlerConfig, HandlerCallbacks, Stats, State } from './events';
+import { EventStream, EventProcessor, EventHandler, EventHandlerConfig, Stats, State } from './events';
 
 /**
  * GraphQL subscription event stream
@@ -155,7 +155,7 @@ export interface SubscriptionConfig<TData = any> {
   idField: string; // Field name for ID in the data (e.g., "id", "user_id")
   expectedState: Map<string | number, TData>;
   graphqlClient: ApolloClient;
-  callbacks: HandlerCallbacks;
+  onStateChange?: () => void;
   livenessTimeoutMs: number;
 }
 
@@ -185,7 +185,7 @@ export function createSubscriptionHandler<TData = any>(
   const handlerConfig: EventHandlerConfig = {
     id: config.id,
     clientId: config.clientId,
-    callbacks: config.callbacks,
+    onStateChange: config.onStateChange,
     livenessTimeoutMs: config.livenessTimeoutMs
   };
   
