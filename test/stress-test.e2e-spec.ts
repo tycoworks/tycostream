@@ -1,5 +1,10 @@
 import * as path from 'path';
-import { TestEnvironment, OperationType, OperationTemplate, TestOperations } from './utils';
+import { 
+  TestEnvironment, 
+  OperationType, 
+  OperationTemplate,
+  TestScenario
+} from './utils';
 
 describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   let testEnv: TestEnvironment;
@@ -124,43 +129,32 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   });
 
   it('should handle concurrent clients with static operations', async () => {
-    const totalOperations = OPERATION_SEQUENCE.length * NUM_ITERATIONS;
-    console.log(`Executing ${totalOperations} operations (${NUM_ITERATIONS} iterations of ${OPERATION_SEQUENCE.length} operations)...`);
+    // Create test scenario with all operations and expected states
+    const scenario = new TestScenario(OPERATION_SEQUENCE, NUM_ITERATIONS);
+    const allOperations = scenario.getOperations();
+    
+    console.log(`Executing ${allOperations.length} operations (${NUM_ITERATIONS} iterations of ${OPERATION_SEQUENCE.length} operations)...`);
     
     try {
-      // Execute the static operations asynchronously with iterations
+      // Execute the operations asynchronously
       const operationsPromise = (async () => {
-        for (let iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
-          const idOffset = iteration * 1000;
-          
-          for (const op of OPERATION_SEQUENCE) {
-            const { sql, params } = TestOperations.buildOperation(op, idOffset);
-            await testEnv.executeSql(sql, params, INSERT_DELAY_MS);
-          }
+        for (const { sql, params } of allOperations) {
+          await testEnv.executeSql(sql, params, INSERT_DELAY_MS);
         }
         console.log('All database operations completed');
       })();
       
       // Create clients at staggered intervals
       console.log('Creating clients at staggered intervals...');
-      const clientSpawnInterval = Math.floor((totalOperations * INSERT_DELAY_MS * 2.5) / NUM_CLIENTS);
+      const clientSpawnInterval = Math.floor((allOperations.length * INSERT_DELAY_MS * 2.5) / NUM_CLIENTS);
       
       // Start clients with department filters
       for (let i = 0; i < NUM_CLIENTS; i++) {
         const clientDepartment = DEPARTMENTS[i % DEPARTMENTS.length];
         const baseDepartmentState = DEPARTMENT_STATES.get(clientDepartment)!;
         
-        // Build expected state for all iterations
-        const departmentExpectedState = new Map();
-        for (let iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
-          baseDepartmentState.forEach((row, id) => {
-            const adjustedId = id + (iteration * 1000);
-            departmentExpectedState.set(adjustedId, {
-              ...row,
-              id: adjustedId
-            });
-          });
-        }
+        // Get expected state for this department using the scenario
+        const departmentExpectedState = scenario.getState(baseDepartmentState);
         
         console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
         
