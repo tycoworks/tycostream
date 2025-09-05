@@ -83,7 +83,7 @@ export class SubscriptionProcessor<TData = any> implements EventProcessor<TData>
     // Extract operation and data from standard GraphQL response structure
     const responseData = data[this.dataPath];
     if (!responseData) {
-      return;
+      throw new Error(`No data found at path '${this.dataPath}' in GraphQL response`);
     }
     
     const { operation, data: rowData, fields } = responseData;
@@ -102,22 +102,28 @@ export class SubscriptionProcessor<TData = any> implements EventProcessor<TData>
     // Update current state directly
     switch (operation) {
       case 'DELETE':
+        // DELETE of non-existent item is OK - might have been filtered out
         this.currentState.delete(id);
         break;
         
       case 'INSERT':
+        if (this.currentState.has(id)) {
+          throw new Error(`Received duplicate INSERT for item ${id} - this indicates a tycostream bug. Each item should only be INSERTed once.`);
+        }
         this.currentState.set(id, cleanData);
         break;
         
       case 'UPDATE':
         const existing = this.currentState.get(id);
-        if (existing) {
-          const updated = { ...existing };
-          for (const field of fields) {
-            updated[field as keyof TData] = cleanData[field];
-          }
-          this.currentState.set(id, updated);
+        if (!existing) {
+          throw new Error(`Received UPDATE for non-existent item ${id} - this indicates a tycostream bug. Every UPDATE must be preceded by an INSERT.`);
         }
+        // Merge with existing data
+        const updated = { ...existing };
+        for (const field of fields) {
+          updated[field as keyof TData] = cleanData[field];
+        }
+        this.currentState.set(id, updated);
         break;
       
       default:

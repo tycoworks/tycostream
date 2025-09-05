@@ -120,6 +120,11 @@ export class StateManager<T extends StatefulItem> {
     // All stalled means aggregate stalled
     if (states.every(s => s === State.Stalled)) return State.Stalled;
     
+    // Mixed completed/stalled (no active) means stalled
+    if (states.every(s => s === State.Completed || s === State.Stalled)) {
+      return State.Stalled;
+    }
+    
     // Otherwise active
     return State.Active;
   }

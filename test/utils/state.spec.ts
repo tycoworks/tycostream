@@ -145,7 +145,7 @@ describe('StateManager', () => {
       manager.handleChildStateChange();
       
       // Should reject due to failOnStall
-      await expect(promise).rejects.toThrow('TestManager failed');
+      await expect(promise).rejects.toThrow('TestManager stalled - no data flowing');
     });
     
     it('should not reject when stalled if failOnStall is false', async () => {
@@ -264,17 +264,17 @@ describe('StateManager', () => {
       expect(manager.getState()).toBe(State.Active);
     });
     
-    it('should handle adding items to completed manager', async () => {
-      // Complete the manager
-      manager.handleChildStateChange(); // Empty = completed
-      const promise = manager.waitForCompletion();
+    it('should handle adding items to empty manager', () => {
+      // Empty manager starts as Active
+      expect(manager.getState()).toBe(State.Active);
       
-      // Try to add item (should not affect completed state)
-      const item = new MockStatefulItem(State.Active);
-      manager.add('late', item);
+      // Add completed item
+      const item = new MockStatefulItem(State.Completed);
+      manager.add('item', item);
+      manager.handleChildStateChange();
       
-      // Promise should still resolve
-      await expect(promise).resolves.toBeUndefined();
+      // Should now be completed
+      expect(manager.getState()).toBe(State.Completed);
     });
     
     it('should prevent infinite recursion in parent notification', () => {

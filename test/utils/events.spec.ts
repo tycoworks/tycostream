@@ -177,8 +177,8 @@ describe('EventHandler', () => {
       // Should still be active (not enough events to complete, not timed out)
       expect(handler.getState()).toBe(State.Active);
       
-      // Now wait for timeout
-      jest.advanceTimersByTime(801);  // Total: 1001ms
+      // Now wait for timeout from last event (at 100ms)
+      jest.advanceTimersByTime(900);  // Total: 1100ms (1000ms from last event)
       expect(handler.getState()).toBe(State.Stalled);
     });
   });
