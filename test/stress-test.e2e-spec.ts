@@ -91,6 +91,27 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
 
   const DEPARTMENTS = Array.from(DEPARTMENT_STATES.keys());
 
+  // Expected trigger events for base iteration (will be expanded for multiple iterations)
+  const EXPECTED_HIGH_VALUE_EVENTS = [
+    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 7, value: 720, status: 'inactive', department: 'finance' }},
+    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 11, value: 677, status: 'pending', department: 'finance' }},
+    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 12, value: 671, status: 'active', department: 'sales' }},
+    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 15, value: 807, status: 'active', department: 'finance' }},
+    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 16, value: 634, status: 'active', department: 'sales' }},
+    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }},
+    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 19, value: 900, status: 'inactive', department: 'finance' }}
+  ];
+
+  const EXPECTED_ENGINEERING_ACTIVE_EVENTS = [
+    { event_type: 'MATCH', trigger_name: 'engineering_active_trigger', data: { id: 9, value: 26, status: 'active', department: 'engineering' }}
+  ];
+
+  const EXPECTED_OPERATIONS_VALUE_EVENTS = [
+    { event_type: 'MATCH', trigger_name: 'operations_value_trigger', data: { id: 10, value: 328, status: 'inactive', department: 'operations' }},
+    { event_type: 'MATCH', trigger_name: 'operations_value_trigger', data: { id: 14, value: 319, status: 'pending', department: 'operations' }},
+    { event_type: 'MATCH', trigger_name: 'operations_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }}
+  ];
+
   beforeAll(async () => {
     console.log(`Starting stress test with ${OPERATION_SEQUENCE.length} base operations and ${NUM_CLIENTS} concurrent clients`);
     
@@ -128,7 +149,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     await testEnv.stop();
   });
 
-  it('should handle concurrent clients with static operations', async () => {
+  it('should handle concurrent clients with static operations and triggers', async () => {
     // Create test scenario with all operations and expected states
     const scenario = new TestScenario(OPERATION_SEQUENCE, NUM_ITERATIONS);
     const allOperations = scenario.getOperations();
@@ -136,6 +157,114 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     console.log(`Executing ${allOperations.length} operations (${NUM_ITERATIONS} iterations of ${OPERATION_SEQUENCE.length} operations)...`);
     
     try {
+      // Set up triggers before starting operations
+      console.log('Setting up triggers...');
+      
+      // Create trigger clients
+      const triggerClient1 = testEnv.createClient('trigger-high-value');
+      const triggerClient2 = testEnv.createClient('trigger-engineering-active');
+      const triggerClient3 = testEnv.createClient('trigger-operations-value');
+      
+      // High Value Trigger: Match when value >= 600, unmatch when value < 500
+      await triggerClient1.trigger('high-value', {
+        query: `
+          mutation CreateHighValueTrigger($webhookUrl: String!) {
+            create_stress_test_trigger(input: {
+              name: "high_value_trigger"
+              webhook: $webhookUrl
+              match: {
+                value: { _gte: 600 }
+              }
+              unmatch: {
+                value: { _lt: 500 }
+              }
+            }) {
+              name
+              webhook
+            }
+          }
+        `,
+        deleteQuery: `
+          mutation DeleteHighValueTrigger($name: String!) {
+            delete_stress_test_trigger(name: $name) {
+              name
+            }
+          }
+        `,
+        expectedEvents: scenario.getTriggerEvents(EXPECTED_HIGH_VALUE_EVENTS),
+        idField: 'event_id'
+      });
+      
+      // Engineering Active Trigger: Match when department = "engineering" AND status = "active"
+      await triggerClient2.trigger('engineering-active', {
+        query: `
+          mutation CreateEngineeringActiveTrigger($webhookUrl: String!) {
+            create_stress_test_trigger(input: {
+              name: "engineering_active_trigger"
+              webhook: $webhookUrl
+              match: {
+                department: { _eq: "engineering" }
+                status: { _eq: "active" }
+              }
+              unmatch: {
+                _or: [
+                  { department: { _neq: "engineering" } }
+                  { status: { _neq: "active" } }
+                ]
+              }
+            }) {
+              name
+              webhook
+            }
+          }
+        `,
+        deleteQuery: `
+          mutation DeleteEngineeringActiveTrigger($name: String!) {
+            delete_stress_test_trigger(name: $name) {
+              name
+            }
+          }
+        `,
+        expectedEvents: scenario.getTriggerEvents(EXPECTED_ENGINEERING_ACTIVE_EVENTS),
+        idField: 'event_id'
+      });
+      
+      // Operations Value Trigger: Match when department = "operations" AND value >= 300, unmatch when department != "operations" OR value < 250
+      await triggerClient3.trigger('operations-value', {
+        query: `
+          mutation CreateOperationsValueTrigger($webhookUrl: String!) {
+            create_stress_test_trigger(input: {
+              name: "operations_value_trigger"
+              webhook: $webhookUrl
+              match: {
+                department: { _eq: "operations" }
+                value: { _gte: 300 }
+              }
+              unmatch: {
+                _or: [
+                  { department: { _neq: "operations" } }
+                  { value: { _lt: 250 } }
+                ]
+              }
+            }) {
+              name
+              webhook
+            }
+          }
+        `,
+        deleteQuery: `
+          mutation DeleteOperationsValueTrigger($name: String!) {
+            delete_stress_test_trigger(name: $name) {
+              name
+            }
+          }
+        `,
+        expectedEvents: scenario.getTriggerEvents(EXPECTED_OPERATIONS_VALUE_EVENTS),
+        idField: 'event_id'
+      });
+      
+      console.log('Triggers set up successfully');
+      
       // Execute the operations asynchronously
       const operationsPromise = (async () => {
         for (const { sql, params } of allOperations) {
@@ -145,7 +274,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       })();
       
       // Create clients at staggered intervals
-      console.log('Creating clients at staggered intervals...');
+      console.log('Creating subscription clients at staggered intervals...');
       const clientSpawnInterval = Math.floor((allOperations.length * INSERT_DELAY_MS * 2.5) / NUM_CLIENTS);
       
       // Start clients with department filters
@@ -154,7 +283,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         const baseDepartmentState = DEPARTMENT_STATES.get(clientDepartment)!;
         
         // Get expected state for this department using the scenario
-        const departmentExpectedState = scenario.getState(baseDepartmentState);
+        const departmentExpectedState = scenario.getSubscriptionState(baseDepartmentState);
         
         console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
         
@@ -191,11 +320,12 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       // Wait for all clients to finish
       await testEnv.waitForCompletion();
       
-      console.log(`Stress test completed successfully. All ${NUM_CLIENTS} clients received their department-filtered data.`);
+      console.log(`Stress test completed successfully. All ${NUM_CLIENTS} subscription clients received their department-filtered data.`);
+      console.log(`All 3 trigger clients received their expected webhook events.`);
       
       // Log final stats
       const stats = testEnv.getStats();
-      console.log(`Test completed: received ${stats.totalReceived}/${stats.totalExpected} total items across all clients`);
+      console.log(`Test completed: received ${stats.totalReceived}/${stats.totalExpected} total items across all clients and triggers`);
       
     } catch (error) {
       console.error('Test failed:', error);

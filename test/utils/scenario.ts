@@ -75,11 +75,11 @@ export class TestScenario {
   }
   
   /**
-   * Get state based on a base state map
+   * Get subscription state based on a base state map
    * The base state map contains the expected state for one iteration
    * This expands it to all iterations
    */
-  getState(baseStateMap: Map<number, any>): Map<number, any> {
+  getSubscriptionState(baseStateMap: Map<number, any>): Map<number, any> {
     const expandedState = new Map();
     
     // Expand the base state map for all iterations
@@ -94,5 +94,29 @@ export class TestScenario {
     }
     
     return expandedState;
+  }
+  
+  /**
+   * Get trigger events based on base trigger events
+   * The base events contain the expected events for one iteration
+   * This expands them to all iterations, maintaining order
+   */
+  getTriggerEvents(baseTriggerEvents: any[]): any[] {
+    const expandedEvents: any[] = [];
+    
+    // Expand the trigger events for all iterations
+    for (let iteration = 0; iteration < this.numIterations; iteration++) {
+      baseTriggerEvents.forEach(event => {
+        expandedEvents.push({
+          ...event,
+          data: {
+            ...event.data,
+            id: this.getAdjustedId(event.data.id, iteration)
+          }
+        });
+      });
+    }
+    
+    return expandedEvents;
   }
 }
