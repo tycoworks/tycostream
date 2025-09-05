@@ -118,9 +118,8 @@ class TriggerProcessor<TData = any> implements EventProcessor<TData> {
   ) {}
   
   processEvent(data: any): void {
-    // Remove timestamp from payload for comparison (it varies)
-    // In future, also remove eventId when tycostream provides it
-    const { timestamp, ...comparablePayload } = data;
+    // Strip out fields that vary (timestamp, generated event_id)
+    const { timestamp, event_id, ...comparablePayload } = data;
     
     // Add event to received list
     this.receivedEvents.push(comparablePayload as TData);

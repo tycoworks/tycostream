@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { randomUUID } from 'crypto';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { ExpressionTree, buildExpression } from '../common/expressions';
 import { ViewService } from '../view/view.service';
@@ -150,6 +151,7 @@ export class TriggerService implements OnModuleDestroy {
    */
   private async sendWebhook(webhookUrl: string, eventType: TriggerEventType, triggerName: string, data: any): Promise<void> {
     const payload = {
+      event_id: randomUUID(),
       event_type: eventType,
       trigger_name: triggerName,
       timestamp: new Date().toISOString(),
