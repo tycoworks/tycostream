@@ -63,6 +63,9 @@ describe('StateManager', () => {
     });
     
     it('should be Failed when any child is Failed', () => {
+      // Handle the expected promise rejection
+      manager.waitForCompletion().catch(() => {}); // Expected failure
+      
       const item1 = new MockStatefulItem(State.Completed);
       const item2 = new MockStatefulItem(State.Failed);
       const item3 = new MockStatefulItem(State.Active);
@@ -213,6 +216,11 @@ describe('StateManager', () => {
       const grandparent = new StateManager('Grandparent', false);
       const parent = new StateManager('Parent', false);
       const child = new StateManager('Child', false);
+      
+      // Handle the expected promise rejections
+      grandparent.waitForCompletion().catch(() => {}); // Expected failure
+      parent.waitForCompletion().catch(() => {}); // Expected failure
+      child.waitForCompletion().catch(() => {}); // Expected failure
       
       // Set up hierarchy
       child.setParent(parent);
