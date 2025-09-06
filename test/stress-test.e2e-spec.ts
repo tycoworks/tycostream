@@ -40,10 +40,13 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     { type: OperationType.UPDATE, id: 10, fields: { status: "pending" } },
     { type: OperationType.INSERT, id: 16, fields: { value: 292, status: "inactive", department: "sales" } },
     { type: OperationType.UPDATE, id: 16, fields: { value: 634, status: "active" } },
+    { type: OperationType.UPDATE, id: 11, fields: { value: 450 } },  // CLEAR high_value_trigger (was 677, drops below 500)
     { type: OperationType.INSERT, id: 17, fields: { value: 191, status: "pending", department: "engineering" } },
     { type: OperationType.UPDATE, id: 9, fields: { value: 113 } },
+    { type: OperationType.UPDATE, id: 9, fields: { status: "inactive" } },  // CLEAR engineering_active_trigger
     { type: OperationType.INSERT, id: 18, fields: { value: 922, status: "active", department: "operations" } },
     { type: OperationType.DELETE, id: 13, fields: {} },
+    { type: OperationType.UPDATE, id: 18, fields: { value: 240 } },  // CLEAR operations_value_trigger (was 922, drops below 250)
     { type: OperationType.INSERT, id: 19, fields: { value: 900, status: "inactive", department: "finance" } },
     { type: OperationType.UPDATE, id: 15, fields: { status: "inactive" } },
     { type: OperationType.INSERT, id: 20, fields: { value: 542, status: "pending", department: "sales" } },
@@ -55,7 +58,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   const EXPECTED_ENGINEERING_STATE = new Map([
     [1, { id: 1, value: 413, status: "inactive", department: "engineering" }],
     [5, { id: 5, value: 64, status: "inactive", department: "engineering" }],
-    [9, { id: 9, value: 113, status: "active", department: "engineering" }],
+    [9, { id: 9, value: 113, status: "inactive", department: "engineering" }],  // Changed to inactive
     [17, { id: 17, value: 191, status: "pending", department: "engineering" }]
   ]);
 
@@ -63,13 +66,13 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     [6, { id: 6, value: 204, status: "inactive", department: "operations" }],
     [10, { id: 10, value: 328, status: "pending", department: "operations" }],
     [14, { id: 14, value: 319, status: "pending", department: "operations" }],
-    [18, { id: 18, value: 922, status: "active", department: "operations" }]
+    [18, { id: 18, value: 240, status: "active", department: "operations" }]  // Changed value to 240
   ]);
 
   const EXPECTED_FINANCE_STATE = new Map([
     [3, { id: 3, value: 538, status: "pending", department: "finance" }],
     [7, { id: 7, value: 720, status: "inactive", department: "finance" }],
-    [11, { id: 11, value: 677, status: "pending", department: "finance" }],
+    [11, { id: 11, value: 450, status: "pending", department: "finance" }],  // Changed value to 450
     [15, { id: 15, value: 807, status: "inactive", department: "finance" }],
     [19, { id: 19, value: 900, status: "inactive", department: "finance" }]
   ]);
@@ -98,18 +101,22 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 12, value: 671, status: 'active', department: 'sales' }},
     { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 15, value: 807, status: 'active', department: 'finance' }},
     { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 16, value: 634, status: 'active', department: 'sales' }},
+    { event_type: 'CLEAR', trigger_name: 'high_value_trigger', data: { id: 11, value: 450, status: 'pending', department: 'finance' }},  // CLEAR when 11 drops below 500
     { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }},
+    { event_type: 'CLEAR', trigger_name: 'high_value_trigger', data: { id: 18, value: 240, status: 'active', department: 'operations' }},  // CLEAR when 18 drops below 500
     { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 19, value: 900, status: 'inactive', department: 'finance' }}
   ];
 
   const EXPECTED_ENGINEERING_ACTIVE_EVENTS = [
-    { event_type: 'FIRE', trigger_name: 'engineering_active_trigger', data: { id: 9, value: 26, status: 'active', department: 'engineering' }}
+    { event_type: 'FIRE', trigger_name: 'engineering_active_trigger', data: { id: 9, value: 26, status: 'active', department: 'engineering' }},
+    { event_type: 'CLEAR', trigger_name: 'engineering_active_trigger', data: { id: 9, value: 113, status: 'inactive', department: 'engineering' }}  // CLEAR when status changes
   ];
 
   const EXPECTED_OPERATIONS_VALUE_EVENTS = [
     { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 10, value: 328, status: 'inactive', department: 'operations' }},
     { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 14, value: 319, status: 'pending', department: 'operations' }},
-    { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }}
+    { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }},
+    { event_type: 'CLEAR', trigger_name: 'operations_value_trigger', data: { id: 18, value: 240, status: 'active', department: 'operations' }}  // CLEAR when 18 drops below 250
   ];
 
   beforeAll(async () => {
@@ -319,7 +326,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       await testEnv.waitForCompletion();
       
       console.log(`Stress test completed successfully. All ${NUM_CLIENTS} subscription clients received their department-filtered data.`);
-      console.log(`All 3 trigger clients received their expected webhook events.`);
+      console.log(`All 3 trigger clients received their expected webhook events (both FIRE and CLEAR).`);
       
       // Log final stats
       const stats = testEnv.getStats();
