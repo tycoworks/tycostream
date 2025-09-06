@@ -12,7 +12,7 @@
 
 ## Overview
 
-tycostream will support event triggers that fire webhooks when data matches specific conditions, enabling integration with external systems and workflow automation. This document describes the design and implementation approach.
+tycostream will support event triggers that fire webhooks when data meets specific conditions, enabling integration with external systems and workflow automation. This document describes the design and implementation approach.
 
 ## Examples
 
@@ -26,26 +26,26 @@ tycostream will support event triggers that fire webhooks when data matches spec
 
 Triggers monitor data for condition state changes:
 
-- **MATCH event**: Fired when a condition becomes true (was previously false)
-- **UNMATCH event**: Fired when a condition becomes false (was previously true)
+- **FIRE event**: Fired when a condition becomes true (was previously false)
+- **CLEAR event**: Fired when a condition becomes false (was previously true)
 
 For example, when monitoring if a position exceeds $10,000:
-- Position goes from $9,000 to $11,000 → MATCH event fires
-- Position drops from $11,000 to $8,000 → UNMATCH event fires
+- Position goes from $9,000 to $11,000 → FIRE event fires
+- Position drops from $11,000 to $8,000 → CLEAR event fires
 
 You can configure:
-- **Same threshold**: Use one condition for both match and unmatch (simple monitoring)
-- **Different thresholds**: Use separate conditions to prevent oscillation (e.g., match at $10,000, unmatch at $9,500)
+- **Same threshold**: Use one condition for both fire and clear (simple monitoring)
+- **Different thresholds**: Use separate conditions to prevent oscillation (e.g., fire at $10,000, clear at $9,500)
 
 ### Trigger Configuration
 
-**Simple Trigger** (same condition for match/unmatch):
+**Simple Trigger** (same condition for fire/clear):
 ```graphql
 mutation {
   create_trades_trigger(
     name: "large_trade_alert"
     webhook: "https://compliance-api/webhook"
-    match: {
+    fire: {
       symbol: { _eq: "AAPL" }
       quantity: { _gt: 10000 }
     }
@@ -53,28 +53,28 @@ mutation {
     name
     source
     webhook
-    match
-    unmatch
+    fire
+    clear
   }
 }
 ```
 
-When only `match` is specified, the inverse condition (!match) is automatically used for unmatch events.
+When only `fire` is specified, the inverse condition (!fire) is automatically used for clear events.
 
-**Trigger with Different Match/Unmatch Conditions** (hysteresis):
+**Trigger with Different Fire/Clear Conditions**:
 ```graphql
 mutation {
   create_positions_trigger(
     name: "risk_position_alert"
     webhook: "https://api/webhook"
-    match: { net_position: { _gt: 10000 } }
-    unmatch: { net_position: { _lte: 9500 } }
+    fire: { net_position: { _gt: 10000 } }
+    clear: { net_position: { _lte: 9500 } }
   ) {
     name
     source
     webhook
-    match
-    unmatch
+    fire
+    clear
   }
 }
 ```
@@ -85,7 +85,7 @@ Webhooks receive a POST request with the event type and full row data:
 
 ```json
 {
-  "event_type": "MATCH",  // or "UNMATCH"
+  "event_type": "FIRE",  // or "CLEAR"
   "trigger_name": "large_trade_alert",
   "timestamp": "2024-01-15T10:30:00Z",
   "data": {
@@ -98,7 +98,7 @@ Webhooks receive a POST request with the event type and full row data:
 ```
 
 The payload includes:
-- `event_type`: Either "MATCH" or "UNMATCH"
+- `event_type`: Either "FIRE" or "CLEAR"
 - `trigger_name`: Name of the trigger that fired
 - `timestamp`: When the trigger fired (ISO 8601)
 - `data`: Complete row data from the source
@@ -111,7 +111,7 @@ mutation {
   create_trades_trigger(
     name: "large_trade_alert"
     webhook: "https://my-app.com/webhook"
-    match: {
+    fire: {
       symbol: { _eq: "AAPL" }
       quantity: { _gt: 10000 }
     }
@@ -119,8 +119,8 @@ mutation {
     name
     source
     webhook
-    match
-    unmatch
+    fire
+    clear
   }
 }
 ```
@@ -143,11 +143,11 @@ query {
     name
     source
     webhook
-    match {
+    fire {
       symbol { _eq }
       quantity { _gt }
     }
-    unmatch
+    clear
   }
 }
 ```
@@ -158,11 +158,11 @@ query {
   trades_triggers {
     name
     webhook
-    match {
+    fire {
       symbol { _eq }
       quantity { _gt }
     }
-    unmatch
+    clear
   }
 }
 ```
@@ -223,13 +223,13 @@ Triggers are implemented as GraphQL mutations, living alongside subscriptions in
 
 The View abstraction provides:
 - Filtered event streams with INSERT/UPDATE/DELETE semantics
-- Support for asymmetric match/unmatch conditions
+- Support for asymmetric fire/clear conditions
 - Optional delta updates (changed fields only) for network efficiency
 - Consistent event delivery to all consumers
 
 Both subscriptions and triggers use View events:
 - **Subscriptions**: Stream to WebSocket clients with INSERT/UPDATE/DELETE
-- **Triggers**: POST to webhooks with MATCH (INSERT) and UNMATCH (DELETE)
+- **Triggers**: POST to webhooks with FIRE (INSERT) and CLEAR (DELETE)
 
 ### Runtime Storage
 
@@ -251,9 +251,9 @@ The implementation is divided into four main phases:
 
 Extend the View abstraction to support asymmetric filtering and delta updates:
 
-1. **Add match/unmatch filter support** (`src/view/view.ts`)
-   - Support separate match and unmatch conditions
-   - Default unmatch to !match when not specified
+1. **Add fire/clear filter support** (`src/view/view.ts`)
+   - Support separate fire and clear conditions
+   - Default clear to !fire when not specified
    - Track row visibility based on condition state
 
 2. **Implement delta updates** (`src/view/view.ts`)
@@ -288,7 +288,7 @@ Implement the trigger system using GraphQL mutations and the View abstraction:
    - Generate source-specific mutations: `create_${source}_trigger`/`delete_${source}_trigger`
    - Generate source-specific queries: `${source}_trigger` (get one), `${source}_triggers` (list for source)
    - Generate source-specific list queries: `${source}_triggers` (list all for that source)
-   - Generate source-specific types: `${Source}Trigger` with typed match/unmatch fields
+   - Generate source-specific types: `${Source}Trigger` with typed fire/clear fields
 
 2. **Trigger Resolvers** (`src/api/trigger.resolver.ts`)
    - Mutation resolvers for create/delete operations
@@ -327,8 +327,8 @@ Complete the implementation with comprehensive testing:
 
 3. **E2E Integration Tests** (`test/triggers.e2e-spec.ts`)
    - Create trigger via GraphQL mutation
-   - Verify webhook calls when conditions match
-   - Test match/unmatch state transitions
+   - Verify webhook calls when conditions fire
+   - Test fire/clear state transitions
    - Concurrent trigger handling
    - Error recovery scenarios
 
@@ -361,7 +361,7 @@ To showcase the trigger functionality, the demo includes a complete audit trail:
      id SERIAL,
      timestamp TIMESTAMPTZ DEFAULT NOW(),
      trigger_name TEXT,
-     event_type TEXT,  -- 'TRIGGERED' or 'CLEARED'
+     event_type TEXT,  -- 'FIRE' or 'CLEAR'
      data JSONB,
      PRIMARY KEY (id)
    );
@@ -371,9 +371,9 @@ To showcase the trigger functionality, the demo includes a complete audit trail:
    ```
    Recent Alert Activity:
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   10:31:45  risk_position  TRIGGERED   position: ABC, value: 10,250
-   10:33:12  risk_position  CLEARED     position: ABC, value: 9,450  
-   10:35:22  large_trade    TRIGGERED   trade: 123, quantity: 15,000
+   10:31:45  risk_position  FIRE     position: ABC, value: 10,250
+   10:33:12  risk_position  CLEAR    position: ABC, value: 9,450  
+   10:35:22  large_trade    FIRE     trade: 123, quantity: 15,000
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ```
 

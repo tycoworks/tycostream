@@ -38,8 +38,8 @@ describe('TriggerService', () => {
     const testInput = {
       name: 'test_trigger',
       webhook: 'http://example.com/webhook',
-      match: { field: { _gt: 100 } },
-      unmatch: { field: { _lte: 50 } }
+      fire: { field: { _gt: 100 } },
+      clear: { field: { _lte: 50 } }
     };
 
     it('should create and return a trigger', async () => {
@@ -67,7 +67,7 @@ describe('TriggerService', () => {
     const testInput = {
       name: 'test_trigger',
       webhook: 'http://example.com/webhook',
-      match: { field: { _gt: 100 } }
+      fire: { field: { _gt: 100 } }
     };
 
     beforeEach(async () => {
@@ -79,7 +79,7 @@ describe('TriggerService', () => {
       
       expect(trigger.name).toBe('test_trigger');
       expect(trigger.webhook).toBe('http://example.com/webhook');
-      expect(trigger.match).toEqual(testInput.match);
+      expect(trigger.fire).toEqual(testInput.fire);
     });
 
     it('should throw error if trigger does not exist', async () => {
@@ -106,7 +106,7 @@ describe('TriggerService', () => {
       await triggerService.createTrigger('test_source', {
         name: 'temp',
         webhook: 'http://example.com',
-        match: { field: { _gt: 0 } }
+        fire: { field: { _gt: 0 } }
       });
       await triggerService.deleteTrigger('test_source', 'temp');
 
@@ -118,13 +118,13 @@ describe('TriggerService', () => {
       await triggerService.createTrigger('test_source', {
         name: 'trigger1',
         webhook: 'http://example.com/webhook1',
-        match: { field: { _gt: 100 } }
+        fire: { field: { _gt: 100 } }
       });
 
       await triggerService.createTrigger('test_source', {
         name: 'trigger2',
         webhook: 'http://example.com/webhook2',
-        match: { field: { _lt: 50 } }
+        fire: { field: { _lt: 50 } }
       });
 
       const triggers = await triggerService.listTriggers('test_source');
@@ -139,13 +139,13 @@ describe('TriggerService', () => {
       await triggerService.createTrigger('source1', {
         name: 'trigger1',
         webhook: 'http://example.com/webhook1',
-        match: { field: { _gt: 100 } }
+        fire: { field: { _gt: 100 } }
       });
 
       await triggerService.createTrigger('source2', {
         name: 'trigger2',
         webhook: 'http://example.com/webhook2',
-        match: { field: { _lt: 50 } }
+        fire: { field: { _lt: 50 } }
       });
 
       const triggers = await triggerService.listTriggers('source1');
@@ -159,7 +159,7 @@ describe('TriggerService', () => {
     const testInput = {
       name: 'test_trigger',
       webhook: 'http://example.com/webhook',
-      match: { field: { _gt: 100 } }
+      fire: { field: { _gt: 100 } }
     };
 
     beforeEach(async () => {
@@ -194,7 +194,7 @@ describe('TriggerService', () => {
       await triggerService.createTrigger('test_source', {
         name: 'trigger2',
         webhook: 'http://example.com/webhook2',
-        match: { field: { _lt: 50 } }
+        fire: { field: { _lt: 50 } }
       });
 
       await triggerService.deleteTrigger('test_source', 'test_trigger');
@@ -215,13 +215,13 @@ describe('TriggerService', () => {
       await triggerService.createTrigger('source1', {
         name: 'trigger1',
         webhook: 'http://example.com/webhook1',
-        match: { field: { _gt: 100 } }
+        fire: { field: { _gt: 100 } }
       });
 
       await triggerService.createTrigger('source2', {
         name: 'trigger2',
         webhook: 'http://example.com/webhook2',
-        match: { field: { _lt: 50 } }
+        fire: { field: { _lt: 50 } }
       });
 
       await expect(triggerService.onModuleDestroy()).resolves.not.toThrow();

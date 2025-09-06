@@ -11,15 +11,15 @@ import { RowUpdateEvent, RowUpdateType } from '../view/types';
  * Trigger event types for webhook payloads
  */
 export enum TriggerEventType {
-  Match = 'MATCH',
-  Unmatch = 'UNMATCH'
+  Fire = 'FIRE',
+  Clear = 'CLEAR'
 }
 
 export interface Trigger {
   name: string;
   webhook: string;
-  match: ExpressionTree;
-  unmatch?: ExpressionTree;
+  fire: ExpressionTree;
+  clear?: ExpressionTree;
 }
 
 interface ActiveTrigger extends Trigger {
@@ -42,8 +42,8 @@ export class TriggerService implements OnModuleDestroy {
     input: {
       name: string;
       webhook: string;
-      match: ExpressionTree;
-      unmatch?: ExpressionTree;
+      fire: ExpressionTree;
+      clear?: ExpressionTree;
     }
   ): Promise<Trigger> {
     // Get or create source map
@@ -63,8 +63,8 @@ export class TriggerService implements OnModuleDestroy {
     };
 
     // Create View subscription with asymmetric filtering
-    const matchExpression = buildExpression(input.match);
-    const unmatchExpression = input.unmatch ? buildExpression(input.unmatch) : undefined;
+    const matchExpression = buildExpression(input.fire);
+    const unmatchExpression = input.clear ? buildExpression(input.clear) : undefined;
     const filter = new Filter(matchExpression, unmatchExpression);
 
     // Subscribe to View updates (skipSnapshot=true to avoid firing on existing data)
@@ -136,14 +136,14 @@ export class TriggerService implements OnModuleDestroy {
    * Process trigger events from View
    */
   private async processEvent(source: string, trigger: Trigger, event: RowUpdateEvent): Promise<void> {
-    // Only process INSERT (match) and DELETE (unmatch) events
+    // Only process INSERT (fire) and DELETE (clear) events
     if (event.type === RowUpdateType.Insert || event.type === RowUpdateType.Delete) {
-      const eventType = event.type === RowUpdateType.Insert ? TriggerEventType.Match : TriggerEventType.Unmatch;
+      const eventType = event.type === RowUpdateType.Insert ? TriggerEventType.Fire : TriggerEventType.Clear;
       
       this.logger.log(`Trigger ${trigger.name} fired: ${eventType} for source ${source}`);
       await this.sendWebhook(trigger.webhook, eventType, trigger.name, event.row);
     }
-    // UPDATE events are skipped (triggers only care about match/unmatch transitions)
+    // UPDATE events are skipped (triggers only care about fire/clear transitions)
   }
 
   /**

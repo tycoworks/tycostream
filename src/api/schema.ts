@@ -41,8 +41,8 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
     type Trigger {
       name: ${GraphQLString.name}!
       webhook: ${GraphQLString.name}!
-      match: ${GraphQLString.name}!
-      unmatch: ${GraphQLString.name}
+      fire: ${GraphQLString.name}!
+      clear: ${GraphQLString.name}
     }
     
     # ================== INPUT TYPES ==================
@@ -191,7 +191,7 @@ function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string
 /**
  * Build expression input types for all sources
  * Creates expression input types for each source with field comparisons and logical operators
- * Used by both subscriptions (where) and triggers (match/unmatch)
+ * Used by both subscriptions (where) and triggers (fire/clear)
  */
 function buildExpressionInputTypes(sources: Map<string, SourceDefinition>): string {
   const inputTypes: string[] = [];
@@ -228,8 +228,8 @@ function buildTriggerInputTypes(sources: Map<string, SourceDefinition>): string 
     input ${sourceName}TriggerInput {
       name: ${GraphQLString.name}!
       webhook: ${GraphQLString.name}!
-      match: ${sourceName}Expression!
-      unmatch: ${sourceName}Expression
+      fire: ${sourceName}Expression!
+      clear: ${sourceName}Expression
     }`);
   }
   

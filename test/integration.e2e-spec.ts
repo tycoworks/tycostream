@@ -199,14 +199,14 @@ describe('Integration Test', () => {
     // This prevents rapid firing/unfiring when score hovers around a single threshold
     
     // Expected webhook events in order
-    // Each webhook will receive event_type (MATCH/UNMATCH), trigger_name, timestamp, and data
+    // Each webhook will receive event_type (FIRE/CLEAR), trigger_name, timestamp, and data
     // Note: DELETE operations only get the primary key, other fields are null
     const expectedTriggerEvents = [
-      { event_type: 'MATCH', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 150, active: true }},
-      { event_type: 'UNMATCH', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 80, active: true }},
-      { event_type: 'MATCH', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 120, active: true }},
-      { event_type: 'MATCH', trigger_name: 'score_threshold_trigger', data: { user_id: 2, score: 200, active: true }},
-      { event_type: 'UNMATCH', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: null, active: null }}
+      { event_type: 'FIRE', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 150, active: true }},
+      { event_type: 'CLEAR', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 80, active: true }},
+      { event_type: 'FIRE', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 120, active: true }},
+      { event_type: 'FIRE', trigger_name: 'score_threshold_trigger', data: { user_id: 2, score: 200, active: true }},
+      { event_type: 'CLEAR', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: null, active: null }}
     ];
     
     // Create a client and add trigger for score threshold with hysteresis
@@ -219,10 +219,10 @@ describe('Integration Test', () => {
           create_user_scores_trigger(input: {
             name: "score_threshold_trigger"
             webhook: $webhookUrl
-            match: {
+            fire: {
               score: { _gte: 100 }
             }
-            unmatch: {
+            clear: {
               score: { _lt: 90 }
             }
           }) {

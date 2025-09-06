@@ -29,8 +29,8 @@ describe('generateSchema', () => {
     expect(schema).toContain('type Trigger {');
     expect(schema).toContain('name: String!');
     expect(schema).toContain('webhook: String!');
-    expect(schema).toContain('match: String!');
-    expect(schema).toContain('unmatch: String');
+    expect(schema).toContain('fire: String!');
+    expect(schema).toContain('clear: String');
   });
 
   it('should define comparison input types for filtering', () => {
@@ -111,8 +111,8 @@ describe('generateSchema', () => {
     expect(schema).toContain('input tradesTriggerInput {');
     expect(schema).toContain('name: String!');
     expect(schema).toContain('webhook: String!');
-    expect(schema).toContain('match: tradesExpression!');
-    expect(schema).toContain('unmatch: tradesExpression');
+    expect(schema).toContain('fire: tradesExpression!');
+    expect(schema).toContain('clear: tradesExpression');
   });
 
   it('should generate expression input types that work for both subscriptions and triggers', () => {

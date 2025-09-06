@@ -23,7 +23,7 @@ Our E2E test suite is organized into different test categories, each serving a s
   - Multiple sources in parallel
   - Error handling for invalid queries
   - GraphQL triggers with webhook callbacks
-  - Trigger hysteresis (asymmetric match/unmatch thresholds)
+  - Trigger hysteresis (asymmetric fire/clear thresholds)
 - **Runtime**: ~30 seconds
 - **Use case**: Pull request validation, release testing
 
@@ -77,7 +77,7 @@ Per our implementation standards, the system follows a **fail-fast philosophy**:
 - Multiple concurrent connections
 - Complex operation sequences
 - Full `all_types` table testing
-- GraphQL triggers (match/unmatch conditions)
+- GraphQL triggers (fire/clear conditions)
 - Webhook delivery for trigger events
 - Trigger hysteresis to prevent rapid firing/unfiring
 

@@ -93,23 +93,23 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
 
   // Expected trigger events for base iteration (will be expanded for multiple iterations)
   const EXPECTED_HIGH_VALUE_EVENTS = [
-    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 7, value: 720, status: 'inactive', department: 'finance' }},
-    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 11, value: 677, status: 'pending', department: 'finance' }},
-    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 12, value: 671, status: 'active', department: 'sales' }},
-    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 15, value: 807, status: 'active', department: 'finance' }},
-    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 16, value: 634, status: 'active', department: 'sales' }},
-    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }},
-    { event_type: 'MATCH', trigger_name: 'high_value_trigger', data: { id: 19, value: 900, status: 'inactive', department: 'finance' }}
+    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 7, value: 720, status: 'inactive', department: 'finance' }},
+    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 11, value: 677, status: 'pending', department: 'finance' }},
+    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 12, value: 671, status: 'active', department: 'sales' }},
+    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 15, value: 807, status: 'active', department: 'finance' }},
+    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 16, value: 634, status: 'active', department: 'sales' }},
+    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }},
+    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 19, value: 900, status: 'inactive', department: 'finance' }}
   ];
 
   const EXPECTED_ENGINEERING_ACTIVE_EVENTS = [
-    { event_type: 'MATCH', trigger_name: 'engineering_active_trigger', data: { id: 9, value: 26, status: 'active', department: 'engineering' }}
+    { event_type: 'FIRE', trigger_name: 'engineering_active_trigger', data: { id: 9, value: 26, status: 'active', department: 'engineering' }}
   ];
 
   const EXPECTED_OPERATIONS_VALUE_EVENTS = [
-    { event_type: 'MATCH', trigger_name: 'operations_value_trigger', data: { id: 10, value: 328, status: 'inactive', department: 'operations' }},
-    { event_type: 'MATCH', trigger_name: 'operations_value_trigger', data: { id: 14, value: 319, status: 'pending', department: 'operations' }},
-    { event_type: 'MATCH', trigger_name: 'operations_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }}
+    { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 10, value: 328, status: 'inactive', department: 'operations' }},
+    { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 14, value: 319, status: 'pending', department: 'operations' }},
+    { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }}
   ];
 
   beforeAll(async () => {
@@ -172,10 +172,10 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
             create_stress_test_trigger(input: {
               name: "high_value_trigger"
               webhook: $webhookUrl
-              match: {
+              fire: {
                 value: { _gte: 600 }
               }
-              unmatch: {
+              clear: {
                 value: { _lt: 500 }
               }
             }) {
@@ -203,11 +203,11 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
             create_stress_test_trigger(input: {
               name: "engineering_active_trigger"
               webhook: $webhookUrl
-              match: {
+              fire: {
                 department: { _eq: "engineering" }
                 status: { _eq: "active" }
               }
-              unmatch: {
+              clear: {
                 department: { _eq: "engineering" }
                 status: { _neq: "active" }
               }
@@ -236,11 +236,11 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
             create_stress_test_trigger(input: {
               name: "operations_value_trigger"
               webhook: $webhookUrl
-              match: {
+              fire: {
                 department: { _eq: "operations" }
                 value: { _gte: 300 }
               }
-              unmatch: {
+              clear: {
                 department: { _eq: "operations" }
                 value: { _lt: 250 }
               }

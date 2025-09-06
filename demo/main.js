@@ -117,10 +117,10 @@ function createPositionTrigger() {
       create_live_pnl_trigger(input: {
         name: "large_realized_loss",
         webhook: "http://localhost:3001/webhook",
-        match: {
+        fire: {
           realized_pnl: { _lt: -1000000 }
         },
-        unmatch: {
+        clear: {
           realized_pnl: { _gte: -500000 }
         }
       }) {
