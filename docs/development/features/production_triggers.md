@@ -1,15 +1,23 @@
-# Webhook Reliability
+# Production Triggers
 
 ## Overview
 
-Making webhooks production-ready with at-least-once delivery, retry logic, idempotency support, and failure handling. This document covers the design and implementation of webhook reliability features for tycostream.
+Making triggers and webhooks production-ready with reliability, manageability, and failure handling. This document covers the design and implementation of production trigger features for tycostream.
 
 ## Features to Implement
 
+### Reliability
 - **At-least-once delivery** with exponential backoff
 - **Dead letter queue** for failed webhooks  
 - **Idempotency support** via deterministic event IDs
 - **Error webhooks** for stream disconnection events
+
+### Manageability
+- **Enable/disable triggers** without deletion
+- **Trigger persistence** (survive restarts)
+- **List trigger state** (enabled/disabled, last fired, match count)
+- **Trigger metadata** (created_at, updated_at, created_by)
+- **Query matched rows** for debugging
 
 ## Deterministic Event IDs
 

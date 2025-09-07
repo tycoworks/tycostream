@@ -55,12 +55,12 @@
 - Prometheus metrics endpoint with key metrics
 - Basic audit logging (connections, subscriptions, triggers)
 
-### 🔔 [Webhook Reliability](./features/webhook_reliability.md)
+### 🔔 [Production Triggers](./features/production_triggers.md)
 
-- At-least-once delivery with exponential backoff
-- Dead letter queue for failed webhooks
-- Basic idempotency support (event IDs)
-- Error webhooks for stream disconnection events (notify when connection lost/restored)
+- Reliable webhook delivery with automatic retry
+- Enable/disable triggers without deleting them  
+- Debug matched rows and trigger history
+- Survive restarts with persistent storage
 
 ### 🧠 [Database Resilience](./features/database_reconnection.md)
 
@@ -117,11 +117,17 @@
 - Cooldown periods and rate limiting
 - Parameterized conditions with runtime variables
 - Webhook retry policies with jitter
-- Trigger persistence (survive restarts)
+- Custom result fields (computed values in payload)
 - Time-to-live (TTL) and expiration
-- Query matched rows for debugging
-- Trigger audit trail and metrics
+- Advanced trigger metrics and audit trail
 - Field selection for webhook payloads
+
+### 🔀 Workflow State Machines
+
+- Define multi-state workflows (pending → approved → shipped)
+- Automatic state transitions based on streaming data conditions
+- Workflow instances per record with state history tracking
+- Time-based transitions and escalations (SLA enforcement)
 
 ### 🧠 Production Hardening
 
