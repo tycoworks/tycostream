@@ -32,7 +32,7 @@ tycostream makes it easy to expose real-time data over GraphQL for:
 
 tycostream aims to become the '**Hasura for streaming databases**.'
 
-See the [vision](./docs/VISION.md) and [roadmap](./docs/ROADMAP.md) for more details.
+See the [vision](./docs/development/vision.md) and [roadmap](./docs/development/roadmap.md) for more details.
 
 ---
 
