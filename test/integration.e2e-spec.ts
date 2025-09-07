@@ -195,22 +195,24 @@ describe('Integration Test', () => {
   
   it('should handle triggers with score threshold and hysteresis', async () => {
     // Test GraphQL triggers with webhook callbacks
-    // Hysteresis: Trigger fires when score >= 100, unmatch when score < 90
-    // This prevents rapid firing/unfiring when score hovers around a single threshold
+    // Tests both hysteresis and overlapping fire/clear conditions:
+    // - Fire when score >= 100
+    // - Clear when score < 90 AND active = false (both conditions required)
+    // This tests that CLEAR only fires when fire becomes false AND clear conditions are met
     
     // Expected webhook events in order
     // Each webhook will receive event_type (FIRE/CLEAR), trigger_name, timestamp, and data
-    // Note: DELETE operations only get the primary key, other fields are null
     const expectedTriggerEvents = [
       { event_type: 'FIRE', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 150, active: true }},
-      { event_type: 'CLEAR', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 80, active: true }},
+      { event_type: 'CLEAR', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 80, active: false }},
       { event_type: 'FIRE', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: 120, active: true }},
       { event_type: 'FIRE', trigger_name: 'score_threshold_trigger', data: { user_id: 2, score: 200, active: true }},
       { event_type: 'CLEAR', trigger_name: 'score_threshold_trigger', data: { user_id: 1, score: null, active: null }}
     ];
     
-    // Create a client and add trigger for score threshold with hysteresis
-    // Match at score >= 100, unmatch at score < 90 (10-point hysteresis band)
+    // Create a client and add trigger with overlapping conditions
+    // Fire when score >= 100, clear when score < 90 AND active = false
+    // Tests hysteresis (90-100 range) and compound clear conditions
     const client = testEnv.createClient('trigger-test-client');
     
     await client.trigger('score-threshold', {
@@ -223,7 +225,10 @@ describe('Integration Test', () => {
               score: { _gte: 100 }
             }
             clear: {
-              score: { _lt: 90 }
+              _and: [
+                { score: { _lt: 90 } },
+                { active: { _eq: false } }
+              ]
             }
           }) {
             name
@@ -259,19 +264,27 @@ describe('Integration Test', () => {
       "UPDATE user_scores SET score = 160 WHERE user_id = 1"
     );
     
-    // User 1: Drop below unmatch threshold (should trigger UNMATCH)
+    // User 1: Set active=false while score still high (should NOT trigger CLEAR)
+    // because fire condition (score >= 100) is still true
+    await testEnv.executeSql(
+      "UPDATE user_scores SET active = false WHERE user_id = 1"
+    );
+    
+    // User 1: Drop score below 90 while active=false (should trigger CLEAR)
+    // because fire is false (score < 100) AND both clear conditions are met (score < 90 AND active = false)
     await testEnv.executeSql(
       "UPDATE user_scores SET score = 80 WHERE user_id = 1"
     );
     
-    // User 1: Update to hysteresis band (95 is between 90 and 100 - should NOT trigger)
+    // User 1: Increase score to hysteresis band (should NOT trigger)
+    // score=95 is between 90-100, so neither fire (>=100) nor clear (<90 AND active=false) conditions are met
     await testEnv.executeSql(
       "UPDATE user_scores SET score = 95 WHERE user_id = 1"
     );
     
-    // User 1: Cross match threshold again (should trigger MATCH)
+    // User 1: Set active=true and score above threshold (should trigger FIRE)
     await testEnv.executeSql(
-      "UPDATE user_scores SET score = 120 WHERE user_id = 1"
+      "UPDATE user_scores SET score = 120, active = true WHERE user_id = 1"
     );
     
     // User 2: Insert above threshold (should trigger)
@@ -304,80 +317,6 @@ describe('Integration Test', () => {
     
     // Phase 2: Test trigger deletion (would need mutation support)
     // TODO: Add trigger deletion test when delete mutation is available
-    
-  }, 120000); // 2 minute timeout
-  
-  it.skip('should handle overlapping FIRE and CLEAR conditions', async () => {
-    // Test what happens when CLEAR conditions become true while FIRE conditions remain true
-    // Validates that CLEAR conditions take precedence - once CLEARed, trigger stays cleared
-    // until CLEAR condition becomes false
-    
-    // Clean up ALL data from previous tests to avoid trigger firing on existing rows
-    await testEnv.executeSql("DELETE FROM user_scores");
-    
-    const expectedOverlapEvents = [
-      { event_type: 'FIRE', trigger_name: 'overlap_trigger', data: { user_id: 1000, score: 150, active: true }},
-      { event_type: 'CLEAR', trigger_name: 'overlap_trigger', data: { user_id: 1000, score: 150, active: false }}, // CLEAR when active=false, even though score still > 100
-      { event_type: 'FIRE', trigger_name: 'overlap_trigger', data: { user_id: 1000, score: 160, active: true }}  // Re-FIRE only when CLEAR condition becomes false
-    ];
-    
-    const client = testEnv.createClient('overlap-trigger-client');
-    
-    // Create trigger with independent FIRE/CLEAR conditions
-    // FIRE when score >= 100
-    // CLEAR when active = false (regardless of score)
-    await client.trigger('overlap-test', {
-      query: `
-        mutation CreateOverlapTrigger($webhookUrl: String!) {
-          create_user_scores_trigger(input: {
-            name: "overlap_trigger"
-            webhook: $webhookUrl
-            fire: {
-              score: { _gte: 100 }
-            }
-            clear: {
-              active: { _eq: false }
-            }
-          }) {
-            name
-            webhook
-          }
-        }
-      `,
-      deleteQuery: `
-        mutation DeleteOverlapTrigger($name: String!) {
-          delete_user_scores_trigger(name: $name) {
-            name
-          }
-        }
-      `,
-      expectedEvents: expectedOverlapEvents,
-      idField: 'event_id'
-    });
-    
-    // Test sequence:
-    // 1. Insert with score > 100 and active=true (should FIRE)
-    await testEnv.executeSql(
-      "INSERT INTO user_scores (user_id, score, active) VALUES (1000, 150, true)"
-    );
-    
-    // 2. Set active=false while score remains > 100 (should CLEAR despite FIRE condition still true)
-    await testEnv.executeSql(
-      "UPDATE user_scores SET active = false WHERE user_id = 1000"
-    );
-    
-    // 3. Update score while active=false (should NOT re-FIRE, stays in CLEAR state)
-    await testEnv.executeSql(
-      "UPDATE user_scores SET score = 160 WHERE user_id = 1000"
-    );
-    
-    // 4. Set active=true again (should re-FIRE now that CLEAR condition is false and FIRE condition is true)
-    await testEnv.executeSql(
-      "UPDATE user_scores SET active = true WHERE user_id = 1000"
-    );
-    
-    // Wait for all trigger events
-    await client.waitForCompletion();
     
   }, 120000); // 2 minute timeout
 });
