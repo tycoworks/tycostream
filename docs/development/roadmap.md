@@ -53,7 +53,7 @@
 
 - Health check endpoints (/health, /ready)
 - Prometheus metrics endpoint with key metrics
-- Structured error logging
+- Basic audit logging (connections, subscriptions, triggers)
 
 ### 🔔 [Webhook Reliability](./features/webhook_reliability.md)
 
