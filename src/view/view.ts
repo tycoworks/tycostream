@@ -108,10 +108,12 @@ export class View {
     }
     
     try {
-      // Use appropriate filter based on whether row is in view
+      const matchResult = this.filter!.match.evaluate(fullRow);
+      
+      // Give precedence to match to avoid oscillation
       const shouldStay = wasInView 
-        ? !this.filter!.unmatch.evaluate(fullRow)  // Stay if unmatch is false
-        : this.filter!.match.evaluate(fullRow);     // Enter if match is true
+        ? (matchResult || !this.filter!.unmatch.evaluate(fullRow))  // Stay if match is true OR unmatch is false
+        : matchResult;  // Enter if match is true
       
       return shouldStay;
     } catch (error) {

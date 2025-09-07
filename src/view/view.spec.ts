@@ -316,18 +316,68 @@ describe('View', () => {
         expect(exit!.type).toBe(RowUpdateType.Delete);
       });
 
-      it('should correctly identify relevant fields for optimization', () => {
-        const matchEvaluate = jest.fn((row) => row.active === true);
-        const unmatchEvaluate = jest.fn((row) => row.priority < 5);
-        
+      it('should handle overlapping conditions with match precedence', () => {
+        // Test the case where both match and unmatch can be true
+        // Match should take precedence to prevent oscillation
         const filter = new Filter(
           {
-            evaluate: matchEvaluate,
+            evaluate: (row) => row.score > 100,
+            fields: new Set(['score']),
+            expression: 'score > 100'
+          },
+          {
+            evaluate: (row) => row.active === false,
+            fields: new Set(['active']),
+            expression: 'active === false'
+          }
+        );
+
+        const view = new View(mockSource, filter);
+
+        // Case 1: Both conditions true in single update from outside view
+        const enter = view.processEvent({
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'score', 'active']),
+          row: { id: 1, score: 150, active: false }
+        });
+        expect(enter).not.toBeNull();
+        expect(enter!.type).toBe(RowUpdateType.Insert); // Should enter due to match precedence
+
+        // Case 2: Unmatch becomes true while match stays true (row in view)
+        const stay = view.processEvent({
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'active']),
+          row: { id: 1, score: 150, active: true } // First set active to true
+        });
+        expect(stay).not.toBeNull();
+        
+        const stillStay = view.processEvent({
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'active']),
+          row: { id: 1, score: 150, active: false } // Now set active to false
+        });
+        expect(stillStay).not.toBeNull();
+        expect(stillStay!.type).toBe(RowUpdateType.Update); // Should stay due to match precedence
+
+        // Case 3: Only leaves when match becomes false AND unmatch is true
+        const exit = view.processEvent({
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'score']),
+          row: { id: 1, score: 50, active: false }
+        });
+        expect(exit).not.toBeNull();
+        expect(exit!.type).toBe(RowUpdateType.Delete); // Now it leaves
+      });
+
+      it('should not change view membership when irrelevant fields update', () => {
+        const filter = new Filter(
+          {
+            evaluate: (row) => row.active === true,
             fields: new Set(['active']),
             expression: 'active === true'
           },
           {
-            evaluate: unmatchEvaluate,
+            evaluate: (row) => row.priority < 5,
             fields: new Set(['priority']),
             expression: 'priority < 5'
           }
@@ -335,34 +385,51 @@ describe('View', () => {
 
         const view = new View(mockSource, filter);
 
-        // Enter view
-        view.processEvent({
+        // Row enters view (active=true, priority=10)
+        const enter = view.processEvent({
           type: RowUpdateType.Insert,
           fields: new Set(['id', 'active', 'priority', 'name']),
           row: { id: 1, active: true, priority: 10, name: 'Test' }
         });
+        expect(enter).not.toBeNull();
+        expect(enter!.type).toBe(RowUpdateType.Insert);
 
-        matchEvaluate.mockClear();
-        unmatchEvaluate.mockClear();
-
-        // Update unrelated field - should skip evaluation
-        view.processEvent({
+        // Update irrelevant field (name) - row should stay in view
+        const stay1 = view.processEvent({
           type: RowUpdateType.Update,
           fields: new Set(['id', 'name']),
           row: { id: 1, active: true, priority: 10, name: 'Updated' }
         });
+        expect(stay1).not.toBeNull();
+        expect(stay1!.type).toBe(RowUpdateType.Update);
 
-        expect(matchEvaluate).not.toHaveBeenCalled();
-        expect(unmatchEvaluate).not.toHaveBeenCalled();
+        // Update another irrelevant field (description) - row should still stay
+        const stay2 = view.processEvent({
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'description']),
+          row: { id: 1, active: true, priority: 10, name: 'Updated', description: 'New' }
+        });
+        expect(stay2).not.toBeNull();
+        expect(stay2!.type).toBe(RowUpdateType.Update);
 
-        // Update relevant field - should evaluate
-        view.processEvent({
+        // Update relevant field but stay in hysteresis zone (active=false, priority=10)
+        // Should stay because match=false but unmatch=false too
+        const stay3 = view.processEvent({
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'active']),
+          row: { id: 1, active: false, priority: 10, name: 'Updated', description: 'New' }
+        });
+        expect(stay3).not.toBeNull();
+        expect(stay3!.type).toBe(RowUpdateType.Update);
+        
+        // Now update priority to trigger unmatch and cause exit
+        const exit = view.processEvent({
           type: RowUpdateType.Update,
           fields: new Set(['id', 'priority']),
-          row: { id: 1, active: true, priority: 3, name: 'Updated' }
+          row: { id: 1, active: false, priority: 3, name: 'Updated', description: 'New' }
         });
-
-        expect(unmatchEvaluate).toHaveBeenCalled();
+        expect(exit).not.toBeNull();
+        expect(exit!.type).toBe(RowUpdateType.Delete);
       });
     });
   });

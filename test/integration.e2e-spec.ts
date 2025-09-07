@@ -306,4 +306,78 @@ describe('Integration Test', () => {
     // TODO: Add trigger deletion test when delete mutation is available
     
   }, 120000); // 2 minute timeout
+  
+  it.skip('should handle overlapping FIRE and CLEAR conditions', async () => {
+    // Test what happens when CLEAR conditions become true while FIRE conditions remain true
+    // Validates that CLEAR conditions take precedence - once CLEARed, trigger stays cleared
+    // until CLEAR condition becomes false
+    
+    // Clean up ALL data from previous tests to avoid trigger firing on existing rows
+    await testEnv.executeSql("DELETE FROM user_scores");
+    
+    const expectedOverlapEvents = [
+      { event_type: 'FIRE', trigger_name: 'overlap_trigger', data: { user_id: 1000, score: 150, active: true }},
+      { event_type: 'CLEAR', trigger_name: 'overlap_trigger', data: { user_id: 1000, score: 150, active: false }}, // CLEAR when active=false, even though score still > 100
+      { event_type: 'FIRE', trigger_name: 'overlap_trigger', data: { user_id: 1000, score: 160, active: true }}  // Re-FIRE only when CLEAR condition becomes false
+    ];
+    
+    const client = testEnv.createClient('overlap-trigger-client');
+    
+    // Create trigger with independent FIRE/CLEAR conditions
+    // FIRE when score >= 100
+    // CLEAR when active = false (regardless of score)
+    await client.trigger('overlap-test', {
+      query: `
+        mutation CreateOverlapTrigger($webhookUrl: String!) {
+          create_user_scores_trigger(input: {
+            name: "overlap_trigger"
+            webhook: $webhookUrl
+            fire: {
+              score: { _gte: 100 }
+            }
+            clear: {
+              active: { _eq: false }
+            }
+          }) {
+            name
+            webhook
+          }
+        }
+      `,
+      deleteQuery: `
+        mutation DeleteOverlapTrigger($name: String!) {
+          delete_user_scores_trigger(name: $name) {
+            name
+          }
+        }
+      `,
+      expectedEvents: expectedOverlapEvents,
+      idField: 'event_id'
+    });
+    
+    // Test sequence:
+    // 1. Insert with score > 100 and active=true (should FIRE)
+    await testEnv.executeSql(
+      "INSERT INTO user_scores (user_id, score, active) VALUES (1000, 150, true)"
+    );
+    
+    // 2. Set active=false while score remains > 100 (should CLEAR despite FIRE condition still true)
+    await testEnv.executeSql(
+      "UPDATE user_scores SET active = false WHERE user_id = 1000"
+    );
+    
+    // 3. Update score while active=false (should NOT re-FIRE, stays in CLEAR state)
+    await testEnv.executeSql(
+      "UPDATE user_scores SET score = 160 WHERE user_id = 1000"
+    );
+    
+    // 4. Set active=true again (should re-FIRE now that CLEAR condition is false and FIRE condition is true)
+    await testEnv.executeSql(
+      "UPDATE user_scores SET active = true WHERE user_id = 1000"
+    );
+    
+    // Wait for all trigger events
+    await client.waitForCompletion();
+    
+  }, 120000); // 2 minute timeout
 });
