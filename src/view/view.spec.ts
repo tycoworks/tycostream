@@ -544,6 +544,82 @@ describe('View', () => {
       expect(leaveResult!.type).toBe(RowUpdateType.Delete); // Transformed to DELETE
       expect(leaveResult!.row).toEqual({ id: 1 }); // Only PK for DELETE
     });
+    
+    it('should handle DELETE events correctly with filters', () => {
+      const filter = new Filter({
+        evaluate: (row) => row.active === true,
+        fields: new Set(['active']),
+        expression: 'active === true'
+      });
+      
+      const view = new View(mockSource, filter);
+      
+      // Insert a row that passes the filter (enters view)
+      const insertEvent: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'active']),
+        row: { id: 1, name: 'User1', active: true }
+      };
+      
+      const insertResult = view.processEvent(insertEvent);
+      expect(insertResult).not.toBeNull();
+      expect(insertResult!.type).toBe(RowUpdateType.Insert);
+      
+      // Delete the row that's in view - should pass through
+      const deleteInViewEvent: RowUpdateEvent = {
+        type: RowUpdateType.Delete,
+        fields: new Set(['id']),
+        row: { id: 1, name: 'User1', active: true }
+      };
+      
+      const deleteInViewResult = view.processEvent(deleteInViewEvent);
+      expect(deleteInViewResult).not.toBeNull();
+      expect(deleteInViewResult!.type).toBe(RowUpdateType.Delete);
+      
+      // Insert another row that doesn't pass filter (never enters view)
+      const insertOutEvent: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'active']),
+        row: { id: 2, name: 'User2', active: false }
+      };
+      
+      const insertOutResult = view.processEvent(insertOutEvent);
+      expect(insertOutResult).toBeNull(); // Filtered out
+      
+      // Delete a row that was never in view - should be filtered out
+      const deleteOutViewEvent: RowUpdateEvent = {
+        type: RowUpdateType.Delete,
+        fields: new Set(['id']),
+        row: { id: 2, name: 'User2', active: false }
+      };
+      
+      const deleteOutViewResult = view.processEvent(deleteOutViewEvent);
+      expect(deleteOutViewResult).toBeNull(); // Filtered out since it wasn't in view
+      
+      // Edge case: Row enters view, leaves view, then gets deleted
+      const enterEvent: RowUpdateEvent = {
+        type: RowUpdateType.Insert,
+        fields: new Set(['id', 'name', 'active']),
+        row: { id: 3, name: 'User3', active: true }
+      };
+      view.processEvent(enterEvent); // Row enters view
+      
+      const leaveEvent: RowUpdateEvent = {
+        type: RowUpdateType.Update,
+        fields: new Set(['active']),
+        row: { id: 3, name: 'User3', active: false }
+      };
+      view.processEvent(leaveEvent); // Row leaves view
+      
+      const deleteAfterLeaveEvent: RowUpdateEvent = {
+        type: RowUpdateType.Delete,
+        fields: new Set(['id']),
+        row: { id: 3, name: 'User3', active: false }
+      };
+      
+      const deleteAfterLeaveResult = view.processEvent(deleteAfterLeaveEvent);
+      expect(deleteAfterLeaveResult).toBeNull(); // Not in view, so filtered out
+    });
   });
   
   describe('getUpdates', () => {
