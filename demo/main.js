@@ -259,7 +259,10 @@ function getTradesColumnConfig() {
     quantity: { 
       headerName: 'Quantity',
       width: 120,
-      valueFormatter: params => params.value != null ? Number(params.value).toLocaleString() : ''
+      valueFormatter: params => params.value != null ? Number(params.value).toLocaleString() : '',
+      cellStyle: params => ({
+        color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black'
+      })
     },
     price: { 
       headerName: 'Price',
