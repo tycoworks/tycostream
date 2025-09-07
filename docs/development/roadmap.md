@@ -62,17 +62,19 @@
 - Basic idempotency support (event IDs)
 - Error webhooks for stream disconnection events (notify when connection lost/restored)
 
-### 🧠 Core Resilience
+### 🧠 [Database Resilience](./features/database_reconnection.md)
 
 - Graceful error handling without process crashes
+- Automatic reconnect to Materialize with resume from last position (no data loss)
+- Connection state preservation during disconnects
+- Client notifications for connection state changes
+
+### 🔌 [Client Resilience](./features/client_reconnection.md)
+
 - WebSocket reconnection support
 - Basic connection lifecycle management
-- Automatic reconnect to Materialize with resume from last position (no data loss)
-
-### 🧪 Test Coverage
-
-- ✅ Integration test suite using testcontainers with real Materialize instance
-- ✅ Comprehensive E2E tests covering all CRUD operations, data types, and concurrent connections
+- Bounded per-subscriber queues (prevent memory exhaustion)
+- Basic drop policy for slow consumers
 
 ---
 
@@ -126,15 +128,14 @@
 - Standardized error codes for all failure modes
 - Graceful shutdown with client notification before disconnect
 - Memory leak prevention and monitoring
-- Bounded per-subscriber queues with backpressure
-- Configurable drop policies for slow consumers
 
-### 🔄 Advanced Subscription Features
+### 🔄 [Advanced Client Features](./features/client_reconnection.md#enterprise-features-future)
 
-- Clients can detect if they missed any updates during disconnection
-- Recent updates can be replayed for reconnecting clients
-- Connection health visibility with detailed status
-- Subscription-level throttling and rate limiting
+- Advanced backpressure strategies (adaptive buffers, per-client QoS)
+- Configurable drop policies with multiple strategies
+- Session management with replay capabilities
+- Connection quality metrics and dashboards
+- Client-specific throttling and rate limiting
 
 ### 🧪 Comprehensive Testing
 
