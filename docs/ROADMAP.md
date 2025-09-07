@@ -1,7 +1,8 @@
-## **Milestone 1 — Developer Preview** ✅ (In Progress)
+# tycostream Roadmap
 
-> Build real-time dashboards, monitoring apps, and event-driven workflows using GraphQL subscriptions and webhooks connected to Materialize views. Not intended for production use.
-> 
+## **Milestone 1 — Developer Preview** ✅ (Complete)
+
+> Stream live data from Materialize views over WebSockets and fire webhooks when conditions are met. Not intended for production use. 
 
 ### ⚙️ Core Streaming Infrastructure
 
@@ -23,10 +24,10 @@
 
 ### 🔔 Event Triggers
 
-- Webhook delivery on data conditions
-- Different match/unmatch thresholds
-- GraphQL mutations for trigger management
-- In-memory trigger storage (ephemeral)
+- ✅ Webhook delivery on data conditions
+- ✅ Different fire/clear thresholds (hysteresis support)
+- ✅ GraphQL mutations for trigger management
+- ✅ In-memory trigger storage (ephemeral)
 
 ### 🚀 Developer Experience
 
@@ -40,8 +41,7 @@
 
 ## **Milestone 2 — MVP (Minimal Viable Product)**
 
-> Teams can deploy tycostream in production with authentication, data integrity guarantees, and reliable webhook delivery.
-> 
+> Deploy tycostream in production with authentication, data integrity guarantees, and reliable webhook delivery.
 
 ### 🔐 Basic Authentication & Authorization
 
@@ -78,8 +78,7 @@
 
 ## **Milestone 3 — Enterprise Features**
 
-> Organizations can deploy tycostream at scale with advanced security, complete observability, and extended database support.
-> 
+> Deploy tycostream at scale with advanced security, complete observability, and extended database support.
 
 ### 🔗 Extended Data Capabilities
 
@@ -147,8 +146,7 @@
 
 ## **Milestone 4 — Scale to High-Throughput Workloads**
 
-> Teams can confidently stream high-frequency data to many clients while monitoring performance, avoiding overload, and tuning system behavior.
-> 
+> Stream high-frequency data to many clients while monitoring performance, avoiding overload, and tuning system behavior.
 
 ### 📈 Scalability
 
