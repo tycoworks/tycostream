@@ -46,20 +46,22 @@ gh release create v0.1.0-preview \
 ### 4. Publish Docker Image
 ```bash
 # Build and test locally
-docker build -t tycoworks/tycostream:v0.1.0-preview .
+docker build -t tycostream:v0.1.0-preview .
 
 # Test that it runs (Ctrl+C to stop)
-docker run -p 4000:4000 --env-file .env tycoworks/tycostream:v0.1.0-preview
+docker run -p 4000:4000 --env-file .env tycostream:v0.1.0-preview
 
-# Login to Docker Hub (need account at hub.docker.com)
-docker login
+# Login to GHCR with GitHub token (create at github.com/settings/tokens)
+# Token needs: write:packages permission
+echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 
-# Tag and push both versions
-docker tag tycoworks/tycostream:v0.1.0-preview tycoworks/tycostream:latest
-docker push tycoworks/tycostream:v0.1.0-preview
-docker push tycoworks/tycostream:latest
+# Tag for GHCR and push
+docker tag tycostream:v0.1.0-preview ghcr.io/tycoworks/tycostream:v0.1.0-preview
+docker tag tycostream:v0.1.0-preview ghcr.io/tycoworks/tycostream:latest
+docker push ghcr.io/tycoworks/tycostream:v0.1.0-preview
+docker push ghcr.io/tycoworks/tycostream:latest
 
-# Verify at: https://hub.docker.com/r/tycoworks/tycostream
+# Package will appear at: https://github.com/tycoworks/tycostream/packages
 ```
 
 ### 5. Final Steps

@@ -73,20 +73,21 @@ cp schema.example.yaml schema.yaml
 
 ### 4. Start the server:
 
-**Option A: Using npm**
+**Option A: Using Docker (Recommended)**
 ```bash
-npm install
-npm start
-```
-
-**Option B: Using Docker**
-```bash
-docker-compose up --build
+docker run -p 4000:4000 --env-file .env ghcr.io/tycoworks/tycostream:v0.1.0-preview
 ```
 
 If Materialize runs on your host machine, update `.env`:
 - macOS/Windows: `DATABASE_HOST=host.docker.internal`
 - Linux: `DATABASE_HOST=172.17.0.1`
+
+**Option B: Build from source**
+```bash
+npm install
+npm run build
+npm start
+```
 
 ---
 
