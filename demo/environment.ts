@@ -120,8 +120,7 @@ Starting test environment:
 async function setupWebhook() {
   testEnv.registerWebhook('/webhook', async (payload) => {
     console.log('Webhook received:', JSON.stringify(payload, null, 2));
-    const eventType = payload.event_type === 'MATCH' ? 'TRIGGERED' : 'CLEARED';
-    await insertAlert(payload.trigger_name, eventType, payload.data);
+    await insertAlert(payload.event_id, payload.trigger_name, payload.event_type, payload.data);
   });
   console.log('Webhook handler registered at http://localhost:3001/webhook');
 }
@@ -161,6 +160,7 @@ async function setupDatabase() {
   await testEnv.executeSql(`
     CREATE TABLE alerts (
       id INTEGER,
+      event_id TEXT,
       timestamp TIMESTAMPTZ DEFAULT NOW(),
       trigger_name TEXT,
       event_type TEXT,
@@ -268,18 +268,19 @@ async function insertTrade(instrumentId: number, quantity: number) {
 /**
  * Inserts an alert record from a webhook payload
  */
-async function insertAlert(triggerName: string, eventType: string, data: any) {
+async function insertAlert(eventId: string, triggerName: string, eventType: string, data: any) {
   await testEnv.executeSql(`
-    INSERT INTO alerts (id, trigger_name, event_type, data)
-    VALUES ($1, $2, $3, $4)
+    INSERT INTO alerts (id, event_id, trigger_name, event_type, data)
+    VALUES ($1, $2, $3, $4, $5)
   `, [
     alertId++,
+    eventId,
     triggerName,
     eventType,
     JSON.stringify(data)
   ]);
   
-  console.log(`Alert inserted: ${triggerName} - ${eventType}`);
+  console.log(`Alert inserted: ${eventId} - ${triggerName} - ${eventType}`);
 }
 
 export { runLiveEnvironment };

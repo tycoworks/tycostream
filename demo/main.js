@@ -266,6 +266,10 @@ function getTradesColumnConfig() {
 function getAlertsColumnConfig() {
   return {
     id: { hide: true },
+    event_id: { 
+      headerName: 'Event ID',
+      width: 150
+    },
     timestamp: { 
       headerName: 'Timestamp',
       width: 200,
@@ -283,7 +287,7 @@ function getAlertsColumnConfig() {
       headerName: 'Event',
       width: 120,
       cellStyle: params => ({
-        color: params.value === 'TRIGGERED' ? 'orange' : params.value === 'CLEARED' ? 'green' : 'black',
+        color: params.value === 'FIRE' ? 'orange' : params.value === 'CLEAR' ? 'green' : 'black',
       })
     },
     data: { 

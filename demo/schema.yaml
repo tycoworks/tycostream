@@ -23,6 +23,7 @@ sources:
     primary_key: id
     columns:
       id: integer
+      event_id: text
       timestamp: timestamp with time zone
       trigger_name: text
       event_type: text

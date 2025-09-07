@@ -185,6 +185,13 @@ export class TestEnvironment {
   }
 
   /**
+   * Register a webhook handler
+   */
+  registerWebhook(endpoint: string, handler: (payload: any) => Promise<void>): string {
+    return this.webhookServer.register(endpoint, handler);
+  }
+
+  /**
    * Wait for a condition to be true
    */
   async waitUntil(
