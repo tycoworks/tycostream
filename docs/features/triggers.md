@@ -24,18 +24,22 @@ tycostream will support event triggers that fire webhooks when data meets specif
 
 ### Core Concepts
 
-Triggers monitor data for condition state changes:
+Triggers monitor data for condition state changes and emit two types of events:
 
-- **FIRE event**: Fired when a condition becomes true (was previously false)
-- **CLEAR event**: Fired when a condition becomes false (was previously true)
+- **FIRE event**: When a condition transitions from false → true
+- **CLEAR event**: When a condition transitions from true → false
 
 For example, when monitoring if a position exceeds $10,000:
-- Position goes from $9,000 to $11,000 → FIRE event fires
-- Position drops from $11,000 to $8,000 → CLEAR event fires
+- Position goes from $9,000 to $11,000 → FIRE event
+- Position drops from $11,000 to $8,000 → CLEAR event
 
-You can configure:
-- **Same threshold**: Use one condition for both fire and clear (simple monitoring)
-- **Different thresholds**: Use separate conditions to prevent oscillation (e.g., fire at $10,000, clear at $9,500)
+By default, triggers use the same condition for both events - when the `fire` condition becomes true, you get a FIRE event; when it becomes false, you get a CLEAR event.
+
+You can optionally specify a separate `clear` condition for more control. When both are specified:
+- **FIRE**: Still fires when `fire` condition becomes true
+- **CLEAR**: Only fires when `fire` becomes false AND `clear` is true
+
+This prevents unwanted oscillation in cases where you want different thresholds (e.g., fire at $10,000, but only clear below $9,500).
 
 ### Trigger Configuration
 
@@ -58,8 +62,6 @@ mutation {
   }
 }
 ```
-
-When only `fire` is specified, the inverse condition (!fire) is automatically used for clear events.
 
 **Trigger with Different Fire/Clear Conditions**:
 ```graphql
