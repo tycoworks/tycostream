@@ -63,6 +63,7 @@ import { TriggerService } from './trigger.service';
           typeDefs,
           introspection: true, // Always enable introspection for API discovery
           csrfPrevention: true, // Always enabled - Apollo Sandbox handles this properly
+          playground: false, // Explicitly disable - we handle via plugins instead
           plugins: [landingPagePlugin],
           subscriptions: {
             'graphql-ws': true,
