@@ -55,7 +55,7 @@
 - Prometheus metrics endpoint with key metrics
 - Structured error logging
 
-### 🔔 Webhook Reliability
+### 🔔 [Webhook Reliability](./features/webhook_reliability.md)
 
 - At-least-once delivery with exponential backoff
 - Dead letter queue for failed webhooks

@@ -1,17 +1,19 @@
-# Deterministic Event IDs
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Motivation](#motivation)
-3. [Requirements](#requirements)
-4. [Technical Approach](#technical-approach)
-5. [Implementation Plan](#implementation-plan)
-6. [Migration Strategy](#migration-strategy)
+# Webhook Reliability
 
 ## Overview
 
-tycostream will generate deterministic event IDs for webhook payloads based on the source data's timestamp, enabling idempotent processing and reliable event replay scenarios.
+Making webhooks production-ready with at-least-once delivery, retry logic, idempotency support, and failure handling. This document covers the design and implementation of webhook reliability features for tycostream.
+
+## Features to Implement
+
+- **At-least-once delivery** with exponential backoff
+- **Dead letter queue** for failed webhooks  
+- **Idempotency support** via deterministic event IDs
+- **Error webhooks** for stream disconnection events
+
+## Deterministic Event IDs
+
+> This section details the idempotency support feature. Other reliability features will be documented as they are designed.
 
 ## Motivation
 
