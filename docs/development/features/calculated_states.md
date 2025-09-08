@@ -228,3 +228,202 @@ Calculated states provide a type-safe way to generate state enums from streaming
 4. **Clear semantics** for state-driven applications
 
 This approach focuses on calculated states as a specific, high-value use case, while architecturally supporting future expansion to general calculated fields.
+
+## Implementation Plan
+
+### Step 1: Configuration & Schema Foundation
+
+**Goal**: Parse calculated fields from YAML and generate GraphQL enums
+
+**Changes**:
+1. Extend YAML schema in `src/config/schema.ts`:
+   ```typescript
+   calculated_fields?: {
+     [fieldName: string]: {
+       type: 'enum';
+       values: string[];  // Order = precedence
+     }
+   }
+   ```
+
+2. Update `SchemaService` to generate GraphQL enum types:
+   ```graphql
+   enum PositionsRiskLevel {
+     safe
+     warning
+     critical
+   }
+   ```
+
+3. Source layer awareness (but don't populate yet):
+   - Store calculated field definitions
+   - Pass through to GraphQL layer
+   - Don't add empty fields to rows yet
+
+**Testable**: GraphQL introspection shows new enum types
+
+**Commit point**: "feat: add calculated field configuration and GraphQL enum generation"
+
+---
+
+### Step 2: Static Calculated Fields
+
+**Goal**: Support calculated fields with static evaluation (no runtime params yet)
+
+**Changes**:
+1. Add simple field calculation in View layer:
+   ```typescript
+   // For testing, hardcode some logic
+   if (calculatedField === 'risk_level') {
+     row.risk_level = row.value > 10000 ? 'critical' : 'safe';
+   }
+   ```
+
+2. Include calculated fields in GraphQL responses
+3. Basic integration test with hardcoded logic
+
+**Testable**: Subscription returns calculated field with hardcoded logic
+
+**Commit point**: "feat: add basic calculated field evaluation in views"
+
+---
+
+### Step 3: Runtime Evaluation Parameters
+
+**Goal**: Accept evaluation logic via GraphQL subscription parameters
+
+**Changes**:
+1. Extend GraphQL subscription arguments:
+   ```graphql
+   subscription {
+     positions(
+       derive_risk_level: [
+         { state: critical, when: { value: { _gt: 10000 } } }
+         { state: safe, when: { value: { _lte: 10000 } } }
+       ]
+     )
+   }
+   ```
+
+2. Parse and pass parameters to View layer
+3. View evaluates conditions in precedence order
+4. Remove hardcoded logic from Step 2
+
+**Testable**: Different subscriptions can have different thresholds
+
+**Commit point**: "feat: add runtime evaluation for calculated states"
+
+---
+
+### Step 4: Trigger Integration
+
+**Goal**: Allow triggers to use calculated state fields
+
+**Changes**:
+1. Extend trigger mutations to accept derive parameters:
+   ```graphql
+   create_positions_trigger(
+     derive_risk_level: [...]
+     fire: { risk_level: { _eq: critical } }
+   )
+   ```
+
+2. Apply state calculation before trigger evaluation
+3. Update trigger tests
+
+**Testable**: Triggers can fire based on calculated states
+
+**Commit point**: "feat: integrate calculated states with triggers"
+
+---
+
+### Step 5: Demo & Polish
+
+**Goal**: Update demo to showcase calculated states
+
+**Changes**:
+1. Replace webhook round-trip with calculated states
+2. Show positions changing color based on risk_level
+3. Performance optimization:
+   - Cache evaluation results
+   - Only recalculate on relevant field changes
+4. Documentation updates
+
+**Testable**: Demo clearly shows value proposition
+
+**Commit point**: "feat: update demo to use calculated states"
+
+---
+
+### Step 6: Reimplement Triggers Internally
+
+**Goal**: Unify triggers around calculated state mechanism
+
+**Changes**:
+1. Remove match/unmatch logic from views - Views only filter, don't track state
+2. Add synthetic trigger state field internally:
+   ```typescript
+   calculated_fields: {
+     __trigger_state: {
+       type: 'enum',
+       values: ['cleared', 'fired']
+     }
+   }
+   ```
+3. Map fire/clear conditions to state derivation
+4. Simplify view logic significantly
+
+**Benefits**: Single unified state evaluation mechanism, simpler codebase
+
+**Commit point**: "refactor: reimplement triggers using calculated states"
+
+---
+
+## Key Implementation Challenges
+
+### 1. Empty Field Problem
+
+**Issue**: If we advertise a field in the schema, consumers expect it in every row.
+
+**Solutions**:
+- Always include field with `null` if no state matches
+- OR: Only include field when evaluation params provided
+- OR: Make calculated fields clearly optional in schema
+
+**Recommendation**: Always include with `null` - cleaner contract
+
+### 2. View Layer Integration
+
+**Current**: Views filter rows, don't modify them
+
+**Change needed**: Views need to augment rows with calculated fields
+
+**Approach**:
+- Add `enrichRow()` step before filtering
+- Keep filtering logic separate
+- Maintain immutability (create new row object)
+
+### 3. Performance
+
+**Concern**: Evaluating conditions on every row update
+
+**Mitigations**:
+- Only evaluate if subscription requested it
+- Cache results when row hasn't changed
+- Use efficient precedence evaluation (first match wins)
+
+### 4. Testing Strategy
+
+**Unit tests**:
+- Configuration parsing
+- Enum generation
+- State evaluation logic
+
+**Integration tests**:
+- End-to-end subscription with calculated states
+- Multiple subscribers with different thresholds
+- Trigger integration
+
+**Performance tests**:
+- High-frequency updates with state calculation
+- Many calculated fields
