@@ -12,13 +12,34 @@ Making triggers and webhooks production-ready with reliability, manageability, a
 - **Idempotency support** via deterministic event IDs
 - **Snapshot inclusion option** - Choose whether triggers process historical data or start from creation time
 - **Error webhooks** for stream disconnection events
+- **Webhook retry policies** with configurable backoff and jitter
+
+### Persistence
+- **Trigger persistence** - Triggers survive restarts
+- **State preservation** - Maintain trigger state across failures
+- **Checkpoint management** - Resume from last processed position
+
+### Security
+- **Webhook signatures (HMAC)** for request authentication
+- **TLS enforcement** for webhook endpoints
+- **Secret management** for webhook credentials
 
 ### Manageability
 - **Enable/disable triggers** without deletion
-- **Trigger persistence** (survive restarts)
 - **List trigger state** (enabled/disabled, last fired, match count)
 - **Trigger metadata** (created_at, updated_at, created_by)
 - **Query matched rows** for debugging
+- **Trigger history** and audit trail
+- **Debug mode** for testing without delivery
+
+### Advanced Features
+- **Cooldown periods** and rate limiting
+- **Parameterized conditions** with runtime variables
+- **Custom result fields** (computed values in payload)
+- **Time-to-live (TTL)** and expiration
+- **Field selection** for webhook payloads
+- **Batch delivery** for high-volume triggers
+- **Conditional delivery** based on external state
 
 ## Deterministic Event IDs
 

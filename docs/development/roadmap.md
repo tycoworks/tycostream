@@ -55,12 +55,11 @@
 - Prometheus metrics endpoint with key metrics
 - Basic audit logging (connections, subscriptions, triggers)
 
-### 🔔 [Production Triggers](./features/production_triggers.md)
+### 🧮 [Calculated States](./features/calculated_states.md)
 
-- Reliable webhook delivery with automatic retry
-- Enable/disable triggers without deleting them  
-- Debug matched rows and trigger history
-- Survive restarts with persistent storage
+- Define state enums in YAML configuration
+- Runtime evaluation of state conditions per subscription
+- Type-safe GraphQL enums for state fields
 
 ### 🧠 [Database Resilience](./features/database_reconnection.md)
 
@@ -111,23 +110,13 @@
 - Graceful degradation during partial outages
 - Automatic failover between streaming databases
 
-### 🔔 Advanced Triggers
+### 🔔 [Production Triggers](./features/production_triggers.md)
 
-- Webhook signatures (HMAC) for security
-- Cooldown periods and rate limiting
-- Parameterized conditions with runtime variables
-- Webhook retry policies with jitter
-- Custom result fields (computed values in payload)
-- Time-to-live (TTL) and expiration
-- Advanced trigger metrics and audit trail
-- Field selection for webhook payloads
-
-### 🔀 Workflow State Machines
-
-- Define multi-state workflows (pending → approved → shipped)
-- Automatic state transitions based on streaming data conditions
-- Workflow instances per record with state history tracking
-- Time-based transitions and escalations (SLA enforcement)
+- **Reliability**: At-least-once delivery with retries and dead letter queues
+- **Persistence**: Triggers survive restarts and maintain state across failures
+- **Security**: Webhook signatures (HMAC) and authentication
+- **Manageability**: Enable/disable triggers, view history, debug matched rows
+- **Advanced Features**: Rate limiting, TTL, custom payloads, field selection
 
 ### 🧠 Production Hardening
 
