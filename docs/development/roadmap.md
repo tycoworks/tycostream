@@ -1,6 +1,6 @@
 # tycostream Roadmap
 
-## **Milestone 1 — Developer Preview** ✅ (Complete)
+## **Milestone 1 — Developer Preview** (In Progress)
 
 > Stream live data from Materialize views over WebSockets and fire webhooks when conditions are met. Not intended for production use. 
 
@@ -37,6 +37,13 @@
 - ✅ Docker support with docker-compose for development
 - ✅ Subscribe to any configured source in seconds
 
+### 🧮 [Calculated States](./features/calculated_states.md)
+
+- Define state enums in YAML configuration
+- Runtime evaluation of state conditions per subscription
+- Type-safe GraphQL enums for state fields
+- Connection-aware alternative to webhook triggers
+
 ---
 
 ## **Milestone 2 — MVP (Minimal Viable Product)**
@@ -45,21 +52,15 @@
 
 ### 🔐 Basic Authentication & Authorization
 
-- JWT-based authentication with signature verification
-- Basic authorization (JWT can access specific sources/operations)
-- Simple deny-by-default policy enforcement
+- Simple JWT verification with shared secret
+- Source-level access control via JWT claims
+- Deny-by-default policy
 
-### 🩺 Essential Observability
+### 🩺 [Essential Observability](./features/observability.md#milestone-2-mvp)
 
-- Health check endpoints (/health, /ready)
-- Prometheus metrics endpoint with key metrics
-- Basic audit logging (connections, subscriptions, triggers)
-
-### 🧮 [Calculated States](./features/calculated_states.md)
-
-- Define state enums in YAML configuration
-- Runtime evaluation of state conditions per subscription
-- Type-safe GraphQL enums for state fields
+- Health check endpoint (/health)
+- Prometheus metrics for core operations
+- Audit logging to separate file
 
 ### 🧠 [Database Resilience](./features/database_reconnection.md)
 
