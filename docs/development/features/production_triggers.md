@@ -10,6 +10,7 @@ Making triggers and webhooks production-ready with reliability, manageability, a
 - **At-least-once delivery** with exponential backoff
 - **Dead letter queue** for failed webhooks  
 - **Idempotency support** via deterministic event IDs
+- **Snapshot inclusion option** - Choose whether triggers process historical data or start from creation time
 - **Error webhooks** for stream disconnection events
 
 ### Manageability
