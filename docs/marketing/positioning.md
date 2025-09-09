@@ -23,18 +23,21 @@ There are two main use cases: as a component within an individual application, o
 ## Application Component Positioning
 
 ### Tagline
-"Build on Materialize faster"
+"Build faster on Materialize"
 
 ### What it is
 tycostream is a GraphQL layer for Materialize. It turns SQL views into typed APIs, so you can build streaming applications and dashboards faster.
 
 ### Core Capabilities
 
-**Stream live data instantly**  
-Subscribe to any SQL view and get typed updates over WebSockets. Build reactive dashboards and real-time UIs without polling loops or custom WebSocket servers.
+**Stream live data**  
+Subscribe to any SQL view and get typed updates over WebSockets. Build reactive dashboards and real-time UIs without polling loops or custom WebSocket servers.  
+_Feature: Views_
 
-**Add business logic to streams**  
-Turn raw data into meaningful business states like safe/warning/critical. Define calculated fields and state transitions without touching the database or writing custom code.
+**Model business logic**  
+Turn raw data into meaningful business states like safe/warning/critical. Define calculated fields and state transitions without touching the database or writing custom code.  
+_Feature: States_
 
-**React when things happen**  
-Fire webhooks when data meets specific conditions. Send alerts to Slack, trigger workflows in Zapier, or integrate with any external system based on your streaming data.
+**Trigger actions**  
+Fire webhooks when data meets specific conditions. Send alerts to Slack, trigger workflows in Zapier, or integrate with any external system based on your streaming data.  
+_Feature: Triggers_
