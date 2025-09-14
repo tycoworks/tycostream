@@ -23,10 +23,10 @@ There are two main use cases: as a component within an individual application, o
 ## Application Component Positioning
 
 ### Tagline
-"Build faster on Materialize"
+"The GraphQL layer for Materialize"
 
 ### What it is
-tycostream is a GraphQL layer for Materialize. It turns SQL views into typed APIs, so you can build streaming applications and dashboards faster.
+tycostream turns Materialize views into GraphQL APIs, so you can quickly build real-time, type-safe apps.
 
 ### Core Capabilities
 
