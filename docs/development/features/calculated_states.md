@@ -71,38 +71,31 @@ For calculated states, there are three possible approaches:
 
 #### Static Configuration (YAML)
 
-Define only the state enum types at compile time:
+tycostream already supports global enum definitions. Calculated states leverage this by referencing existing enums:
 
 ```yaml
+enums:
+  risk_level: [safe, warning, critical]
+  alert_status: [normal, triggered, cleared]
+
 sources:
-  - name: positions
+  positions:
+    primary_key: position_id
+    columns:
+      position_id: integer
+      value: double precision
     calculated_fields:
-      risk_level:
-        type: enum
-        values: [safe, warning, critical]  # Order defines precedence (last has highest)
-      
-  - name: orders
+      risk_level: risk_level  # References global enum
+
+  orders:
+    primary_key: order_id
+    columns:
+      order_id: integer
+      quantity: integer
     calculated_fields:
-      alert_status:
-        type: enum
-        values: [normal, triggered, cleared]  # Order defines precedence (last has highest)
+      alert_status: alert_status  # References global enum
 ```
 
-This generates proper GraphQL enums:
-
-```graphql
-enum PositionsRiskLevel {
-  safe
-  warning
-  critical
-}
-
-enum OrdersAlertStatus {
-  normal
-  triggered
-  cleared
-}
-```
 
 #### Runtime Evaluation
 
@@ -114,13 +107,13 @@ subscription RiskMonitoring {
   positions(
     derive_risk_level: [
       { state: critical, when: { value: { _gt: 10000 } } }
-      { state: warning, when: { value: { _gt: 9500 } } }  
+      { state: warning, when: { value: { _gt: 9500 } } }
       { state: safe, when: { value: { _lte: 9500 } } }
     ]
   ) {
     position_id
     value
-    risk_level  # Type-safe PositionsRiskLevel enum
+    risk_level  # Type-safe risk_level enum
   }
 }
 
@@ -140,28 +133,24 @@ subscription ComplianceMonitoring {
 }
 ```
 
-### State Precedence
-
-States are evaluated in the order they appear in the YAML configuration, with the last state having the highest precedence. When evaluating conditions, tycostream checks from last to first, and the first matching condition wins. For example, if `critical` is the most important state that should take precedence over all others, it should be listed last. This ensures predictable state determination when multiple conditions could apply.
 
 ### Benefits
 
-1. **Type Safety**: Proper GraphQL enums, not strings
-2. **Runtime Flexibility**: Each application defines its own thresholds
-3. **Shared Vocabulary**: All apps use the same state names
-4. **Connection Awareness**: Subscriptions provide connection status
-5. **No Logic Duplication**: Evaluation logic stays with the application that needs it
-6. **Leverages Caching**: Multiple subscriptions with different evaluations still hit tycostream's cache
+1. **Runtime Flexibility**: Each application defines its own thresholds
+2. **Connection Awareness**: Subscriptions provide connection status
+3. **No Logic Duplication**: Evaluation logic stays with the application that needs it
+4. **Leverages Caching**: Multiple subscriptions with different evaluations still hit tycostream's cache
 
 ## Implementation Details
 
 ### Synthetic Field Generation
 
 The calculated state system:
-1. Receives evaluation conditions at subscription time
-2. For each row, evaluates conditions in precedence order
-3. Assigns the first matching state
-4. Adds the synthetic field to the row before filtering
+1. Source receives evaluation conditions when creating a subscription stream
+2. For each row, Source evaluates conditions using enum ordering
+3. Source assigns the matching state
+4. Source emits rows with synthetic fields included
+5. View applies filtering on the complete row (including calculated fields)
 
 ### Integration with Triggers and Views
 
@@ -184,7 +173,7 @@ mutation {
 ```
 
 #### Views
-The field type is defined at the source level (for GraphQL schema generation), but the actual calculation happens at the view level. This allows each view to have its own evaluation logic while sharing the same type definition.
+The field type is defined at the source level (for GraphQL schema generation), and calculation happens at the source level when creating subscription streams. Views receive rows with calculated fields already evaluated and simply apply filtering. This maintains clean separation: Source provides all data (real and calculated), View filters that data.
 
 ## Future Considerations
 
@@ -195,16 +184,14 @@ While this document focuses on enum states, the architecture supports future exp
 ```yaml
 # Potential future capability
 calculated_fields:
-  risk_level:
-    type: enum
-    values: [safe, warning, critical]
-  
+  risk_level: risk_level  # Current - references global enum
+
   is_large_trade:  # Future
     type: boolean
-  
+
   risk_score:  # Future
     type: number
-  
+
   alert_message:  # Future
     type: string
 ```
@@ -231,38 +218,35 @@ This approach focuses on calculated states as a specific, high-value use case, w
 
 ## Implementation Plan
 
-### Step 1: Configuration & Schema Foundation
+### Step 1: Configuration Foundation
 
-**Goal**: Parse calculated fields from YAML and generate GraphQL enums
+**Goal**: Parse calculated field references from YAML, leveraging existing enum support
 
 **Changes**:
-1. Extend YAML schema in `src/config/schema.ts`:
+1. Extend `src/config/source.types.ts`:
    ```typescript
-   calculated_fields?: {
-     [fieldName: string]: {
-       type: 'enum';
-       values: string[];  // Order = precedence
-     }
+   interface SourceDefinition {
+     // ... existing fields ...
+     calculatedFields?: Map<string, string>;  // field name → enum name
+   }
+
+   interface YamlSourceConfig {
+     // ... existing fields ...
+     calculated_fields?: Record<string, string>;  // field name → enum name
    }
    ```
 
-2. Update `SchemaService` to generate GraphQL enum types:
-   ```graphql
-   enum PositionsRiskLevel {
-     safe
-     warning
-     critical
-   }
-   ```
+2. Update `src/config/sources.config.ts`:
+   - Parse `calculated_fields` section
+   - Validate that referenced enums exist in global enums
+   - Store calculated field → enum mappings
 
-3. Source layer awareness (but don't populate yet):
-   - Store calculated field definitions
-   - Pass through to GraphQL layer
-   - Don't add empty fields to rows yet
+3. Update `src/api/schema.ts`:
+   - Include calculated fields in GraphQL object types
 
-**Testable**: GraphQL introspection shows new enum types
+**Testable**: GraphQL schema includes calculated fields with correct enum types
 
-**Commit point**: "feat: add calculated field configuration and GraphQL enum generation"
+**Commit point**: "feat: add calculated field configuration"
 
 ---
 
@@ -271,20 +255,21 @@ This approach focuses on calculated states as a specific, high-value use case, w
 **Goal**: Support calculated fields with static evaluation (no runtime params yet)
 
 **Changes**:
-1. Add simple field calculation in View layer:
+1. Add simple field calculation in Source layer (`src/view/source.ts`):
    ```typescript
+   // In processUpdate, after getting row from database
    // For testing, hardcode some logic
-   if (calculatedField === 'risk_level') {
+   if (this.sourceDef.calculatedFields?.get('risk_level')) {
      row.risk_level = row.value > 10000 ? 'critical' : 'safe';
    }
    ```
 
-2. Include calculated fields in GraphQL responses
-3. Basic integration test with hardcoded logic
+2. Track calculated fields in RowUpdateEvent.fields Set
+3. Basic test with hardcoded logic
 
 **Testable**: Subscription returns calculated field with hardcoded logic
 
-**Commit point**: "feat: add basic calculated field evaluation in views"
+**Commit point**: "feat: add basic calculated field evaluation in source"
 
 ---
 
@@ -305,9 +290,10 @@ This approach focuses on calculated states as a specific, high-value use case, w
    }
    ```
 
-2. Parse and pass parameters to View layer
-3. View evaluates conditions in precedence order
-4. Remove hardcoded logic from Step 2
+2. Parse parameters in subscription resolver and pass to View
+3. View passes evaluation logic to Source.getUpdates()
+4. Source evaluates conditions in precedence order for each row
+5. Remove hardcoded logic from Step 2
 
 **Testable**: Different subscriptions can have different thresholds
 
@@ -392,15 +378,16 @@ This approach focuses on calculated states as a specific, high-value use case, w
 
 **Recommendation**: Always include with `null` - cleaner contract
 
-### 2. View Layer Integration
+### 2. Source Layer Integration
 
-**Current**: Views filter rows, don't modify them
+**Current**: Source emits rows as received from database
 
-**Change needed**: Views need to augment rows with calculated fields
+**Change needed**: Source needs to evaluate and add calculated fields before emitting
 
 **Approach**:
-- Add `enrichRow()` step before filtering
-- Keep filtering logic separate
+- Accept evaluation logic in getUpdates()
+- Add evaluation step in processUpdate()
+- Emit rows with calculated fields included
 - Maintain immutability (create new row object)
 
 ### 3. Performance
