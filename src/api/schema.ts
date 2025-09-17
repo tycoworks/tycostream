@@ -23,6 +23,7 @@ export function generateSchema(config: SourceConfiguration): string {
 
   // Build all the dynamic parts
   const enumTypeDefinitions = buildEnumTypes(enums);
+  const enumComparisonTypes = buildEnumComparisonTypes(enums);
   const comparisonTypes = buildComparisonTypes();
   const expressionInputTypes = buildExpressionInputTypes(sources);
   const triggerInputTypes = buildTriggerInputTypes(sources);
@@ -52,9 +53,11 @@ export function generateSchema(config: SourceConfiguration): string {
     }
     
     # ================== INPUT TYPES ==================
-    
+
 ${comparisonTypes}
-    
+
+${enumComparisonTypes}
+
 ${expressionInputTypes}
     
 ${triggerInputTypes}
@@ -102,6 +105,36 @@ ${values}
   }
 
   return enumDefinitions.join('\n\n');
+}
+
+/**
+ * Build comparison types for each enum
+ * Creates enum-specific comparison input types with ordinal operators
+ */
+function buildEnumComparisonTypes(enumTypes: Map<string, EnumType>): string {
+  if (enumTypes.size === 0) {
+    return '';
+  }
+
+  const comparisonTypes: string[] = [];
+
+  for (const enumType of enumTypes.values()) {
+    const enumName = enumType.name;
+    comparisonTypes.push(`    # Comparison operators for ${enumName} enum
+    input ${enumName}Comparison {
+      _eq: ${enumName}
+      _neq: ${enumName}
+      _gt: ${enumName}
+      _gte: ${enumName}
+      _lt: ${enumName}
+      _lte: ${enumName}
+      _in: [${enumName}!]
+      _nin: [${enumName}!]
+      _is_null: ${GraphQLBoolean.name}
+    }`);
+  }
+
+  return comparisonTypes.join('\n\n');
 }
 
 /**
@@ -266,10 +299,10 @@ function buildTriggerInputTypes(sources: Map<string, SourceDefinition>): string 
 /**
  * Get the appropriate comparison input type for a field
  */
-function getComparisonType(field: SourceField): ComparisonInputType {
-  // Enums use string comparisons
+function getComparisonType(field: SourceField): string {
+  // Enums use their specific comparison type
   if (field.enumType) {
-    return ComparisonInputType.String;
+    return `${field.enumType.name}Comparison`;
   }
 
   const graphqlTypeName = getGraphQLScalarType(field.dataType).name;

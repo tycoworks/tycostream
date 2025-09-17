@@ -309,9 +309,52 @@ describe('generateSchema', () => {
     expect(schema).toContain('side: trade_side');
     expect(schema).toContain('status: order_status');
 
-    // Enum fields should use StringComparison for filtering
-    expect(schema).toContain('side: StringComparison');
-    expect(schema).toContain('status: StringComparison');
+    // Should generate enum comparison types
+    expect(schema).toContain('input trade_sideComparison {');
+    expect(schema).toContain('_eq: trade_side');
+    expect(schema).toContain('_gt: trade_side');
+    expect(schema).toContain('input order_statusComparison {');
+
+    // Enum fields should use enum-specific comparison types for filtering
+    expect(schema).toContain('side: trade_sideComparison');
+    expect(schema).toContain('status: order_statusComparison');
+  });
+
+  it('should generate enum comparison types with ordinal operators', () => {
+    const priorityEnum = {
+      name: 'priority_level',
+      values: ['low', 'medium', 'high', 'critical']
+    };
+
+    const sources = new Map<string, SourceDefinition>([
+      ['tasks', {
+        name: 'tasks',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'priority', dataType: DataType.String, enumType: priorityEnum }
+        ],
+      }],
+    ]);
+
+    const config: SourceConfiguration = {
+      sources,
+      enums: new Map([['priority_level', priorityEnum]])
+    };
+
+    const schema = generateSchema(config);
+
+    // Should generate enum comparison type with all operators
+    expect(schema).toContain('input priority_levelComparison {');
+    expect(schema).toContain('_eq: priority_level');
+    expect(schema).toContain('_neq: priority_level');
+    expect(schema).toContain('_gt: priority_level');   // Ordinal comparison
+    expect(schema).toContain('_gte: priority_level');  // Ordinal comparison
+    expect(schema).toContain('_lt: priority_level');   // Ordinal comparison
+    expect(schema).toContain('_lte: priority_level');  // Ordinal comparison
+    expect(schema).toContain('_in: [priority_level!]');
+    expect(schema).toContain('_nin: [priority_level!]');
+    expect(schema).toContain('_is_null: Boolean');
   });
 
   it('should handle shared enum definitions across sources', () => {
