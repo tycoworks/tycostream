@@ -91,7 +91,7 @@ sources:
         invalid: {
           primary_key: 'missing_field',
           columns: {
-            id: 'integer',
+            id: 'Integer',
           },
         },
       },
@@ -99,6 +99,44 @@ sources:
 
     expect(() => sourcesConfig()).toThrow(
       "Primary key 'missing_field' not found in columns for source 'invalid'"
+    );
+  });
+
+  it('should throw error for invalid DataType names', () => {
+    (fs.readFileSync as jest.Mock).mockReturnValue('sources with invalid type');
+    (yaml.load as jest.Mock).mockReturnValue({
+      sources: {
+        test: {
+          primary_key: 'id',
+          columns: {
+            id: 'NotAType',
+            value: 'Integer',
+          },
+        },
+      },
+    });
+
+    expect(() => sourcesConfig()).toThrow(
+      "Invalid type 'NotAType' for column 'id' in source 'test': Unknown type in configuration: NotAType"
+    );
+  });
+
+  it('should throw error for case-sensitive type names', () => {
+    (fs.readFileSync as jest.Mock).mockReturnValue('sources with wrong case');
+    (yaml.load as jest.Mock).mockReturnValue({
+      sources: {
+        test: {
+          primary_key: 'id',
+          columns: {
+            id: 'integer',  // lowercase, should be 'Integer'
+            name: 'string',  // lowercase, should be 'String'
+          },
+        },
+      },
+    });
+
+    expect(() => sourcesConfig()).toThrow(
+      "Invalid type 'integer' for column 'id' in source 'test': Unknown type in configuration: integer"
     );
   });
 });

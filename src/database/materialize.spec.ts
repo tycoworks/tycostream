@@ -181,4 +181,148 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row.value).toBeNaN();
     });
   });
+
+  describe('parseLine with different DataTypes', () => {
+    it('should parse Boolean values correctly', () => {
+      const booleanSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'is_active', dataType: DataType.Boolean, fieldType: FieldType.Scalar },
+          { name: 'is_verified', dataType: DataType.Boolean, fieldType: FieldType.Scalar }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(booleanSourceDef, 'test_view');
+
+      // Test 't' and 'f' values
+      const line1 = '1234567890\tupsert\t123\tt\tf';
+      const result1 = handler.parseLine(line1);
+      expect(result1?.row).toEqual({
+        id: '123',
+        is_active: true,
+        is_verified: false
+      });
+
+      // Test 'true' value
+      const line2 = '1234567890\tupsert\t123\ttrue\tfalse';
+      const result2 = handler.parseLine(line2);
+      expect(result2?.row).toEqual({
+        id: '123',
+        is_active: true,
+        is_verified: false
+      });
+    });
+
+    it('should parse Float values correctly', () => {
+      const floatSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'price', dataType: DataType.Float, fieldType: FieldType.Scalar },
+          { name: 'rate', dataType: DataType.Float, fieldType: FieldType.Scalar }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(floatSourceDef, 'test_view');
+
+      const line = '1234567890\tupsert\t123\t99.99\t0.05';
+      const result = handler.parseLine(line);
+      expect(result?.row).toEqual({
+        id: '123',
+        price: 99.99,
+        rate: 0.05
+      });
+
+      // Test scientific notation
+      const line2 = '1234567890\tupsert\t123\t1.23e10\t-4.56e-3';
+      const result2 = handler.parseLine(line2);
+      expect(result2?.row).toEqual({
+        id: '123',
+        price: 1.23e10,
+        rate: -4.56e-3
+      });
+    });
+
+    it('should parse BigInt values as strings to preserve precision', () => {
+      const bigintSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'large_number', dataType: DataType.BigInt, fieldType: FieldType.Scalar }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(bigintSourceDef, 'test_view');
+
+      const line = '1234567890\tupsert\t123\t9223372036854775807';
+      const result = handler.parseLine(line);
+      expect(result?.row).toEqual({
+        id: '123',
+        large_number: '9223372036854775807' // Should remain as string
+      });
+      expect(typeof result?.row.large_number).toBe('string');
+    });
+
+    it('should parse timestamp/date/time values as strings', () => {
+      const temporalSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'created_at', dataType: DataType.Timestamp, fieldType: FieldType.Scalar },
+          { name: 'birth_date', dataType: DataType.Date, fieldType: FieldType.Scalar },
+          { name: 'start_time', dataType: DataType.Time, fieldType: FieldType.Scalar }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(temporalSourceDef, 'test_view');
+
+      const line = '1234567890\tupsert\t123\t2023-01-15 14:30:00\t1990-05-20\t09:15:30';
+      const result = handler.parseLine(line);
+      expect(result?.row).toEqual({
+        id: '123',
+        created_at: '2023-01-15 14:30:00',
+        birth_date: '1990-05-20',
+        start_time: '09:15:30'
+      });
+    });
+
+    it('should parse UUID and JSON values as strings', () => {
+      const specialSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.UUID, fieldType: FieldType.Scalar },
+          { name: 'metadata', dataType: DataType.JSON, fieldType: FieldType.Scalar }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(specialSourceDef, 'test_view');
+
+      const line = '1234567890\tupsert\t550e8400-e29b-41d4-a716-446655440000\t{"key":"value","num":42}';
+      const result = handler.parseLine(line);
+      expect(result?.row).toEqual({
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        metadata: '{"key":"value","num":42}'
+      });
+    });
+
+    it('should handle NaN for invalid numeric values', () => {
+      const numericSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'int_value', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'float_value', dataType: DataType.Float, fieldType: FieldType.Scalar }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(numericSourceDef, 'test_view');
+
+      const line = '1234567890\tupsert\t123\tnot_a_number\tinvalid_float';
+      const result = handler.parseLine(line);
+      expect(result?.row.id).toBe('123');
+      expect(result?.row.int_value).toBeNaN();
+      expect(result?.row.float_value).toBeNaN();
+    });
+  });
 });
