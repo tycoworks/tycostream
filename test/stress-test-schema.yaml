@@ -2,7 +2,7 @@ sources:
   stress_test:
     primary_key: id
     columns:
-      id: integer
-      value: numeric
-      status: character varying
-      department: character varying
+      id: Integer
+      value: Float
+      status: String
+      department: String

@@ -3,47 +3,47 @@ sources:
   users:
     primary_key: user_id
     columns:
-      user_id: integer
-      name: text
-      email: character varying
-      active: boolean
-      created_at: timestamp without time zone
-      updated_at: timestamp with time zone
-      metadata: json
-  
+      user_id: Integer
+      name: String
+      email: String
+      active: Boolean
+      created_at: Timestamp
+      updated_at: Timestamp
+      metadata: JSON
+
   # Table for testing triggers with score threshold
   user_scores:
     primary_key: user_id
     columns:
-      user_id: integer
-      score: integer
-      active: boolean
-  
+      user_id: Integer
+      score: Integer
+      active: Boolean
+
   # Comprehensive test table with ALL PostgreSQL types
   all_types:
     primary_key: id
     columns:
-      id: integer
+      id: Integer
       # Boolean
-      bool_val: boolean
+      bool_val: Boolean
       # Numeric types
-      smallint_val: smallint
-      int_val: integer
-      bigint_val: bigint
-      decimal_val: numeric
-      numeric_val: numeric
-      real_val: real
-      double_val: double precision
+      smallint_val: Integer
+      int_val: Integer
+      bigint_val: BigInt
+      decimal_val: Float
+      numeric_val: Float
+      real_val: Float
+      double_val: Float
       # String types
-      char_val: character
-      varchar_val: character varying
-      text_val: text
-      uuid_val: uuid
+      char_val: String
+      varchar_val: String
+      text_val: String
+      uuid_val: UUID
       # Date/Time types
-      date_val: date
-      time_val: time without time zone
-      timestamp_val: timestamp without time zone
-      timestamptz_val: timestamp with time zone
+      date_val: Date
+      time_val: Time
+      timestamp_val: Timestamp
+      timestamptz_val: Timestamp
       # JSON types
-      json_val: json
-      jsonb_val: jsonb
+      json_val: JSON
+      jsonb_val: JSON
