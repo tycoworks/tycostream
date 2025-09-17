@@ -54,16 +54,19 @@ sources:
       },
     });
 
-    const sources = sourcesConfig();
-    
-    expect(sources).toBeInstanceOf(Map);
-    expect(sources.size).toBe(2);
-    expect(sources.has('trades')).toBe(true);
-    expect(sources.has('live_pnl')).toBe(true);
-    
-    const trades = sources.get('trades');
+    const config = sourcesConfig();
+
+    expect(config.sources).toBeInstanceOf(Map);
+    expect(config.sources.size).toBe(2);
+    expect(config.sources.has('trades')).toBe(true);
+    expect(config.sources.has('live_pnl')).toBe(true);
+
+    const trades = config.sources.get('trades');
     expect(trades?.primaryKeyField).toBe('id');
     expect(trades?.fields).toHaveLength(5);
+
+    expect(config.enums).toBeInstanceOf(Map);
+    expect(config.enums.size).toBe(0); // No enums in this test
   });
 
   it('should throw error when schema file is missing', () => {
@@ -161,11 +164,16 @@ sources:
       }
     });
 
-    const sources = sourcesConfig();
-    const trades = sources.get('trades');
+    const config = sourcesConfig();
+    const trades = config.sources.get('trades');
 
     expect(trades).toBeDefined();
     expect(trades?.fields).toHaveLength(4);
+
+    // Check that enums were parsed
+    expect(config.enums.size).toBe(2);
+    expect(config.enums.has('trade_side')).toBe(true);
+    expect(config.enums.has('order_status')).toBe(true);
 
     // Check side field has trade_side enum metadata
     const sideField = trades?.fields.find(f => f.name === 'side');

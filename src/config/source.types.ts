@@ -42,6 +42,15 @@ export interface SourceDefinition {
 }
 
 /**
+ * Complete configuration containing both sources and enum definitions
+ * This is what gets loaded from the YAML and passed around the system
+ */
+export interface SourceConfiguration {
+  sources: Map<string, SourceDefinition>;
+  enums: Map<string, EnumType>;
+}
+
+/**
  * Structure of a single source in the YAML file
  * Contains primary_key and columns mapping
  */

@@ -6,7 +6,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import { generateSchema } from './schema';
-import type { SourceDefinition } from '../config/source.types';
+import type { SourceConfiguration } from '../config/source.types';
 import { buildSubscriptionResolvers } from './subscription.resolver';
 import { ViewModule } from '../view/view.module';
 import { ViewService } from '../view/view.service';
@@ -32,11 +32,11 @@ import { TriggerService } from './trigger.service';
       useFactory: async (configService: ConfigService, viewService: ViewService, httpService: HttpService) => {
         const logger = new Logger('GraphQLModule');
         
-        // Get source definitions from config
-        const sources = configService.get<Map<string, SourceDefinition>>('sources') || new Map();
-        
-        // Generate SDL from source definitions
-        const typeDefs = generateSchema(sources);
+        // Get source configuration from config
+        const sourceConfig = configService.get<SourceConfiguration>('sources') || { sources: new Map(), enums: new Map() };
+
+        // Generate SDL from source configuration
+        const typeDefs = generateSchema(sourceConfig);
         
         // Log the generated SDL
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
@@ -46,8 +46,8 @@ import { TriggerService } from './trigger.service';
         const triggerService = new TriggerService(viewService, httpService);
         
         // Build resolvers
-        const subscriptionResolvers = buildSubscriptionResolvers(sources, subscriptionService);
-        const { mutationResolvers, queryResolvers } = buildTriggerResolvers(sources, triggerService);
+        const subscriptionResolvers = buildSubscriptionResolvers(sourceConfig.sources, subscriptionService);
+        const { mutationResolvers, queryResolvers } = buildTriggerResolvers(sourceConfig.sources, triggerService);
         
         const graphqlConfig = configService.get('graphql');
         

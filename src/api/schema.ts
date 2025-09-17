@@ -1,4 +1,4 @@
-import type { SourceDefinition, SourceField } from '../config/source.types';
+import type { SourceDefinition, SourceField, EnumType, SourceConfiguration } from '../config/source.types';
 import { DataType } from '../common/types';
 import { GraphQLRowOperation } from './subscription.resolver';
 import { GraphQLString, GraphQLInt, GraphQLFloat, GraphQLBoolean, GraphQLID } from 'graphql';
@@ -15,11 +15,14 @@ enum ComparisonInputType {
 }
 
 /**
- * Generates GraphQL SDL schema from source definitions
+ * Generates GraphQL SDL schema from source configuration
  * Creates type definitions for each source including Query, Subscription, and custom types
  */
-export function generateSchema(sources: Map<string, SourceDefinition>): string {
+export function generateSchema(config: SourceConfiguration): string {
+  const { sources, enums } = config;
+
   // Build all the dynamic parts
+  const enumTypeDefinitions = buildEnumTypes(enums);
   const comparisonTypes = buildComparisonTypes();
   const expressionInputTypes = buildExpressionInputTypes(sources);
   const triggerInputTypes = buildTriggerInputTypes(sources);
@@ -30,13 +33,15 @@ export function generateSchema(sources: Map<string, SourceDefinition>): string {
   
   let schema = `
     # ================== ENUMS & BASE TYPES ==================
-    
+
     # Row operation types for subscriptions
     enum RowOperation {
       ${GraphQLRowOperation.Insert}
       ${GraphQLRowOperation.Update}
       ${GraphQLRowOperation.Delete}
     }
+
+    ${enumTypeDefinitions}
     
     # Trigger type (returned by queries and mutations)
     type Trigger {
@@ -76,6 +81,27 @@ ${subscriptionFields}
     }`;
 
   return schema;
+}
+
+/**
+ * Build GraphQL enum type definitions from collected enum types
+ */
+function buildEnumTypes(enumTypes: Map<string, EnumType>): string {
+  if (enumTypes.size === 0) {
+    return '';
+  }
+
+  const enumDefinitions: string[] = [];
+
+  for (const enumType of enumTypes.values()) {
+    const values = enumType.values.map(value => `      ${value}`).join('\n');
+    enumDefinitions.push(`    # User-defined enum: ${enumType.name}
+    enum ${enumType.name} {
+${values}
+    }`);
+  }
+
+  return enumDefinitions.join('\n\n');
 }
 
 /**
@@ -241,6 +267,11 @@ function buildTriggerInputTypes(sources: Map<string, SourceDefinition>): string 
  * Get the appropriate comparison input type for a field
  */
 function getComparisonType(field: SourceField): ComparisonInputType {
+  // Enums use string comparisons
+  if (field.enumType) {
+    return ComparisonInputType.String;
+  }
+
   const graphqlTypeName = getGraphQLScalarType(field.dataType).name;
   switch (graphqlTypeName) {
     case GraphQLString.name:
@@ -265,7 +296,10 @@ function getComparisonType(field: SourceField): ComparisonInputType {
 function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
   return sourceDefinition.fields
     .map(field => {
-      const graphqlTypeName = getGraphQLScalarType(field.dataType).name;
+      // Use enum type if this field has one, otherwise use scalar type
+      const graphqlTypeName = field.enumType
+        ? field.enumType.name
+        : getGraphQLScalarType(field.dataType).name;
       const nullable = field.name !== sourceDefinition.primaryKeyField ? '' : '!';
       return `      ${field.name}: ${graphqlTypeName}${nullable}`;
     })

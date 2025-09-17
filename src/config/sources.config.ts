@@ -2,7 +2,7 @@ import { registerAs } from '@nestjs/config';
 import { readFileSync } from 'fs';
 import { load } from 'js-yaml';
 import { Logger } from '@nestjs/common';
-import type { YamlSourcesFile, SourceDefinition, SourceField, EnumType } from './source.types';
+import type { YamlSourcesFile, SourceDefinition, SourceField, EnumType, SourceConfiguration } from './source.types';
 import { DataType } from '../common/types';
 
 const logger = new Logger('SourcesConfig');
@@ -12,12 +12,13 @@ const logger = new Logger('SourcesConfig');
  * Resolves all type information at config load time
  * Fails fast with clear error messages if schema is invalid or missing
  */
-export default registerAs('sources', (): Map<string, SourceDefinition> => {
+export default registerAs('sources', (): SourceConfiguration => {
   const sources = new Map<string, SourceDefinition>();
-  
+  const enumDefinitions = new Map<string, EnumType>();
+
   // Get schema file path from environment or use default
   const schemaPath = process.env.SCHEMA_PATH || './schema.yaml';
-  
+
   try {
     logger.log(`Loading source definitions from: ${schemaPath}`);
 
@@ -29,7 +30,6 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
     }
 
     // Parse enum definitions if present
-    const enumDefinitions = new Map<string, EnumType>();
     if (yamlData.enums) {
       for (const [enumName, values] of Object.entries(yamlData.enums)) {
         if (!Array.isArray(values) || values.length === 0) {
@@ -95,12 +95,12 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
     }
     
     logger.log(`Loaded ${sources.size} source definitions: ${Array.from(sources.keys()).join(', ')}`);
-    
+
     // Fail if no sources were loaded
     if (sources.size === 0) {
       throw new Error('No source definitions found in schema file. At least one source must be defined.');
     }
-    
+
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       logger.error(`Schema file not found at ${schemaPath}`);
@@ -110,8 +110,11 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
       throw error;
     }
   }
-  
-  return sources;
+
+  return {
+    sources,
+    enums: enumDefinitions
+  };
 });
 
 /**
