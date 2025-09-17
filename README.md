@@ -34,7 +34,7 @@ LOG_LEVEL=debug" > .env
 ```bash
 # Download and run schema generator in one command
 # Format: -s <source_name> -p <primary_key_column>
-curl -s https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
+curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
   bash -s -- -s users -p id -s orders -p order_id > schema.yaml
 ```
 
