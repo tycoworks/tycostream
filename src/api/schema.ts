@@ -305,10 +305,6 @@ function getGraphQLScalarType(dataType: DataType): GraphQLScalarType {
     case DataType.Array:
       return GraphQLString;  // JSON/Arrays as strings
 
-    // Enum is handled specially
-    case DataType.Enum:
-      return GraphQLString;  // Shouldn't reach here, enums handled separately
-
     default:
       // Fallback to string
       return GraphQLString;

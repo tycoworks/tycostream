@@ -126,7 +126,6 @@ function parseValueFromDataType(value: string, dataType: DataType): any {
     case DataType.Time:
     case DataType.JSON:
     case DataType.Array:
-    case DataType.Enum:
       return value;
 
     default:

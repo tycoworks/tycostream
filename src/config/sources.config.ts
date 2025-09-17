@@ -3,7 +3,6 @@ import { readFileSync } from 'fs';
 import { load } from 'js-yaml';
 import { Logger } from '@nestjs/common';
 import type { YamlSourcesFile, SourceDefinition, SourceField } from './source.types';
-import { FieldType } from './source.types';
 import { DataType } from '../common/types';
 
 const logger = new Logger('SourcesConfig');
@@ -53,7 +52,6 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
           return {
             name,
             dataType,
-            fieldType: FieldType.Scalar,  // For now, all are scalars (enums come later)
           };
         } catch (error) {
           // Provide better error context
@@ -117,7 +115,8 @@ function getDataType(typeName: string): DataType {
     case 'Array':
       return DataType.Array;
     case 'Enum':
-      return DataType.Enum;
+      // Enums are strings at runtime - this will be handled by enumType field
+      return DataType.String;
     default:
       throw new Error(`Unknown type in configuration: ${typeName}. Valid types are: Integer, Float, BigInt, String, UUID, Timestamp, Date, Time, Boolean, JSON, Array, Enum`);
   }

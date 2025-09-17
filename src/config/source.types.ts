@@ -1,9 +1,9 @@
 // Types for source definitions loaded from YAML
 
-import { DataType, FieldType } from '../common/types';
+import { DataType } from '../common/types';
 
 // Re-export for use by other modules
-export { FieldType, DataType } from '../common/types';
+export { DataType } from '../common/types';
 
 /**
  * Represents a single field/column in a data source
@@ -12,7 +12,16 @@ export { FieldType, DataType } from '../common/types';
 export interface SourceField {
   name: string;
   dataType: DataType;       // Our internal type representation
-  fieldType: FieldType;     // Whether this is a scalar or enum
+}
+
+/**
+ * Helper to determine if a field is an enum
+ * This will be updated when we add enumType support
+ */
+export function isEnumField(field: SourceField): boolean {
+  // TODO: Will check field.enumType once we add enum support
+  // For now, always return false since Enum was removed from DataType
+  return false;
 }
 
 /**

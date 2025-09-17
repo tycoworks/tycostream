@@ -1,6 +1,6 @@
 import { MaterializeProtocolHandler } from './materialize';
 import type { SourceDefinition } from '../config/source.types';
-import { DataType, FieldType } from '../config/source.types';
+import { DataType } from '../config/source.types';
 import { DatabaseRowUpdateType } from './types';
 
 describe('MaterializeProtocolHandler', () => {
@@ -12,9 +12,9 @@ describe('MaterializeProtocolHandler', () => {
       name: 'test',
       primaryKeyField: 'id',
       fields: [
-        { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
-        { name: 'name', dataType: DataType.String, fieldType: FieldType.Scalar },
-        { name: 'value', dataType: DataType.Integer, fieldType: FieldType.Scalar }
+        { name: 'id', dataType: DataType.String },
+        { name: 'name', dataType: DataType.String },
+        { name: 'value', dataType: DataType.Integer }
       ]
     };
 
@@ -41,7 +41,7 @@ describe('MaterializeProtocolHandler', () => {
         name: 'single',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar }
+          { name: 'id', dataType: DataType.String }
         ]
       };
 
@@ -63,9 +63,9 @@ describe('MaterializeProtocolHandler', () => {
         name: 'custom',
         primaryKeyField: 'name',
         fields: [
-          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'name', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'value', dataType: DataType.Integer, fieldType: FieldType.Scalar }
+          { name: 'id', dataType: DataType.String },
+          { name: 'name', dataType: DataType.String },
+          { name: 'value', dataType: DataType.Integer }
         ]
       };
 
@@ -188,9 +188,9 @@ describe('MaterializeProtocolHandler', () => {
         name: 'test',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'is_active', dataType: DataType.Boolean, fieldType: FieldType.Scalar },
-          { name: 'is_verified', dataType: DataType.Boolean, fieldType: FieldType.Scalar }
+          { name: 'id', dataType: DataType.String },
+          { name: 'is_active', dataType: DataType.Boolean },
+          { name: 'is_verified', dataType: DataType.Boolean }
         ]
       };
       const handler = new MaterializeProtocolHandler(booleanSourceDef, 'test_view');
@@ -219,9 +219,9 @@ describe('MaterializeProtocolHandler', () => {
         name: 'test',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'price', dataType: DataType.Float, fieldType: FieldType.Scalar },
-          { name: 'rate', dataType: DataType.Float, fieldType: FieldType.Scalar }
+          { name: 'id', dataType: DataType.String },
+          { name: 'price', dataType: DataType.Float },
+          { name: 'rate', dataType: DataType.Float }
         ]
       };
       const handler = new MaterializeProtocolHandler(floatSourceDef, 'test_view');
@@ -249,8 +249,8 @@ describe('MaterializeProtocolHandler', () => {
         name: 'test',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'large_number', dataType: DataType.BigInt, fieldType: FieldType.Scalar }
+          { name: 'id', dataType: DataType.String },
+          { name: 'large_number', dataType: DataType.BigInt }
         ]
       };
       const handler = new MaterializeProtocolHandler(bigintSourceDef, 'test_view');
@@ -269,10 +269,10 @@ describe('MaterializeProtocolHandler', () => {
         name: 'test',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'created_at', dataType: DataType.Timestamp, fieldType: FieldType.Scalar },
-          { name: 'birth_date', dataType: DataType.Date, fieldType: FieldType.Scalar },
-          { name: 'start_time', dataType: DataType.Time, fieldType: FieldType.Scalar }
+          { name: 'id', dataType: DataType.String },
+          { name: 'created_at', dataType: DataType.Timestamp },
+          { name: 'birth_date', dataType: DataType.Date },
+          { name: 'start_time', dataType: DataType.Time }
         ]
       };
       const handler = new MaterializeProtocolHandler(temporalSourceDef, 'test_view');
@@ -292,8 +292,8 @@ describe('MaterializeProtocolHandler', () => {
         name: 'test',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.UUID, fieldType: FieldType.Scalar },
-          { name: 'metadata', dataType: DataType.JSON, fieldType: FieldType.Scalar }
+          { name: 'id', dataType: DataType.UUID },
+          { name: 'metadata', dataType: DataType.JSON }
         ]
       };
       const handler = new MaterializeProtocolHandler(specialSourceDef, 'test_view');
@@ -311,9 +311,9 @@ describe('MaterializeProtocolHandler', () => {
         name: 'test',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'int_value', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'float_value', dataType: DataType.Float, fieldType: FieldType.Scalar }
+          { name: 'id', dataType: DataType.String },
+          { name: 'int_value', dataType: DataType.Integer },
+          { name: 'float_value', dataType: DataType.Float }
         ]
       };
       const handler = new MaterializeProtocolHandler(numericSourceDef, 'test_view');

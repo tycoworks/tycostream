@@ -27,15 +27,4 @@ export enum DataType {
   Boolean,
   JSON,      // JSON/JSONB data
   Array,     // Array types
-
-  // Special
-  Enum,      // User-defined enums
-}
-
-/**
- * Field classification - scalar vs enum
- */
-export enum FieldType {
-  Scalar,
-  Enum
 }

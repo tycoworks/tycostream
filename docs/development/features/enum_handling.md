@@ -15,6 +15,15 @@ Currently, PostgreSQL enum columns are treated as text fields in tycostream, los
 
 ## Design
 
+### Design Decision: Enum Representation
+
+**Key Decision**: Enums are always transmitted as strings in tycostream, regardless of how the underlying database represents them. This ensures consistent handling across different database backends.
+
+- **DataType**: Enums have `DataType.String` (not a special `DataType.Enum`) because that's their runtime type
+- **Identity**: The presence of an `enumType?: EnumType` field distinguishes enums from regular strings
+- **No FieldType**: We don't need a separate `FieldType` enum - the presence/absence of `enumType` tells us everything
+- **Ordering**: Despite being strings at runtime, enums have ordered semantics based on their position in the values array
+
 ### YAML Configuration
 
 Users define enum types globally, then reference them in columns (matching PostgreSQL's model):
@@ -187,15 +196,15 @@ subscription HighPriorityOrders {
 **Changes**:
 1. Extend `src/config/source.types.ts`:
    ```typescript
-   interface SourceField {
+   interface EnumType {
      name: string;
-     type: string;  // PostgreSQL type or enum name
+     values: string[];
    }
 
-   interface SourceDefinition {
+   interface SourceField {
      name: string;
-     primaryKeyField: string;
-     fields: SourceField[];
+     dataType: DataType;      // String for enums
+     enumType?: EnumType;     // Present only for enum fields
    }
 
    interface YamlSourcesFile {

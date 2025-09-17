@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SourceService } from './source.service';
 import { DatabaseStreamService } from '../database/stream.service';
 import type { SourceDefinition } from '../config/source.types';
-import { DataType, FieldType } from '../config/source.types';
+import { DataType } from '../config/source.types';
 
 describe('SourceService', () => {
   let sourceService: SourceService;
@@ -16,17 +16,17 @@ describe('SourceService', () => {
       name: 'trades',
       primaryKeyField: 'trade_id',
       fields: [
-        { name: 'trade_id', dataType: DataType.String, fieldType: FieldType.Scalar },
-        { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
-        { name: 'quantity', dataType: DataType.Integer, fieldType: FieldType.Scalar }
+        { name: 'trade_id', dataType: DataType.String },
+        { name: 'symbol', dataType: DataType.String },
+        { name: 'quantity', dataType: DataType.Integer }
       ]
     }],
     ['live_pnl', {
       name: 'live_pnl',
       primaryKeyField: 'account_id',
       fields: [
-        { name: 'account_id', dataType: DataType.String, fieldType: FieldType.Scalar },
-        { name: 'pnl', dataType: DataType.Float, fieldType: FieldType.Scalar }
+        { name: 'account_id', dataType: DataType.String },
+        { name: 'pnl', dataType: DataType.Float }
       ]
     }]
   ]);

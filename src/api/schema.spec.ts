@@ -1,6 +1,6 @@
 import { generateSchema } from './schema';
 import type { SourceDefinition } from '../config/source.types';
-import { DataType, FieldType } from '../config/source.types';
+import { DataType } from '../config/source.types';
 
 describe('generateSchema', () => {
   it('should generate root types even with no sources', () => {
@@ -62,8 +62,8 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'symbol', dataType: DataType.String },
         ],
       }],
     ]);
@@ -81,8 +81,8 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'symbol', dataType: DataType.String },
         ],
       }],
     ]);
@@ -100,8 +100,8 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'symbol', dataType: DataType.String },
         ],
       }],
     ]);
@@ -122,9 +122,9 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'price', dataType: DataType.Float, fieldType: FieldType.Scalar },
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'symbol', dataType: DataType.String },
+          { name: 'price', dataType: DataType.Float },
         ],
       }],
     ]);
@@ -149,9 +149,9 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
-          { name: 'price', dataType: DataType.Float, fieldType: FieldType.Scalar },
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'symbol', dataType: DataType.String },
+          { name: 'price', dataType: DataType.Float },
         ],
       }],
     ]);
@@ -180,11 +180,11 @@ describe('generateSchema', () => {
         name: 'test_types',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.BigInt, fieldType: FieldType.Scalar },
-          { name: 'active', dataType: DataType.Boolean, fieldType: FieldType.Scalar },
-          { name: 'count', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'amount', dataType: DataType.Float, fieldType: FieldType.Scalar },
-          { name: 'created_at', dataType: DataType.Timestamp, fieldType: FieldType.Scalar },
+          { name: 'id', dataType: DataType.BigInt },
+          { name: 'active', dataType: DataType.Boolean },
+          { name: 'count', dataType: DataType.Integer },
+          { name: 'amount', dataType: DataType.Float },
+          { name: 'created_at', dataType: DataType.Timestamp },
         ],
       }],
     ]);
@@ -204,8 +204,8 @@ describe('generateSchema', () => {
         name: 'live_pnl',
         primaryKeyField: 'account_id',
         fields: [
-          { name: 'account_id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'pnl', dataType: DataType.Float, fieldType: FieldType.Scalar },
+          { name: 'account_id', dataType: DataType.Integer },
+          { name: 'pnl', dataType: DataType.Float },
         ],
       }],
     ]);
@@ -225,8 +225,8 @@ describe('generateSchema', () => {
         name: 'events',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'data', dataType: DataType.JSON, fieldType: FieldType.Scalar },
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'data', dataType: DataType.JSON },
         ],
       }],
     ]);
@@ -242,8 +242,8 @@ describe('generateSchema', () => {
         name: 'custom',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
-          { name: 'custom_field', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'custom_field', dataType: DataType.String },
         ],
       }],
     ]);
