@@ -2,7 +2,7 @@ import { registerAs } from '@nestjs/config';
 import { readFileSync } from 'fs';
 import { load } from 'js-yaml';
 import { Logger } from '@nestjs/common';
-import type { YamlSourcesFile, SourceDefinition, SourceField } from './source.types';
+import type { YamlSourcesFile, SourceDefinition, SourceField, EnumType } from './source.types';
 import { DataType } from '../common/types';
 
 const logger = new Logger('SourcesConfig');
@@ -20,14 +20,28 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
   
   try {
     logger.log(`Loading source definitions from: ${schemaPath}`);
-    
+
     const yamlContent = readFileSync(schemaPath, 'utf-8');
     const yamlData = load(yamlContent) as YamlSourcesFile;
-    
+
     if (!yamlData?.sources) {
       throw new Error('Invalid schema file: must contain a "sources" section');
     }
-    
+
+    // Parse enum definitions if present
+    const enumDefinitions = new Map<string, EnumType>();
+    if (yamlData.enums) {
+      for (const [enumName, values] of Object.entries(yamlData.enums)) {
+        if (!Array.isArray(values) || values.length === 0) {
+          throw new Error(`Enum '${enumName}' must have at least one value`);
+        }
+        enumDefinitions.set(enumName, {
+          name: enumName,
+          values
+        });
+      }
+    }
+
     // Parse each source
     for (const [sourceName, sourceConfig] of Object.entries(yamlData.sources)) {
       if (!sourceConfig.primary_key) {
@@ -45,18 +59,32 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
       
       // Build field list with type resolution
       const fields: SourceField[] = Object.entries(sourceConfig.columns).map(([name, typeString]) => {
-        try {
-          // Get our internal type representation (this will validate the type)
-          const dataType = getDataType(typeString);
+        let field: SourceField;
 
-          return {
+        // First check if this references an enum
+        const enumDef = enumDefinitions.get(typeString);
+        if (enumDef) {
+          // This is an enum field
+          field = {
             name,
-            dataType,
+            dataType: DataType.String,  // Enums are strings at runtime
+            enumType: enumDef,
           };
-        } catch (error) {
-          // Provide better error context
-          throw new Error(`Invalid type '${typeString}' for column '${name}' in source '${sourceName}': ${error.message}`);
+        } else {
+          // Not an enum, try to parse as a DataType
+          try {
+            const dataType = getDataType(typeString);
+            field = {
+              name,
+              dataType,
+            };
+          } catch (error) {
+            // Provide better error context
+            throw new Error(`Invalid type '${typeString}' for column '${name}' in source '${sourceName}': ${error.message}`);
+          }
         }
+
+        return field;
       });
       
       sources.set(sourceName, {
@@ -114,10 +142,7 @@ function getDataType(typeName: string): DataType {
       return DataType.JSON;
     case 'Array':
       return DataType.Array;
-    case 'Enum':
-      // Enums are strings at runtime - this will be handled by enumType field
-      return DataType.String;
     default:
-      throw new Error(`Unknown type in configuration: ${typeName}. Valid types are: Integer, Float, BigInt, String, UUID, Timestamp, Date, Time, Boolean, JSON, Array, Enum`);
+      throw new Error(`Unknown type in configuration: ${typeName}. Valid types are: Integer, Float, BigInt, String, UUID, Timestamp, Date, Time, Boolean, JSON, Array`);
   }
 }

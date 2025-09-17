@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 import sourcesConfig from './sources.config';
+import { DataType } from '../common/types';
 
 jest.mock('fs');
 jest.mock('js-yaml');
@@ -138,5 +139,72 @@ sources:
     expect(() => sourcesConfig()).toThrow(
       "Invalid type 'integer' for column 'id' in source 'test': Unknown type in configuration: integer"
     );
+  });
+
+  it('should parse enum definitions and attach to fields', () => {
+    (fs.readFileSync as jest.Mock).mockReturnValue('test');
+    (yaml.load as jest.Mock).mockReturnValue({
+      enums: {
+        trade_side: ['buy', 'sell'],
+        order_status: ['pending', 'filled', 'cancelled']
+      },
+      sources: {
+        trades: {
+          primary_key: 'id',
+          columns: {
+            id: 'Integer',
+            side: 'trade_side',      // Direct reference to enum
+            status: 'order_status',   // Direct reference to enum
+            notes: 'String',          // Regular string field
+          }
+        }
+      }
+    });
+
+    const sources = sourcesConfig();
+    const trades = sources.get('trades');
+
+    expect(trades).toBeDefined();
+    expect(trades?.fields).toHaveLength(4);
+
+    // Check side field has trade_side enum metadata
+    const sideField = trades?.fields.find(f => f.name === 'side');
+    expect(sideField?.dataType).toBe(DataType.String);
+    expect(sideField?.enumType).toEqual({
+      name: 'trade_side',
+      values: ['buy', 'sell']
+    });
+
+    // Check status field has order_status enum metadata
+    const statusField = trades?.fields.find(f => f.name === 'status');
+    expect(statusField?.dataType).toBe(DataType.String);
+    expect(statusField?.enumType).toEqual({
+      name: 'order_status',
+      values: ['pending', 'filled', 'cancelled']
+    });
+
+    // Check notes field is regular string without enum
+    const notesField = trades?.fields.find(f => f.name === 'notes');
+    expect(notesField?.dataType).toBe(DataType.String);
+    expect(notesField?.enumType).toBeUndefined();
+  });
+
+  it('should validate enum definitions', () => {
+    (fs.readFileSync as jest.Mock).mockReturnValue('test');
+    (yaml.load as jest.Mock).mockReturnValue({
+      enums: {
+        empty_enum: []  // Invalid: empty array
+      },
+      sources: {
+        test: {
+          primary_key: 'id',
+          columns: {
+            id: 'Integer'
+          }
+        }
+      }
+    });
+
+    expect(() => sourcesConfig()).toThrow("Enum 'empty_enum' must have at least one value");
   });
 });

@@ -6,22 +6,29 @@ import { DataType } from '../common/types';
 export { DataType } from '../common/types';
 
 /**
+ * Defines an enum type with its allowed values
+ * Values array determines ordering for comparison operators
+ */
+export interface EnumType {
+  name: string;
+  values: string[];
+}
+
+/**
  * Represents a single field/column in a data source
  * Uses our internal type system for clean separation
  */
 export interface SourceField {
   name: string;
   dataType: DataType;       // Our internal type representation
+  enumType?: EnumType;      // Present when this field is an enum
 }
 
 /**
  * Helper to determine if a field is an enum
- * This will be updated when we add enumType support
  */
 export function isEnumField(field: SourceField): boolean {
-  // TODO: Will check field.enumType once we add enum support
-  // For now, always return false since Enum was removed from DataType
-  return false;
+  return field.enumType !== undefined;
 }
 
 /**
@@ -48,5 +55,6 @@ export interface YamlSourceConfig {
  * Each source key becomes a GraphQL subscription field
  */
 export interface YamlSourcesFile {
+  enums?: Record<string, string[]>;  // Optional enum definitions
   sources: Record<string, YamlSourceConfig>;
 }
