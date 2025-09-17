@@ -1,5 +1,6 @@
 import { generateSchema } from './schema';
 import type { SourceDefinition } from '../config/source.types';
+import { DataType, FieldType } from '../config/source.types';
 
 describe('generateSchema', () => {
   it('should generate root types even with no sources', () => {
@@ -61,8 +62,8 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'integer' },
-          { name: 'symbol', type: 'text' },
+          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
@@ -80,8 +81,8 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'integer' },
-          { name: 'symbol', type: 'text' },
+          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
@@ -99,8 +100,8 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'integer' },
-          { name: 'symbol', type: 'text' },
+          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
@@ -121,9 +122,9 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'integer' },
-          { name: 'symbol', type: 'text' },
-          { name: 'price', type: 'numeric' },
+          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'price', dataType: DataType.Float, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
@@ -148,9 +149,9 @@ describe('generateSchema', () => {
         name: 'trades',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'integer' },
-          { name: 'symbol', type: 'text' },
-          { name: 'price', type: 'numeric' },
+          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'symbol', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'price', dataType: DataType.Float, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
@@ -173,17 +174,17 @@ describe('generateSchema', () => {
     expect(schema).toContain('trades(where: tradesExpression): tradesUpdate!');
   });
 
-  it('should handle PostgreSQL type mappings correctly', () => {
+  it('should handle DataType mappings correctly', () => {
     const sources = new Map<string, SourceDefinition>([
       ['test_types', {
         name: 'test_types',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'bigint' },
-          { name: 'active', type: 'boolean' },
-          { name: 'count', type: 'smallint' },
-          { name: 'amount', type: 'double precision' },
-          { name: 'created_at', type: 'timestamp without time zone' },
+          { name: 'id', dataType: DataType.BigInt, fieldType: FieldType.Scalar },
+          { name: 'active', dataType: DataType.Boolean, fieldType: FieldType.Scalar },
+          { name: 'count', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'amount', dataType: DataType.Float, fieldType: FieldType.Scalar },
+          { name: 'created_at', dataType: DataType.Timestamp, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
@@ -203,8 +204,8 @@ describe('generateSchema', () => {
         name: 'live_pnl',
         primaryKeyField: 'account_id',
         fields: [
-          { name: 'account_id', type: 'integer' },
-          { name: 'pnl', type: 'numeric' },
+          { name: 'account_id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'pnl', dataType: DataType.Float, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
@@ -224,8 +225,8 @@ describe('generateSchema', () => {
         name: 'events',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'integer' },
-          { name: 'data', type: 'jsonb' },
+          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'data', dataType: DataType.JSON, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
@@ -235,19 +236,19 @@ describe('generateSchema', () => {
     expect(schema).toContain('data: String'); // JSON is treated as String
   });
 
-  it('should throw error for unknown PostgreSQL types', () => {
+  it('should not throw error for all DataTypes', () => {
     const sources = new Map<string, SourceDefinition>([
       ['custom', {
         name: 'custom',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'integer' },
-          { name: 'custom_field', type: 'unknown_type' },
+          { name: 'id', dataType: DataType.Integer, fieldType: FieldType.Scalar },
+          { name: 'custom_field', dataType: DataType.String, fieldType: FieldType.Scalar },
         ],
       }],
     ]);
     
-    // Should fail fast for unknown types
-    expect(() => generateSchema(sources)).toThrow('Unsupported PostgreSQL type: unknown_type');
+    // Should not throw since all fields have valid DataTypes
+    expect(() => generateSchema(sources)).not.toThrow();
   });
 });

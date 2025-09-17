@@ -1,5 +1,6 @@
 import { Source } from './source';
 import type { SourceDefinition } from '../config/source.types';
+import { DataType, FieldType } from '../config/source.types';
 import { DatabaseRowUpdateType } from '../database/types';
 import { RowUpdateType, type RowUpdateEvent } from './types';
 import { take, toArray } from 'rxjs/operators';
@@ -25,9 +26,9 @@ describe('Source', () => {
     name: 'test_source',
     primaryKeyField: 'id',
     fields: [
-      { name: 'id', type: 'text' },
-      { name: 'name', type: 'text' },
-      { name: 'value', type: 'integer' }
+      { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+      { name: 'name', dataType: DataType.String, fieldType: FieldType.Scalar },
+      { name: 'value', dataType: DataType.Integer, fieldType: FieldType.Scalar }
     ]
   };
 

@@ -1,5 +1,6 @@
 import { MaterializeProtocolHandler } from './materialize';
 import type { SourceDefinition } from '../config/source.types';
+import { DataType, FieldType } from '../config/source.types';
 import { DatabaseRowUpdateType } from './types';
 
 describe('MaterializeProtocolHandler', () => {
@@ -11,9 +12,9 @@ describe('MaterializeProtocolHandler', () => {
       name: 'test',
       primaryKeyField: 'id',
       fields: [
-        { name: 'id', type: 'text' },
-        { name: 'name', type: 'text' },
-        { name: 'value', type: 'integer' }
+        { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+        { name: 'name', dataType: DataType.String, fieldType: FieldType.Scalar },
+        { name: 'value', dataType: DataType.Integer, fieldType: FieldType.Scalar }
       ]
     };
 
@@ -40,7 +41,7 @@ describe('MaterializeProtocolHandler', () => {
         name: 'single',
         primaryKeyField: 'id',
         fields: [
-          { name: 'id', type: 'text' }
+          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar }
         ]
       };
 
@@ -62,9 +63,9 @@ describe('MaterializeProtocolHandler', () => {
         name: 'custom',
         primaryKeyField: 'name',
         fields: [
-          { name: 'id', type: 'text' },
-          { name: 'name', type: 'text' },
-          { name: 'value', type: 'integer' }
+          { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'name', dataType: DataType.String, fieldType: FieldType.Scalar },
+          { name: 'value', dataType: DataType.Integer, fieldType: FieldType.Scalar }
         ]
       };
 

@@ -35,19 +35,19 @@ sources:
         trades: {
           primary_key: 'id',
           columns: {
-            id: 'integer',
-            instrument_id: 'integer',
-            quantity: 'integer',
-            price: 'numeric',
-            executed_at: 'timestamp without time zone',
+            id: 'Integer',
+            instrument_id: 'Integer',
+            quantity: 'Integer',
+            price: 'Float',
+            executed_at: 'Timestamp',
           },
         },
         live_pnl: {
           primary_key: 'instrument_id',
           columns: {
-            instrument_id: 'integer',
-            symbol: 'text',
-            net_position: 'bigint',
+            instrument_id: 'Integer',
+            symbol: 'String',
+            net_position: 'BigInt',
           },
         },
       },

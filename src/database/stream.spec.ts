@@ -1,6 +1,7 @@
 import { DatabaseStream } from './stream';
 import type { DatabaseConfig } from '../config/database.config';
 import type { SourceDefinition } from '../config/source.types';
+import { DataType, FieldType } from '../config/source.types';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
 import { Client } from 'pg';
@@ -21,9 +22,9 @@ describe('DatabaseStream', () => {
     name: 'test_source',
     primaryKeyField: 'id',
     fields: [
-      { name: 'id', type: 'text' },
-      { name: 'name', type: 'text' },
-      { name: 'value', type: 'integer' }
+      { name: 'id', dataType: DataType.String, fieldType: FieldType.Scalar },
+      { name: 'name', dataType: DataType.String, fieldType: FieldType.Scalar },
+      { name: 'value', dataType: DataType.Integer, fieldType: FieldType.Scalar }
     ]
   };
 
