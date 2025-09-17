@@ -1,12 +1,18 @@
 // Types for source definitions loaded from YAML
 
+import { DataType, FieldType } from '../common/types';
+
+// Re-export for use by other modules
+export { FieldType, DataType } from '../common/types';
+
 /**
  * Represents a single field/column in a data source
- * Type must be a valid PostgreSQL type for GraphQL mapping and parsing
+ * Uses our internal type system for clean separation
  */
 export interface SourceField {
   name: string;
-  type: string;  // PostgreSQL type from YAML
+  dataType: DataType;       // Our internal type representation
+  fieldType: FieldType;     // Whether this is a scalar or enum
 }
 
 /**

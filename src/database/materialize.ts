@@ -1,9 +1,8 @@
 import { Logger } from '@nestjs/common';
 import type { SourceDefinition } from '../config/source.types';
+import { DataType } from '../common/types';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
-import { getPostgresType } from '../common/types';
-import * as pgTypes from 'pg-types';
 
 /**
  * Handles Materialize-specific protocol details: query generation and data parsing
@@ -12,7 +11,7 @@ import * as pgTypes from 'pg-types';
 export class MaterializeProtocolHandler implements ProtocolHandler {
   private readonly logger = new Logger(MaterializeProtocolHandler.name);
   private columnNames: string[];
-  private columnTypes: Map<string, string>;
+  private columnTypes: Map<string, DataType>;
 
   constructor(
     private sourceDefinition: SourceDefinition,
@@ -27,7 +26,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     // Build column type map
     this.columnTypes = new Map();
     sourceDefinition.fields.forEach(field => {
-      this.columnTypes.set(field.name, field.type);
+      this.columnTypes.set(field.name, field.dataType);
     });
     
     this.logger.debug(`MaterializeProtocolHandler initialized for ${sourceName} - columns: ${this.columnNames.length} [${this.columnNames.join(', ')}], primaryKey: ${sourceDefinition.primaryKeyField}`);
@@ -82,9 +81,9 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
       const columnName = this.columnNames[i];
       const field = fields[i];
       if (columnName && field !== undefined) {
-        const typeName = this.columnTypes.get(columnName);
-        row[columnName] = typeName 
-          ? this.parseValue(field, typeName)
+        const dataType = this.columnTypes.get(columnName);
+        row[columnName] = dataType !== undefined
+          ? parseValueFromDataType(field, dataType)
           : field;
       }
     }
@@ -95,50 +94,42 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
       
     return { row, timestamp, updateType };
   }
+}
 
-  /**
-   * Parse a COPY text format value based on PostgreSQL type
-   * Handles nulls, booleans, numbers, and strings according to PostgreSQL conventions
-   */
-  private parseValue(value: string, typeName: string): any {
-    // Handle COPY format NULL
-    if (value === '\\N') return null;
-    
-    // Get PostgreSQL type OID
-    const pgType = getPostgresType(typeName);
-    
-    // Parse based on PostgreSQL type
-    switch (pgType) {
-      case pgTypes.builtins.BOOL:
-        return value === 't' || value === 'true';
-      
-      case pgTypes.builtins.INT2:
-      case pgTypes.builtins.INT4:
-        return parseInt(value, 10);
-      
-      case pgTypes.builtins.INT8:
-        // Keep as string to preserve precision
-        return value;
-      
-      case pgTypes.builtins.FLOAT4:
-      case pgTypes.builtins.FLOAT8:
-      case pgTypes.builtins.NUMERIC:
-        return parseFloat(value);
-      
-      // All string-based types
-      case pgTypes.builtins.TEXT:
-      case pgTypes.builtins.VARCHAR:
-      case pgTypes.builtins.UUID:
-      case pgTypes.builtins.TIMESTAMP:
-      case pgTypes.builtins.TIMESTAMPTZ:
-      case pgTypes.builtins.DATE:
-      case pgTypes.builtins.TIME:
-      case pgTypes.builtins.JSON:
-      case pgTypes.builtins.JSONB:
-        return value;
-      
-      default:
-        return value; // Unknown type, keep as string
-    }
+/**
+ * Parse a COPY text format value based on DataType
+ * Handles PostgreSQL COPY format including \\N for NULL
+ */
+function parseValueFromDataType(value: string, dataType: DataType): any {
+  // Handle COPY format NULL
+  if (value === '\\N') return null;
+
+  switch (dataType) {
+    case DataType.Boolean:
+      return value === 't' || value === 'true';
+
+    case DataType.Integer:
+      return parseInt(value, 10);
+
+    case DataType.Float:
+      return parseFloat(value);
+
+    case DataType.BigInt:
+      // Keep as string to preserve precision
+      return value;
+
+    // All string-based types
+    case DataType.String:
+    case DataType.UUID:
+    case DataType.Timestamp:
+    case DataType.Date:
+    case DataType.Time:
+    case DataType.JSON:
+    case DataType.Array:
+    case DataType.Enum:
+      return value;
+
+    default:
+      return value;
   }
 }

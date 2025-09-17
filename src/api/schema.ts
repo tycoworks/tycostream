@@ -1,7 +1,8 @@
-import type { SourceDefinition } from '../config/source.types';
-import { getGraphQLType } from '../common/types';
+import type { SourceDefinition, SourceField } from '../config/source.types';
+import { DataType } from '../common/types';
 import { GraphQLRowOperation } from './subscription.resolver';
 import { GraphQLString, GraphQLInt, GraphQLFloat, GraphQLBoolean, GraphQLID } from 'graphql';
+import type { GraphQLScalarType } from 'graphql';
 
 /**
  * Comparison input type names for GraphQL schema
@@ -199,7 +200,7 @@ function buildExpressionInputTypes(sources: Map<string, SourceDefinition>): stri
   for (const [sourceName, sourceDefinition] of sources) {
     const fieldComparisons = sourceDefinition.fields
       .map(field => {
-        const comparisonType = getComparisonType(field.type);
+        const comparisonType = getComparisonType(field);
         return `      ${field.name}: ${comparisonType}`;
       })
       .join('\n');
@@ -237,12 +238,11 @@ function buildTriggerInputTypes(sources: Map<string, SourceDefinition>): string 
 }
 
 /**
- * Get the appropriate comparison input type for a field type
+ * Get the appropriate comparison input type for a field
  */
-function getComparisonType(fieldType: string): ComparisonInputType {
-  const graphqlType = getGraphQLType(fieldType);
-  
-  switch (graphqlType) {
+function getComparisonType(field: SourceField): ComparisonInputType {
+  const graphqlTypeName = getGraphQLScalarType(field.dataType).name;
+  switch (graphqlTypeName) {
     case GraphQLString.name:
     case GraphQLID.name:
       return ComparisonInputType.String;
@@ -265,9 +265,52 @@ function getComparisonType(fieldType: string): ComparisonInputType {
 function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
   return sourceDefinition.fields
     .map(field => {
-      const graphqlType = getGraphQLType(field.type);
+      const graphqlTypeName = getGraphQLScalarType(field.dataType).name;
       const nullable = field.name !== sourceDefinition.primaryKeyField ? '' : '!';
-      return `      ${field.name}: ${graphqlType}${nullable}`;
+      return `      ${field.name}: ${graphqlTypeName}${nullable}`;
     })
     .join('\n');
+}
+
+/**
+ * Get the GraphQL scalar type for a runtime type
+ * Maps our internal DataType to GraphQL scalar types
+ */
+function getGraphQLScalarType(dataType: DataType): GraphQLScalarType {
+  switch (dataType) {
+    // Numeric types
+    case DataType.Integer:
+      return GraphQLInt;
+    case DataType.Float:
+      return GraphQLFloat;
+    case DataType.BigInt:
+      return GraphQLString;  // BigInt as string to preserve precision
+
+    // String types
+    case DataType.String:
+      return GraphQLString;
+    case DataType.UUID:
+      return GraphQLID;
+
+    // Temporal types (all as strings)
+    case DataType.Timestamp:
+    case DataType.Date:
+    case DataType.Time:
+      return GraphQLString;
+
+    // Other types
+    case DataType.Boolean:
+      return GraphQLBoolean;
+    case DataType.JSON:
+    case DataType.Array:
+      return GraphQLString;  // JSON/Arrays as strings
+
+    // Enum is handled specially
+    case DataType.Enum:
+      return GraphQLString;  // Shouldn't reach here, enums handled separately
+
+    default:
+      // Fallback to string
+      return GraphQLString;
+  }
 }

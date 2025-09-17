@@ -3,11 +3,14 @@ import { readFileSync } from 'fs';
 import { load } from 'js-yaml';
 import { Logger } from '@nestjs/common';
 import type { YamlSourcesFile, SourceDefinition, SourceField } from './source.types';
+import { FieldType } from './source.types';
+import { DataType } from '../common/types';
 
 const logger = new Logger('SourcesConfig');
 
 /**
  * Loads and validates source definitions from YAML schema file
+ * Resolves all type information at config load time
  * Fails fast with clear error messages if schema is invalid or missing
  */
 export default registerAs('sources', (): Map<string, SourceDefinition> => {
@@ -41,11 +44,22 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
         throw new Error(`Primary key '${sourceConfig.primary_key}' not found in columns for source '${sourceName}'`);
       }
       
-      // Build field list
-      const fields: SourceField[] = Object.entries(sourceConfig.columns).map(([name, type]) => ({
-        name,
-        type
-      }));
+      // Build field list with type resolution
+      const fields: SourceField[] = Object.entries(sourceConfig.columns).map(([name, typeString]) => {
+        try {
+          // Get our internal type representation (this will validate the type)
+          const dataType = getDataType(typeString);
+
+          return {
+            name,
+            dataType,
+            fieldType: FieldType.Scalar,  // For now, all are scalars (enums come later)
+          };
+        } catch (error) {
+          // Provide better error context
+          throw new Error(`Invalid type '${typeString}' for column '${name}' in source '${sourceName}': ${error.message}`);
+        }
+      });
       
       sources.set(sourceName, {
         name: sourceName,
@@ -73,3 +87,38 @@ export default registerAs('sources', (): Map<string, SourceDefinition> => {
   
   return sources;
 });
+
+/**
+ * Convert a type string from YAML to our internal DataType
+ * Expects exact DataType enum names in the YAML file
+ */
+function getDataType(typeName: string): DataType {
+  switch (typeName) {
+    case 'Integer':
+      return DataType.Integer;
+    case 'Float':
+      return DataType.Float;
+    case 'BigInt':
+      return DataType.BigInt;
+    case 'String':
+      return DataType.String;
+    case 'UUID':
+      return DataType.UUID;
+    case 'Timestamp':
+      return DataType.Timestamp;
+    case 'Date':
+      return DataType.Date;
+    case 'Time':
+      return DataType.Time;
+    case 'Boolean':
+      return DataType.Boolean;
+    case 'JSON':
+      return DataType.JSON;
+    case 'Array':
+      return DataType.Array;
+    case 'Enum':
+      return DataType.Enum;
+    default:
+      throw new Error(`Unknown type in configuration: ${typeName}. Valid types are: Integer, Float, BigInt, String, UUID, Timestamp, Date, Time, Boolean, JSON, Array, Enum`);
+  }
+}

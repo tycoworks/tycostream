@@ -2,19 +2,29 @@ sources:
   live_pnl:
     primary_key: instrument_id
     columns:
-      instrument_id: integer
-      symbol: text
-      net_position: bigint
-      latest_price: double precision
-      market_value: double precision
-      avg_cost_basis: numeric
-      theoretical_pnl: double precision
-  
+      instrument_id: Integer
+      symbol: String
+      net_position: BigInt
+      last_price: Float
+      market_value: Float
+      realized_pnl: Float
+      unrealized_pnl: Float
+
   trades:
     primary_key: id
     columns:
-      id: integer
-      instrument_id: integer
-      quantity: integer
-      price: numeric
-      executed_at: timestamp without time zone
+      id: Integer
+      instrument_id: Integer
+      quantity: Integer
+      price: Float
+      executed_at: Timestamp
+
+  alerts:
+    primary_key: id
+    columns:
+      id: Integer
+      event_id: String
+      timestamp: Timestamp
+      trigger_name: String
+      event_type: String
+      data: JSON

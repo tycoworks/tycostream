@@ -1,61 +1,41 @@
-import { GraphQLScalarType, GraphQLBoolean, GraphQLFloat, GraphQLInt, GraphQLString, GraphQLID } from 'graphql';
-import * as pgTypes from 'pg-types';
-
-// PostgreSQL type name to OID mapping (from pg-type-names)
-const pgTypeNamesModule = require('pg-type-names');
-const pgTypeNames = pgTypeNamesModule.default || pgTypeNamesModule;
+/**
+ * Our internal type system for field types
+ * This maintains semantic information needed across layers
+ * without being tied to any specific layer's type system
+ */
 
 /**
- * PostgreSQL OID to GraphQL type mapping
- * Pure data structure - no behavior
+ * Internal data types that maintain semantic distinctions
+ * These preserve the fidelity needed for correct type mapping
  */
-export const TYPE_MAP: Record<number, GraphQLScalarType> = {
-  [pgTypes.builtins.BOOL]: GraphQLBoolean,
-  [pgTypes.builtins.INT2]: GraphQLInt,
-  [pgTypes.builtins.INT4]: GraphQLInt,
-  [pgTypes.builtins.INT8]: GraphQLString, // String to preserve precision
-  [pgTypes.builtins.FLOAT4]: GraphQLFloat,
-  [pgTypes.builtins.FLOAT8]: GraphQLFloat,
-  [pgTypes.builtins.NUMERIC]: GraphQLFloat,
-  [pgTypes.builtins.TEXT]: GraphQLString,
-  [pgTypes.builtins.VARCHAR]: GraphQLString,
-  [pgTypes.builtins.CHAR]: GraphQLString,
-  [pgTypes.builtins.BPCHAR]: GraphQLString, // "blank padded char" - PostgreSQL's internal name for CHAR
-  [pgTypes.builtins.UUID]: GraphQLID,
-  [pgTypes.builtins.TIMESTAMP]: GraphQLString,
-  [pgTypes.builtins.TIMESTAMPTZ]: GraphQLString,
-  [pgTypes.builtins.DATE]: GraphQLString,
-  [pgTypes.builtins.TIME]: GraphQLString,
-  [pgTypes.builtins.TIMETZ]: GraphQLString, // Time with timezone
-  [pgTypes.builtins.JSON]: GraphQLString,
-  [pgTypes.builtins.JSONB]: GraphQLString,
-} as const;
+export enum DataType {
+  // Numeric types
+  Integer,
+  Float,
+  BigInt,  // Special handling - stored as string to preserve precision
 
-/**
- * Get PostgreSQL type OID from type name
- * Throws error for unsupported types
- */
-export function getPostgresType(typeName: string): number {
-  const oid = pgTypeNames.oids[typeName];
-  if (!oid) {
-    throw new Error(`Unsupported PostgreSQL type: ${typeName}`);
-  }
-  
-  // Check if we have a GraphQL mapping for this OID
-  if (!TYPE_MAP[oid]) {
-    throw new Error(`PostgreSQL type '${typeName}' is not supported by tycostream`);
-  }
-  
-  return oid;
+  // String types
+  String,
+  UUID,
+
+  // Temporal types
+  Timestamp,
+  Date,
+  Time,
+
+  // Other types
+  Boolean,
+  JSON,      // JSON/JSONB data
+  Array,     // Array types
+
+  // Special
+  Enum,      // User-defined enums
 }
 
 /**
- * Get GraphQL type name for a PostgreSQL type
- * Returns the GraphQL type name (e.g., "String", "Int", "Boolean")
+ * Field classification - scalar vs enum
  */
-export function getGraphQLType(typeName: string): string {
-  const oid = getPostgresType(typeName);
-  const graphqlType = TYPE_MAP[oid];
-  return graphqlType ? graphqlType.name : GraphQLString.name;
+export enum FieldType {
+  Scalar,
+  Enum
 }
-
