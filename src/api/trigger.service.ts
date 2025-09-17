@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { randomUUID } from 'crypto';
 import { Subscription, firstValueFrom } from 'rxjs';
-import { ExpressionTree, buildExpression } from '../common/expressions';
+import { ExpressionTree, buildExpression } from './expressions';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';

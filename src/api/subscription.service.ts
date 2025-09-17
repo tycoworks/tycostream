@@ -3,7 +3,7 @@ import { Observable } from 'rxjs';
 import { map, tap } from 'rxjs/operators';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
-import { buildExpression, ExpressionTree } from '../common/expressions';
+import { buildExpression, ExpressionTree } from './expressions';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
 import { truncateForLog } from '../common/logging.utils';
 
