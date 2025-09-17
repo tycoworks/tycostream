@@ -19,7 +19,7 @@ Our E2E test suite is organized into different test categories, each serving a s
   - Multiple concurrent WebSocket connections
   - Late joiners receiving proper snapshots
   - Complex operation sequences
-  - All PostgreSQL data types
+  - All supported data types
   - Multiple sources in parallel
   - Error handling for invalid queries
   - GraphQL triggers with webhook callbacks
@@ -92,7 +92,7 @@ The test schema includes two tables to ensure comprehensive type coverage:
    - JSON data
 
 2. **all_types** table:
-   - Comprehensive PostgreSQL type coverage including:
+   - Comprehensive type coverage including:
    - Boolean types
    - All numeric types (smallint, integer, bigint, decimal, numeric, real, double precision)
    - String types (char, varchar, text)

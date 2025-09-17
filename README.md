@@ -67,8 +67,8 @@ LOG_LEVEL=debug
 ```bash
 cp schema.example.yaml schema.yaml
 # Edit schema.yaml to match your database sources
-# Use PostgreSQL wire protocol type names (e.g., 'character varying' not 'varchar')
-# Get exact type names: SHOW COLUMNS FROM your_view
+# Supported types: String, Integer, Float, Boolean, Timestamp, Date, Time, BigInt, UUID, JSON, Array, Enum
+# See schema.example.yaml for examples
 ```
 
 ### 4. Start the server:
