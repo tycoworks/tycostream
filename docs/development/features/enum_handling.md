@@ -269,6 +269,9 @@ subscription HighPriorityOrders {
    - Multiple enum comparisons
    - Null handling for optional enums
 3. Test GraphQL type generation
+4. Update demo to showcase enum usage:
+   - Add order_status enum to demo schema
+   - Show enum filtering in demo queries
 
 **Testable**: All enum operations work end-to-end
 
