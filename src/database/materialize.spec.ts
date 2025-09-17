@@ -1,5 +1,5 @@
 import { MaterializeProtocolHandler } from './materialize';
-import type { SourceDefinition } from '../config/source.types';
+import type { SourceDefinition, EnumType } from '../config/source.types';
 import { DataType } from '../config/source.types';
 import { DatabaseRowUpdateType } from './types';
 
@@ -323,6 +323,128 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row.id).toBe('123');
       expect(result?.row.int_value).toBeNaN();
       expect(result?.row.float_value).toBeNaN();
+    });
+  });
+
+  describe('enum handling', () => {
+    it('should convert enum string values to their ordinal indices', () => {
+      const orderStatusEnum: EnumType = {
+        name: 'order_status',
+        values: ['pending', 'processing', 'shipped', 'delivered', 'cancelled']
+      };
+
+      const enumSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'status', dataType: DataType.Integer, enumType: orderStatusEnum },
+          { name: 'notes', dataType: DataType.String }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(enumSourceDef, 'test_view');
+
+      // Test converting 'shipped' to index 2
+      const line1 = '1234567890\tupsert\t123\tshipped\tOrder shipped today';
+      const result1 = handler.parseLine(line1);
+      expect(result1?.row).toEqual({
+        id: 123,
+        status: 2,  // 'shipped' is at index 2
+        notes: 'Order shipped today'
+      });
+
+      // Test all enum values
+      const testCases = [
+        { value: 'pending', expectedIndex: 0 },
+        { value: 'processing', expectedIndex: 1 },
+        { value: 'shipped', expectedIndex: 2 },
+        { value: 'delivered', expectedIndex: 3 },
+        { value: 'cancelled', expectedIndex: 4 }
+      ];
+
+      testCases.forEach(({ value, expectedIndex }) => {
+        const line = `1234567890\tupsert\t456\t${value}\tTest note`;
+        const result = handler.parseLine(line);
+        expect(result?.row.status).toBe(expectedIndex);
+      });
+    });
+
+    it('should handle NULL enum values', () => {
+      const priorityEnum: EnumType = {
+        name: 'priority',
+        values: ['low', 'medium', 'high', 'critical']
+      };
+
+      const enumSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'priority', dataType: DataType.Integer, enumType: priorityEnum }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(enumSourceDef, 'test_view');
+
+      const line = '1234567890\tupsert\t789\t\\N';
+      const result = handler.parseLine(line);
+      expect(result?.row).toEqual({
+        id: 789,
+        priority: null
+      });
+    });
+
+    it('should throw error for invalid enum values', () => {
+      const statusEnum: EnumType = {
+        name: 'status',
+        values: ['active', 'inactive', 'suspended']
+      };
+
+      const enumSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'status', dataType: DataType.Integer, enumType: statusEnum }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(enumSourceDef, 'test_view');
+
+      const line = '1234567890\tupsert\t123\tinvalid_status';
+      expect(() => handler.parseLine(line)).toThrow(
+        "Invalid enum value 'invalid_status' for enum type 'status'"
+      );
+    });
+
+    it('should handle multiple enum fields', () => {
+      const statusEnum: EnumType = {
+        name: 'order_status',
+        values: ['pending', 'shipped', 'delivered']
+      };
+      const priorityEnum: EnumType = {
+        name: 'priority',
+        values: ['low', 'medium', 'high']
+      };
+
+      const enumSourceDef: SourceDefinition = {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: DataType.Integer },
+          { name: 'status', dataType: DataType.Integer, enumType: statusEnum },
+          { name: 'priority', dataType: DataType.Integer, enumType: priorityEnum },
+          { name: 'amount', dataType: DataType.Float }
+        ]
+      };
+      const handler = new MaterializeProtocolHandler(enumSourceDef, 'test_view');
+
+      const line = '1234567890\tupsert\t999\tdelivered\thigh\t123.45';
+      const result = handler.parseLine(line);
+      expect(result?.row).toEqual({
+        id: 999,
+        status: 2,      // 'delivered' is at index 2
+        priority: 2,    // 'high' is at index 2
+        amount: 123.45
+      });
     });
   });
 });

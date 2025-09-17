@@ -64,10 +64,10 @@ export default registerAs('sources', (): SourceConfiguration => {
         // First check if this references an enum
         const enumDef = enumDefinitions.get(typeString);
         if (enumDef) {
-          // This is an enum field
+          // This is an enum field - stored as integers for efficient comparisons
           field = {
             name,
-            dataType: DataType.String,  // Enums are strings at runtime
+            dataType: DataType.Integer,  // Enums are stored as ordinal indices
             enumType: enumDef,
           };
         } else {

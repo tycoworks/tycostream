@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import type { SourceDefinition } from '../config/source.types';
+import type { SourceDefinition, EnumType } from '../config/source.types';
 import { DataType } from '../common/types';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
@@ -12,6 +12,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
   private readonly logger = new Logger(MaterializeProtocolHandler.name);
   private columnNames: string[];
   private columnTypes: Map<string, DataType>;
+  private enumTypes: Map<string, EnumType>;
 
   constructor(
     private sourceDefinition: SourceDefinition,
@@ -23,10 +24,14 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     const nonKeyFields = sourceDefinition.fields.filter(f => f.name !== sourceDefinition.primaryKeyField);
     this.columnNames = ['mz_timestamp', 'mz_state', ...keyFields.map(f => f.name), ...nonKeyFields.map(f => f.name)];
     
-    // Build column type map
+    // Build column type map and enum map
     this.columnTypes = new Map();
+    this.enumTypes = new Map();
     sourceDefinition.fields.forEach(field => {
       this.columnTypes.set(field.name, field.dataType);
+      if (field.enumType) {
+        this.enumTypes.set(field.name, field.enumType);
+      }
     });
     
     this.logger.debug(`MaterializeProtocolHandler initialized for ${sourceName} - columns: ${this.columnNames.length} [${this.columnNames.join(', ')}], primaryKey: ${sourceDefinition.primaryKeyField}`);
@@ -82,8 +87,9 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
       const field = fields[i];
       if (columnName && field !== undefined) {
         const dataType = this.columnTypes.get(columnName);
+        const enumType = this.enumTypes.get(columnName);
         row[columnName] = dataType !== undefined
-          ? parseValueFromDataType(field, dataType)
+          ? parseValueFromDataType(field, dataType, enumType)
           : field;
       }
     }
@@ -99,24 +105,40 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
 /**
  * Parse a COPY text format value based on DataType
  * Handles PostgreSQL COPY format including \\N for NULL
+ * For enums, converts string values to their ordinal indices
  */
-function parseValueFromDataType(value: string, dataType: DataType): any {
+function parseValueFromDataType(value: string, dataType: DataType, enumType?: EnumType): any {
   // Handle COPY format NULL
   if (value === '\\N') return null;
 
+  let parsedValue: any;
+
   switch (dataType) {
     case DataType.Boolean:
-      return value === 't' || value === 'true';
+      parsedValue = value === 't' || value === 'true';
+      break;
 
     case DataType.Integer:
-      return parseInt(value, 10);
+      // If this is an enum field, convert string to index
+      if (enumType) {
+        const index = enumType.values.indexOf(value);
+        if (index === -1) {
+          throw new Error(`Invalid enum value '${value}' for enum type '${enumType.name}'. Valid values are: ${enumType.values.join(', ')}`);
+        }
+        parsedValue = index;
+      } else {
+        parsedValue = parseInt(value, 10);
+      }
+      break;
 
     case DataType.Float:
-      return parseFloat(value);
+      parsedValue = parseFloat(value);
+      break;
 
     case DataType.BigInt:
       // Keep as string to preserve precision
-      return value;
+      parsedValue = value;
+      break;
 
     // All string-based types
     case DataType.String:
@@ -126,9 +148,12 @@ function parseValueFromDataType(value: string, dataType: DataType): any {
     case DataType.Time:
     case DataType.JSON:
     case DataType.Array:
-      return value;
+      parsedValue = value;
+      break;
 
     default:
-      return value;
+      parsedValue = value;
   }
+
+  return parsedValue;
 }
