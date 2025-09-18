@@ -17,12 +17,21 @@ Currently, PostgreSQL enum columns are treated as text fields in tycostream, los
 
 ### Design Decision: Enum Representation
 
-**Key Decision**: Enums are always transmitted as strings in tycostream, regardless of how the underlying database represents them. This ensures consistent handling across different database backends.
+**Key Decision**: Enums are represented as integers internally for efficient ordinal comparisons, but transmitted as strings over the wire for human readability.
 
-- **DataType**: Enums have `DataType.String` (not a special `DataType.Enum`) because that's their runtime type
-- **Identity**: The presence of an `enumType?: EnumType` field distinguishes enums from regular strings
-- **No FieldType**: We don't need a separate `FieldType` enum - the presence/absence of `enumType` tells us everything
-- **Ordering**: Despite being strings at runtime, enums have ordered semantics based on their position in the values array
+#### Internal vs Wire Representation
+- **Internal (Processing)**: `DataType.Integer` - Enums stored as ordinal indices (0, 1, 2...)
+- **Wire (GraphQL)**: Strings - Human-readable enum values ('pending', 'processing', etc.)
+- **Database**: Strings - PostgreSQL sends enums as text over COPY protocol
+- **Identity**: The presence of an `enumType?: EnumType` field distinguishes enum fields
+- **Ordering**: Integer representation enables fast ordinal comparisons (_gt, _lt, etc.)
+
+#### Why Integers Internally?
+This follows established database patterns:
+- PostgreSQL stores enums as OIDs with ordinal positions internally
+- MySQL stores enums as integers (1-based indexing)
+- Most databases optimize enum comparisons using ordinal values
+- Avoids runtime string comparisons in hot paths (filter evaluation)
 
 ### YAML Configuration
 
@@ -187,7 +196,161 @@ subscription HighPriorityOrders {
 4. **Consistency**: Foundation for calculated enums (same infrastructure)
 5. **Filtering**: Type-safe enum comparisons in subscriptions
 
-## Implementation Plan
+## Transformation Architecture
+
+### Current Implementation: Service-Level Transformation
+
+Enums are currently transformed at the service level:
+- **FieldTransformer** class handles bidirectional transformations
+- Created in SubscriptionService and TriggerService
+- Applied during expression building and output serialization
+
+### Architectural Options for Wire/Internal Transformations
+
+#### Option 1: Resolver-Level Transformation (GraphQL Boundary)
+**Most idiomatic for our dynamic schema generation**
+
+```typescript
+// In subscription.resolver.ts
+const transformer = new FieldTransformer(sourceDefinition);
+
+// Transform inputs immediately at boundary
+const internalWhere = transformer.transformExpression(args.where);
+
+// Transform outputs just before sending
+return service.createSubscription(source, internalWhere).pipe(
+  map(data => transformer.recordToWire(data))
+);
+```
+
+**Pros:**
+- Clear separation: All transformations at API boundary
+- Services work purely with internal representations
+- Single responsibility for each layer
+
+**Cons:**
+- Requires modifying resolver generation code
+- Need to pass transformer through multiple layers
+
+#### Option 2: NestJS Interceptor (AOP Style)
+**Most idiomatic for NestJS**
+
+```typescript
+@Injectable()
+export class EnumTransformInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const args = context.getArgs();
+    // Transform inputs
+    if (args.where) {
+      args.where = this.transformer.transformExpression(args.where);
+    }
+
+    return next.handle().pipe(
+      // Transform outputs
+      map(data => this.transformer.recordToWire(data))
+    );
+  }
+}
+```
+
+**Pros:**
+- Aspect-oriented: Transformation logic completely separate
+- Reusable across all resolvers
+- Very NestJS-idiomatic
+
+**Cons:**
+- Less explicit about what's happening
+- Harder to debug transformation issues
+- Would need per-source configuration
+
+#### Option 3: Custom GraphQL Scalars
+**Most idiomatic for GraphQL**
+
+```typescript
+@Scalar('TradeStatus')
+export class TradeStatusScalar implements CustomScalar<string, number> {
+  parseValue(value: string): number {
+    return this.enumValues.indexOf(value);
+  }
+
+  serialize(value: number): string {
+    return this.enumValues[value];
+  }
+}
+```
+
+**Pros:**
+- GraphQL-native approach
+- Type safety at GraphQL layer
+- Clear in schema what's happening
+
+**Cons:**
+- Requires generating custom scalars per enum
+- Doesn't work well with our dynamic schema generation
+- More complex for expression trees
+
+#### Option 4: Service Wrapper/Conduit
+**Cleanest separation of concerns**
+
+```typescript
+class TransformedSubscriptionService {
+  constructor(
+    private service: SubscriptionService,
+    private transformer: FieldTransformer
+  ) {}
+
+  createSubscription(source: string, where: ExpressionTree) {
+    const internalWhere = this.transformer.transformExpression(where);
+    return this.service.createSubscription(source, internalWhere).pipe(
+      map(data => this.transformer.recordToWire(data))
+    );
+  }
+}
+```
+
+**Pros:**
+- Complete separation of transformation from business logic
+- Easy to test in isolation
+- Services remain pure
+
+**Cons:**
+- Additional layer of abstraction
+- Need wrapper for each service
+
+### Recommendation
+
+**For tycostream**: Option 1 (Resolver-Level) is recommended because:
+1. Our schema is dynamically generated, making static approaches difficult
+2. Clear boundary between wire and internal representations
+3. Transformations happen at the earliest/latest possible points
+4. Consistent with treating this as serialization/deserialization
+
+The transformation should happen:
+- **Inbound**: Immediately upon receiving GraphQL arguments
+- **Outbound**: Just before returning GraphQL responses
+
+This treats FieldTransformer as a codec at the API boundary, which is conceptually clean.
+
+## Implementation Status
+
+### ✅ Completed
+
+1. **YAML Configuration** - Enums parsed from global definitions
+2. **GraphQL Schema Generation** - Proper enum types and comparison inputs
+3. **Internal Representation** - Enums stored as integers (ordinal indices)
+4. **Database Layer** - Materialize protocol handler converts strings to indices
+5. **Field Transformations** - FieldTransformer class for bidirectional conversion
+6. **Expression Support** - Enum values in filters transformed to indices
+7. **Service Integration** - Both SubscriptionService and TriggerService use transformations
+8. **Comprehensive Tests** - 227 tests passing including enum transformations
+
+### 🚧 Future Improvements
+
+1. **Move transformations to resolver level** - Currently in services, should be at API boundary
+2. **Expression tree transformation** - Walk and transform tree before compilation
+3. **Standardize transformation pattern** - Unify with other serialization needs
+
+## Original Implementation Plan
 
 ### Step 1: YAML Configuration
 
