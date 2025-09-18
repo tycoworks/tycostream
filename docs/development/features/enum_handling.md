@@ -35,39 +35,55 @@ This follows established database patterns:
 
 ### YAML Configuration
 
-Users define enum types globally, then reference them in columns (matching PostgreSQL's model):
+Users define enum types globally with explicit storage format, then reference them in columns.
+
+#### Enum Definition
+All enums must explicitly specify their storage format:
 
 ```yaml
-enums:  # Global enum definitions
-  order_status: [pending, processing, shipped, delivered, cancelled]
-  priority_level: [low, medium, high, critical]
-  trade_side: [buy, sell]
+enums:
+  # Value storage - database sends actual string values
+  order_status:
+    values: [pending, processing, shipped, delivered, cancelled]
+    storage: value  # Database sends 'pending', 'processing', etc.
+
+  # Ordinal storage - database sends position indices
+  trade_side:
+    values: [buy, sell]
+    storage: ordinal  # Database sends 0 for 'buy', 1 for 'sell'
 
 sources:
   orders:
-    primary_key: order_id
     columns:
-      order_id: integer
-      customer_id: integer
-      status: order_status      # References global enum
-      priority: priority_level  # References global enum
-
-  order_history:
-    primary_key: id
-    columns:
-      id: integer
-      status: order_status  # Same enum as orders table
-      notes: text
+      status: order_status  # Storage format already defined at enum level
 
   trades:
-    primary_key: trade_id
     columns:
-      trade_id: integer
-      instrument_id: integer
-      side: trade_side  # References global enum
-      quantity: integer
-      price: numeric
+      side: trade_side  # Storage format already defined at enum level
 ```
+
+#### Storage Formats
+
+**`storage: value`** - Database sends the actual enum value as a string
+```sql
+-- Materialize sends 'buy' or 'sell'
+SELECT trade_id, side FROM trades;
+```
+
+**`storage: ordinal`** - Database sends the ordinal position as an integer (0-based)
+```sql
+-- Materialize sends 0 or 1
+CREATE MATERIALIZED VIEW trades AS
+SELECT
+  trade_id,
+  CASE side
+    WHEN 'buy' THEN 0
+    WHEN 'sell' THEN 1
+  END as side
+FROM upstream_trades;
+```
+
+No default is provided - users must be explicit about what their database sends.
 
 ### Enum Ordering and Comparisons
 
@@ -333,22 +349,73 @@ This treats FieldTransformer as a codec at the API boundary, which is conceptual
 
 ## Implementation Status
 
-### ✅ Completed
-
+### ✅ Phase 1: Core Enum Support (COMPLETED)
 1. **YAML Configuration** - Enums parsed from global definitions
 2. **GraphQL Schema Generation** - Proper enum types and comparison inputs
 3. **Internal Representation** - Enums stored as integers (ordinal indices)
-4. **Database Layer** - Materialize protocol handler converts strings to indices
-5. **Field Transformations** - FieldTransformer class for bidirectional conversion
-6. **Expression Support** - Enum values in filters transformed to indices
-7. **Service Integration** - Both SubscriptionService and TriggerService use transformations
-8. **Comprehensive Tests** - 227 tests passing including enum transformations
+4. **Database String Parsing** - Materialize protocol handler converts strings to indices
+5. **Expression Compilation** - Enum comparisons work with ordinal semantics
 
-### 🚧 Future Improvements
+### 🚧 Phase 2: Serialization Layer (IN PROGRESS)
 
-1. **Move transformations to resolver level** - Currently in services, should be at API boundary
-2. **Expression tree transformation** - Walk and transform tree before compilation
-3. **Standardize transformation pattern** - Unify with other serialization needs
+#### 2.1 Resolver-Level Transformation
+**Status**: Next Priority
+**Scope**: Implement transformations at GraphQL boundary
+- Implement FieldTransformer at resolver generation
+- Transform expressions on input (string → int)
+- Transform data on output (int → string)
+- Keep services working with internal representation only
+- **Tests**: Unit tests for bidirectional transformations
+
+#### 2.2 Storage Format Support
+**Status**: Not Started (Lower Priority)
+**Scope**: Support both ordinal and value storage from Materialize
+- Extend YAML enum definitions with `storage: ordinal/value`
+- Update parser to handle ordinal values without conversion
+- Add validation for ordinal range checking
+- **Tests**: Unit tests for both storage formats
+- **Note**: Currently only `storage: value` is supported
+
+### 📝 Phase 3: Validation & Documentation
+
+#### 3.1 Integration Tests
+**Status**: Not Started
+**Scope**: End-to-end enum functionality
+- Test enum filtering with WHERE clauses
+- Test enum ordering (_gt, _lt comparisons)
+- Test mixed storage formats (some int, some string)
+- Test null handling for optional enums
+
+#### 3.2 Stress Tests
+**Status**: Not Started
+**Scope**: Performance validation
+- High-frequency updates with enum transformations
+- Multiple concurrent subscriptions with enum filters
+- Large enum value sets (50+ values)
+- Memory/CPU profiling of transformation overhead
+
+#### 3.3 Demo Update
+**Status**: Not Started
+**Scope**: Showcase enum capabilities
+- Add trade_side or order_status enum to demo schema
+- Show type-safe filtering by enum values
+- Demonstrate ordinal comparisons
+- Compare performance vs string comparisons
+
+### 📊 Progress Summary
+
+| Component | Status | Priority | Tests |
+|-----------|--------|----------|-------|
+| Core Enum Support | ✅ Complete | - | ✅ Unit |
+| Value Storage (`storage: value`) | ✅ Complete | - | ✅ Unit |
+| Resolver Transform | 🚧 Next | HIGH | ❌ None |
+| Integration Tests | ❌ Not Started | HIGH | ❌ None |
+| Ordinal Storage (`storage: ordinal`) | ❌ Not Started | LOW | ❌ None |
+| Stress Tests | ❌ Not Started | MEDIUM | ❌ None |
+| Demo | ❌ Not Started | MEDIUM | N/A |
+
+**Overall Progress**: ~35% Complete
+**Next Step**: Implement resolver-level transformations
 
 ## Original Implementation Plan
 
