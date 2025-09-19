@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { TriggerService } from './trigger.service';
 import { ViewService } from '../view/view.service';
@@ -8,6 +9,7 @@ describe('TriggerService', () => {
   let triggerService: TriggerService;
   let viewService: jest.Mocked<ViewService>;
   let httpService: jest.Mocked<HttpService>;
+  let configService: jest.Mocked<ConfigService>;
 
   beforeEach(async () => {
     // Minimal mocks - just enough to satisfy dependencies
@@ -19,11 +21,20 @@ describe('TriggerService', () => {
       post: jest.fn().mockReturnValue(of({ status: 200 }))
     } as any;
 
+    // Mock ConfigService to return an empty source configuration
+    configService = {
+      get: jest.fn().mockReturnValue({
+        sources: new Map(),
+        enums: new Map()
+      })
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TriggerService,
         { provide: ViewService, useValue: viewService },
-        { provide: HttpService, useValue: httpService }
+        { provide: HttpService, useValue: httpService },
+        { provide: ConfigService, useValue: configService }
       ],
     }).compile();
 

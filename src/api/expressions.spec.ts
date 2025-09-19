@@ -229,4 +229,193 @@ describe('GraphQL Expressions', () => {
       expect(() => buildExpression(where)).toThrow('Unknown operator: _unknown');
     });
   });
+
+  describe('enum optimization', () => {
+    const sourceDefinition = {
+      name: 'orders',
+      primaryKeyField: 'id',
+      fields: [
+        { name: 'id', dataType: 1 },
+        {
+          name: 'status',
+          dataType: 6, // String
+          enumType: {
+            name: 'order_status',
+            values: ['pending', 'processing', 'shipped', 'delivered', 'cancelled']
+          }
+        },
+        {
+          name: 'priority',
+          dataType: 6, // String
+          enumType: {
+            name: 'priority_level',
+            values: ['low', 'medium', 'high']
+          }
+        }
+      ]
+    };
+
+    describe('ordinal comparisons with small enums', () => {
+      it('should generate ternary chain for _gt with small enum', () => {
+        const where = { priority: { _gt: 'low' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) > 0');
+      });
+
+      it('should generate ternary chain for _gt with second-to-last value', () => {
+        const where = { priority: { _gt: 'medium' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) > 1');
+      });
+
+      it('should generate ternary chain for _gt with last value', () => {
+        const where = { priority: { _gt: 'high' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) > 2');
+      });
+
+      it('should generate ternary chain for _gte', () => {
+        const where = { priority: { _gte: 'medium' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) >= 1');
+      });
+
+      it('should generate ternary chain for _lt', () => {
+        const where = { priority: { _lt: 'high' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) < 2');
+      });
+
+      it('should generate ternary chain for _lt with second value', () => {
+        const where = { priority: { _lt: 'medium' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) < 1');
+      });
+
+      it('should generate ternary chain for _lt with first value', () => {
+        const where = { priority: { _lt: 'low' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) < 0');
+      });
+
+      it('should generate ternary chain for _lte', () => {
+        const where = { priority: { _lte: 'medium' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) <= 1');
+      });
+    });
+
+    describe('ordinal comparisons with 5-value enums', () => {
+      it('should generate ternary chain for _gt with 5-value enum', () => {
+        const where = { status: { _gt: 'processing' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) > 1');
+      });
+
+      it('should generate ternary chain for _gte', () => {
+        const where = { status: { _gte: 'shipped' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) >= 2');
+      });
+
+      it('should generate ternary chain for _lt', () => {
+        const where = { status: { _lt: 'shipped' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) < 2');
+      });
+
+      it('should generate ternary chain for _lte', () => {
+        const where = { status: { _lte: 'processing' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('(datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) <= 1');
+      });
+    });
+
+    describe('enum with larger than 5 values', () => {
+      const largeEnumSource = {
+        name: 'tickets',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', dataType: 1 },
+          {
+            name: 'status',
+            dataType: 6, // String
+            enumType: {
+              name: 'ticket_status',
+              values: ['new', 'open', 'pending', 'hold', 'solved', 'closed', 'merged', 'deleted']
+            }
+          }
+        ]
+      };
+
+      it('should generate ternary chain for enums with more than 5 values', () => {
+        const where = { status: { _gt: 'pending' } };
+        const filter = buildExpression(where, largeEnumSource);
+        // Should generate ternary chain instead of boolean OR
+        expect(filter!.expression).toContain('datum.status === "new" ? 0');
+        expect(filter!.expression).toContain('datum.status === "open" ? 1');
+        expect(filter!.expression).toContain('> 2'); // pending is at index 2
+      });
+    });
+
+    describe('non-enum fields', () => {
+      it('should use standard comparison for non-enum fields', () => {
+        const where = { id: { _gt: 100 } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('datum.id > 100');
+      });
+
+      it('should use standard comparison when no source definition provided', () => {
+        const where = { status: { _gt: 'pending' } };
+        const filter = buildExpression(where);
+        expect(filter!.expression).toBe('datum.status > "pending"');
+      });
+    });
+
+    describe('invalid enum values', () => {
+      it('should generate false for invalid enum value in comparison', () => {
+        const where = { priority: { _gt: 'invalid_value' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('false');
+      });
+    });
+
+    describe('equality operators with enums', () => {
+      it('should use direct equality for _eq with enums', () => {
+        const where = { status: { _eq: 'shipped' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('datum.status === "shipped"');
+      });
+
+      it('should use direct inequality for _neq with enums', () => {
+        const where = { status: { _neq: 'cancelled' } };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('datum.status !== "cancelled"');
+      });
+    });
+
+    describe('complex expressions with enum optimization', () => {
+      it('should optimize enum comparisons within _and', () => {
+        const where = {
+          _and: [
+            { priority: { _gte: 'medium' } },
+            { status: { _lt: 'delivered' } }
+          ]
+        };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('((datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) >= 1 && (datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) < 3)');
+      });
+
+      it('should optimize enum comparisons within _or', () => {
+        const where = {
+          _or: [
+            { priority: { _gt: 'medium' } },
+            { status: { _eq: 'pending' } }
+          ]
+        };
+        const filter = buildExpression(where, sourceDefinition);
+        expect(filter!.expression).toBe('((datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) > 1 || datum.status === "pending")');
+      });
+    });
+  });
 });

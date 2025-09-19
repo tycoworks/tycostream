@@ -105,40 +105,24 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
 /**
  * Parse a COPY text format value based on DataType
  * Handles PostgreSQL COPY format including \\N for NULL
- * For enums, converts string values to their ordinal indices
  */
 function parseValueFromDataType(value: string, dataType: DataType, enumType?: EnumType): any {
   // Handle COPY format NULL
   if (value === '\\N') return null;
 
-  let parsedValue: any;
-
   switch (dataType) {
     case DataType.Boolean:
-      parsedValue = value === 't' || value === 'true';
-      break;
+      return value === 't' || value === 'true';
 
     case DataType.Integer:
-      // If this is an enum field, convert string to index
-      if (enumType) {
-        const index = enumType.values.indexOf(value);
-        if (index === -1) {
-          throw new Error(`Invalid enum value '${value}' for enum type '${enumType.name}'. Valid values are: ${enumType.values.join(', ')}`);
-        }
-        parsedValue = index;
-      } else {
-        parsedValue = parseInt(value, 10);
-      }
-      break;
+      return parseInt(value, 10);
 
     case DataType.Float:
-      parsedValue = parseFloat(value);
-      break;
+      return parseFloat(value);
 
     case DataType.BigInt:
       // Keep as string to preserve precision
-      parsedValue = value;
-      break;
+      return value;
 
     // All string-based types
     case DataType.String:
@@ -148,12 +132,9 @@ function parseValueFromDataType(value: string, dataType: DataType, enumType?: En
     case DataType.Time:
     case DataType.JSON:
     case DataType.Array:
-      parsedValue = value;
-      break;
+      return value;
 
     default:
-      parsedValue = value;
+      return value;
   }
-
-  return parsedValue;
 }

@@ -177,7 +177,7 @@ sources:
 
     // Check side field has trade_side enum metadata
     const sideField = trades?.fields.find(f => f.name === 'side');
-    expect(sideField?.dataType).toBe(DataType.Integer);  // Enums are stored as integers
+    expect(sideField?.dataType).toBe(DataType.String);  // Enums are strings at runtime
     expect(sideField?.enumType).toEqual({
       name: 'trade_side',
       values: ['buy', 'sell']
@@ -185,7 +185,7 @@ sources:
 
     // Check status field has order_status enum metadata
     const statusField = trades?.fields.find(f => f.name === 'status');
-    expect(statusField?.dataType).toBe(DataType.Integer);  // Enums are stored as integers
+    expect(statusField?.dataType).toBe(DataType.String);  // Enums are strings at runtime
     expect(statusField?.enumType).toEqual({
       name: 'order_status',
       values: ['pending', 'filled', 'cancelled']

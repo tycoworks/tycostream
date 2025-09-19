@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Observable } from 'rxjs';
 import { map, tap } from 'rxjs/operators';
 import { ViewService } from '../view/view.service';
@@ -6,6 +7,7 @@ import { Filter } from '../view/filter';
 import { buildExpression, ExpressionTree } from './expressions';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
 import { truncateForLog } from '../common/logging.utils';
+import type { SourceConfiguration } from '../config/source.types';
 
 /**
  * GraphQL row operation types
@@ -38,8 +40,15 @@ const ROW_UPDATE_TYPE_MAP = {
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
+  private sourceConfig: SourceConfiguration;
 
-  constructor(private readonly viewService: ViewService) {}
+  constructor(
+    private readonly viewService: ViewService,
+    private configService: ConfigService
+  ) {
+    // Load source configuration once
+    this.sourceConfig = this.configService.get<SourceConfiguration>('sources')!;
+  }
 
   /**
    * Creates a subscription stream for a data source
@@ -49,8 +58,11 @@ export class SubscriptionService {
     sourceName: string,
     where?: ExpressionTree
   ): Observable<GraphQLUpdate> {
-    // Parse and compile filter if provided
-    const filter = where ? new Filter(buildExpression(where)) : undefined;
+    // Get source definition for enum optimization
+    const sourceDefinition = this.sourceConfig.sources.get(sourceName);
+
+    // Parse and compile filter if provided, with source definition for enum optimization
+    const filter = where ? new Filter(buildExpression(where, sourceDefinition)) : undefined;
     
     this.logger.log(
       `Subscription for ${sourceName}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`

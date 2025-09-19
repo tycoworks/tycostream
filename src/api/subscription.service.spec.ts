@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { SubscriptionService, GraphQLRowOperation } from './subscription.service';
 import { ViewService } from '../view/view.service';
 import { of } from 'rxjs';
@@ -7,6 +8,7 @@ import { RowUpdateType } from '../view/types';
 describe('SubscriptionService', () => {
   let subscriptionService: SubscriptionService;
   let viewService: jest.Mocked<ViewService>;
+  let configService: jest.Mocked<ConfigService>;
 
   beforeEach(async () => {
     // Minimal mock - just enough to satisfy dependencies
@@ -14,10 +16,19 @@ describe('SubscriptionService', () => {
       getUpdates: jest.fn()
     } as any;
 
+    // Mock ConfigService to return an empty source configuration
+    configService = {
+      get: jest.fn().mockReturnValue({
+        sources: new Map(),
+        enums: new Map()
+      })
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SubscriptionService,
-        { provide: ViewService, useValue: viewService }
+        { provide: ViewService, useValue: viewService },
+        { provide: ConfigService, useValue: configService }
       ],
     }).compile();
 

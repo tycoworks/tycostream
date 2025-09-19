@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { randomUUID } from 'crypto';
 import { Subscription, firstValueFrom } from 'rxjs';
@@ -6,6 +7,7 @@ import { ExpressionTree, buildExpression } from './expressions';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
+import type { SourceConfiguration } from '../config/source.types';
 
 /**
  * Trigger event types for webhook payloads
@@ -31,11 +33,16 @@ export class TriggerService implements OnModuleDestroy {
   private readonly logger = new Logger(TriggerService.name);
   // Source -> Name -> ActiveTrigger (names scoped by source)
   private readonly triggers = new Map<string, Map<string, ActiveTrigger>>();
+  private sourceConfig: SourceConfiguration;
 
   constructor(
     private readonly viewService: ViewService,
-    private readonly httpService: HttpService
-  ) {}
+    private readonly httpService: HttpService,
+    private configService: ConfigService
+  ) {
+    // Load source configuration once
+    this.sourceConfig = this.configService.get<SourceConfiguration>('sources')!;
+  }
 
   async createTrigger(
     source: string,
@@ -62,9 +69,12 @@ export class TriggerService implements OnModuleDestroy {
       ...input,
     };
 
+    // Get source definition for enum optimization
+    const sourceDefinition = this.sourceConfig.sources.get(source);
+
     // Create View subscription with asymmetric filtering
-    const matchExpression = buildExpression(input.fire);
-    const unmatchExpression = input.clear ? buildExpression(input.clear) : undefined;
+    const matchExpression = buildExpression(input.fire, sourceDefinition);
+    const unmatchExpression = input.clear ? buildExpression(input.clear, sourceDefinition) : undefined;
     const filter = new Filter(matchExpression, unmatchExpression);
 
     // Subscribe to View updates (skipSnapshot=true to avoid firing on existing data)
