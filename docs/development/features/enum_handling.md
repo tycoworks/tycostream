@@ -264,6 +264,23 @@ subscription HighPriorityOrders {
 - Demonstrate ordinal comparisons
 - Compare performance vs string comparisons
 
+#### 3.4 Schema Generator Script Update
+**Status**: Not Started
+**Scope**: Update generate-schema.sh to support manual enum specification
+- Accept enum definitions via CLI flags like `-e status[pending,processing,shipped,delivered]`
+- Generate `enums:` section at top of YAML output when enums are specified
+- Map specified columns to their enum type names instead of String
+- Example usage: `./generate-schema.sh -s orders -p id -e status[pending,processing,shipped]`
+**Note**: Automatic detection not possible since Materialize doesn't support native PostgreSQL enum types
+
+#### 3.5 Documentation
+**Status**: Not Started
+**Scope**: Update user-facing documentation
+- Add enum usage to main README
+- Document YAML enum syntax
+- Show GraphQL query examples with enums
+- Explain ordinal comparison behavior
+
 ### 📊 Progress Summary
 
 | Component | Status | Priority | Tests |
@@ -273,12 +290,17 @@ subscription HighPriorityOrders {
 | Revert Integer Storage | ✅ Complete | - | ✅ Verified |
 | Expression Optimization | ✅ Complete | - | ✅ Unit |
 | Integration Tests | ✅ Complete | - | ✅ E2E |
-| Ordinal Storage (`storage: ordinal`) | ❌ Not Needed | LOW | - |
-| Stress Tests | 🚧 In Progress | MEDIUM | ❌ None |
+| Stress Tests | 🚧 In Progress | HIGH | ❌ None |
+| Schema Generator Script | ❌ Not Started | HIGH | ❌ None |
 | Demo | ❌ Not Started | MEDIUM | N/A |
+| Documentation | ❌ Not Started | MEDIUM | N/A |
 
-**Overall Progress**: ~80% Complete
-**Next Step**: Add enum filtering to stress test, then update demo
+**Overall Progress**: ~70% Complete
+**Next Steps**:
+1. Complete stress test with enum filtering
+2. Update generate-schema.sh script to support enums
+3. Add enum examples to demo
+4. Update README documentation
 
 ## Original Implementation Plan
 
