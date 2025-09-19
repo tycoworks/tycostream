@@ -16,11 +16,11 @@ export function buildTriggerResolvers(
   const queryResolvers: Record<string, any> = {};
 
   // Generate source-specific resolvers
-  for (const [sourceName] of sources) {
-    mutationResolvers[`create_${sourceName}_trigger`] = createTriggerMutationResolver(sourceName, triggerService);
-    mutationResolvers[`delete_${sourceName}_trigger`] = deleteTriggerMutationResolver(sourceName, triggerService);
-    queryResolvers[`${sourceName}_trigger`] = getTriggerQueryResolver(sourceName, triggerService);
-    queryResolvers[`${sourceName}_triggers`] = listTriggersQueryResolver(sourceName, triggerService);
+  for (const [sourceName, sourceDefinition] of sources) {
+    mutationResolvers[`create_${sourceName}_trigger`] = createTriggerMutationResolver(sourceDefinition, triggerService);
+    mutationResolvers[`delete_${sourceName}_trigger`] = deleteTriggerMutationResolver(sourceDefinition, triggerService);
+    queryResolvers[`${sourceName}_trigger`] = getTriggerQueryResolver(sourceDefinition, triggerService);
+    queryResolvers[`${sourceName}_triggers`] = listTriggersQueryResolver(sourceDefinition, triggerService);
   }
 
   return { mutationResolvers, queryResolvers };
@@ -30,13 +30,13 @@ export function buildTriggerResolvers(
  * Creates a resolver for create_${source}_trigger mutation
  */
 function createTriggerMutationResolver(
-  sourceName: string,
+  sourceDefinition: SourceDefinition,
   triggerService: TriggerService
 ) {
   return async (_: any, args: { input: { name: string; webhook: string; fire: any; clear?: any } }) => {
-    logger.log(`Creating ${sourceName} trigger: ${args.input.name}`);
-    
-    return triggerService.createTrigger(sourceName, {
+    logger.log(`Creating ${sourceDefinition.name} trigger: ${args.input.name}`);
+
+    return triggerService.createTrigger(sourceDefinition, {
       name: args.input.name,
       webhook: args.input.webhook,
       fire: args.input.fire,
@@ -49,13 +49,13 @@ function createTriggerMutationResolver(
  * Creates a resolver for delete_${source}_trigger mutation
  */
 function deleteTriggerMutationResolver(
-  sourceName: string,
+  sourceDefinition: SourceDefinition,
   triggerService: TriggerService
 ) {
   return async (_: any, args: { name: string }) => {
-    logger.log(`Deleting ${sourceName} trigger: ${args.name}`);
-    
-    return triggerService.deleteTrigger(sourceName, args.name);
+    logger.log(`Deleting ${sourceDefinition.name} trigger: ${args.name}`);
+
+    return triggerService.deleteTrigger(sourceDefinition, args.name);
   };
 }
 
@@ -63,13 +63,13 @@ function deleteTriggerMutationResolver(
  * Creates a resolver for ${source}_trigger query
  */
 function getTriggerQueryResolver(
-  sourceName: string,
+  sourceDefinition: SourceDefinition,
   triggerService: TriggerService
 ) {
   return async (_: any, args: { name: string }) => {
-    logger.log(`Getting ${sourceName} trigger: ${args.name}`);
-    
-    return triggerService.getTrigger(sourceName, args.name);
+    logger.log(`Getting ${sourceDefinition.name} trigger: ${args.name}`);
+
+    return triggerService.getTrigger(sourceDefinition, args.name);
   };
 }
 
@@ -77,12 +77,12 @@ function getTriggerQueryResolver(
  * Creates a resolver for ${source}_triggers query
  */
 function listTriggersQueryResolver(
-  sourceName: string,
+  sourceDefinition: SourceDefinition,
   triggerService: TriggerService
 ) {
   return async () => {
-    logger.log(`Listing all ${sourceName} triggers`);
-    
-    return triggerService.listTriggers(sourceName);
+    logger.log(`Listing all ${sourceDefinition.name} triggers`);
+
+    return triggerService.listTriggers(sourceDefinition);
   };
 }

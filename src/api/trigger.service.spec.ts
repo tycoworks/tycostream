@@ -1,15 +1,50 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { TriggerService } from './trigger.service';
 import { ViewService } from '../view/view.service';
 import { of } from 'rxjs';
+import type { SourceDefinition } from '../config/source.types';
+import { DataType } from '../config/source.types';
 
 describe('TriggerService', () => {
   let triggerService: TriggerService;
   let viewService: jest.Mocked<ViewService>;
   let httpService: jest.Mocked<HttpService>;
-  let configService: jest.Mocked<ConfigService>;
+
+  const testSourceDefinition: SourceDefinition = {
+    name: 'test_source',
+    primaryKeyField: 'id',
+    fields: [
+      { name: 'id', dataType: DataType.String },
+      { name: 'field', dataType: DataType.Integer }
+    ]
+  };
+
+  const source1Definition: SourceDefinition = {
+    name: 'source1',
+    primaryKeyField: 'id',
+    fields: [
+      { name: 'id', dataType: DataType.String },
+      { name: 'field', dataType: DataType.Integer }
+    ]
+  };
+
+  const source2Definition: SourceDefinition = {
+    name: 'source2',
+    primaryKeyField: 'id',
+    fields: [
+      { name: 'id', dataType: DataType.String },
+      { name: 'field', dataType: DataType.Integer }
+    ]
+  };
+
+  const nonExistentSourceDefinition: SourceDefinition = {
+    name: 'non_existent_source',
+    primaryKeyField: 'id',
+    fields: [
+      { name: 'id', dataType: DataType.String }
+    ]
+  };
 
   beforeEach(async () => {
     // Minimal mocks - just enough to satisfy dependencies
@@ -21,36 +56,11 @@ describe('TriggerService', () => {
       post: jest.fn().mockReturnValue(of({ status: 200 }))
     } as any;
 
-    // Mock ConfigService to return a test source configuration
-    configService = {
-      get: jest.fn().mockReturnValue({
-        sources: new Map([
-          ['test_source', {
-            name: 'test_source',
-            primaryKeyField: 'id',
-            fields: []
-          }],
-          ['source1', {
-            name: 'source1',
-            primaryKeyField: 'id',
-            fields: []
-          }],
-          ['source2', {
-            name: 'source2',
-            primaryKeyField: 'id',
-            fields: []
-          }]
-        ]),
-        enums: new Map()
-      })
-    } as any;
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TriggerService,
         { provide: ViewService, useValue: viewService },
-        { provide: HttpService, useValue: httpService },
-        { provide: ConfigService, useValue: configService }
+        { provide: HttpService, useValue: httpService }
       ],
     }).compile();
 
@@ -70,21 +80,21 @@ describe('TriggerService', () => {
     };
 
     it('should create and return a trigger', async () => {
-      const result = await triggerService.createTrigger('test_source', testInput);
+      const result = await triggerService.createTrigger(testSourceDefinition, testInput);
       expect(result).toEqual(testInput);
     });
 
     it('should throw error if trigger name already exists for source', async () => {
-      await triggerService.createTrigger('test_source', testInput);
+      await triggerService.createTrigger(testSourceDefinition, testInput);
 
       await expect(
-        triggerService.createTrigger('test_source', testInput)
+        triggerService.createTrigger(testSourceDefinition, testInput)
       ).rejects.toThrow('Trigger test_trigger already exists for source test_source');
     });
 
     it('should allow same trigger name for different sources', async () => {
-      await triggerService.createTrigger('source1', testInput);
-      const result = await triggerService.createTrigger('source2', testInput);
+      await triggerService.createTrigger(source1Definition, testInput);
+      const result = await triggerService.createTrigger(source2Definition, testInput);
 
       expect(result).toEqual(testInput);
     });
@@ -98,11 +108,11 @@ describe('TriggerService', () => {
     };
 
     beforeEach(async () => {
-      await triggerService.createTrigger('test_source', testInput);
+      await triggerService.createTrigger(testSourceDefinition, testInput);
     });
 
     it('should return an existing trigger', async () => {
-      const trigger = await triggerService.getTrigger('test_source', 'test_trigger');
+      const trigger = await triggerService.getTrigger(testSourceDefinition, 'test_trigger');
       
       expect(trigger.name).toBe('test_trigger');
       expect(trigger.webhook).toBe('http://example.com/webhook');
@@ -111,50 +121,45 @@ describe('TriggerService', () => {
 
     it('should throw error if trigger does not exist', async () => {
       await expect(
-        triggerService.getTrigger('test_source', 'non_existent')
+        triggerService.getTrigger(testSourceDefinition, 'non_existent')
       ).rejects.toThrow('Trigger non_existent not found for source test_source');
     });
 
-    it('should throw error if source does not exist', async () => {
-      await expect(
-        triggerService.getTrigger('non_existent_source', 'test_trigger')
-      ).rejects.toThrow('Trigger test_trigger not found for source non_existent_source');
-    });
   });
 
   describe('listTriggers', () => {
     it('should return empty array for non-existent source', async () => {
-      const triggers = await triggerService.listTriggers('non_existent_source');
+      const triggers = await triggerService.listTriggers(nonExistentSourceDefinition);
       expect(triggers).toEqual([]);
     });
 
     it('should return empty array for source with no triggers', async () => {
       // Create and delete a trigger to ensure the source map exists but is empty
-      await triggerService.createTrigger('test_source', {
+      await triggerService.createTrigger(testSourceDefinition, {
         name: 'temp',
         webhook: 'http://example.com',
         fire: { field: { _gt: 0 } }
       });
-      await triggerService.deleteTrigger('test_source', 'temp');
+      await triggerService.deleteTrigger(testSourceDefinition, 'temp');
 
-      const triggers = await triggerService.listTriggers('test_source');
+      const triggers = await triggerService.listTriggers(testSourceDefinition);
       expect(triggers).toEqual([]);
     });
 
     it('should return all triggers for a source', async () => {
-      await triggerService.createTrigger('test_source', {
+      await triggerService.createTrigger(testSourceDefinition, {
         name: 'trigger1',
         webhook: 'http://example.com/webhook1',
         fire: { field: { _gt: 100 } }
       });
 
-      await triggerService.createTrigger('test_source', {
+      await triggerService.createTrigger(testSourceDefinition, {
         name: 'trigger2',
         webhook: 'http://example.com/webhook2',
         fire: { field: { _lt: 50 } }
       });
 
-      const triggers = await triggerService.listTriggers('test_source');
+      const triggers = await triggerService.listTriggers(testSourceDefinition);
       
       expect(triggers).toHaveLength(2);
       const names = triggers.map(t => t.name);
@@ -163,19 +168,19 @@ describe('TriggerService', () => {
     });
 
     it('should not return triggers from other sources', async () => {
-      await triggerService.createTrigger('source1', {
+      await triggerService.createTrigger(source1Definition, {
         name: 'trigger1',
         webhook: 'http://example.com/webhook1',
         fire: { field: { _gt: 100 } }
       });
 
-      await triggerService.createTrigger('source2', {
+      await triggerService.createTrigger(source2Definition, {
         name: 'trigger2',
         webhook: 'http://example.com/webhook2',
         fire: { field: { _lt: 50 } }
       });
 
-      const triggers = await triggerService.listTriggers('source1');
+      const triggers = await triggerService.listTriggers(source1Definition);
       
       expect(triggers).toHaveLength(1);
       expect(triggers[0].name).toBe('trigger1');
@@ -190,44 +195,44 @@ describe('TriggerService', () => {
     };
 
     beforeEach(async () => {
-      await triggerService.createTrigger('test_source', testInput);
+      await triggerService.createTrigger(testSourceDefinition, testInput);
     });
 
     it('should delete and return the trigger', async () => {
-      const result = await triggerService.deleteTrigger('test_source', 'test_trigger');
+      const result = await triggerService.deleteTrigger(testSourceDefinition, 'test_trigger');
 
       expect(result.name).toBe('test_trigger');
       expect(result.webhook).toBe('http://example.com/webhook');
       
       // Verify it's actually deleted
       await expect(
-        triggerService.getTrigger('test_source', 'test_trigger')
+        triggerService.getTrigger(testSourceDefinition, 'test_trigger')
       ).rejects.toThrow('Trigger test_trigger not found for source test_source');
     });
 
     it('should throw error if trigger does not exist', async () => {
       await expect(
-        triggerService.deleteTrigger('test_source', 'non_existent')
+        triggerService.deleteTrigger(testSourceDefinition, 'non_existent')
       ).rejects.toThrow('Trigger non_existent not found for source test_source');
     });
 
     it('should throw error if source does not exist', async () => {
       await expect(
-        triggerService.deleteTrigger('non_existent_source', 'test_trigger')
+        triggerService.deleteTrigger(nonExistentSourceDefinition, 'test_trigger')
       ).rejects.toThrow('Trigger test_trigger not found for source non_existent_source');
     });
 
     it('should only delete the specified trigger', async () => {
-      await triggerService.createTrigger('test_source', {
+      await triggerService.createTrigger(testSourceDefinition, {
         name: 'trigger2',
         webhook: 'http://example.com/webhook2',
         fire: { field: { _lt: 50 } }
       });
 
-      await triggerService.deleteTrigger('test_source', 'test_trigger');
+      await triggerService.deleteTrigger(testSourceDefinition, 'test_trigger');
 
       // trigger2 should still exist
-      const remaining = await triggerService.listTriggers('test_source');
+      const remaining = await triggerService.listTriggers(testSourceDefinition);
       expect(remaining).toHaveLength(1);
       expect(remaining[0].name).toBe('trigger2');
     });
@@ -239,13 +244,13 @@ describe('TriggerService', () => {
     });
 
     it('should complete without error when there are triggers', async () => {
-      await triggerService.createTrigger('source1', {
+      await triggerService.createTrigger(source1Definition, {
         name: 'trigger1',
         webhook: 'http://example.com/webhook1',
         fire: { field: { _gt: 100 } }
       });
 
-      await triggerService.createTrigger('source2', {
+      await triggerService.createTrigger(source2Definition, {
         name: 'trigger2',
         webhook: 'http://example.com/webhook2',
         fire: { field: { _lt: 50 } }

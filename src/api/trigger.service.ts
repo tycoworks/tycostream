@@ -1,5 +1,4 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { randomUUID } from 'crypto';
 import { Subscription, firstValueFrom } from 'rxjs';
@@ -7,7 +6,7 @@ import { ExpressionTree, ExpressionBuilder } from './expressions';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
-import type { SourceConfiguration } from '../config/source.types';
+import type { SourceDefinition } from '../config/source.types';
 
 /**
  * Trigger event types for webhook payloads
@@ -33,19 +32,14 @@ export class TriggerService implements OnModuleDestroy {
   private readonly logger = new Logger(TriggerService.name);
   // Source -> Name -> ActiveTrigger (names scoped by source)
   private readonly triggers = new Map<string, Map<string, ActiveTrigger>>();
-  private sourceConfig: SourceConfiguration;
 
   constructor(
     private readonly viewService: ViewService,
-    private readonly httpService: HttpService,
-    private configService: ConfigService
-  ) {
-    // Load source configuration once
-    this.sourceConfig = this.configService.get<SourceConfiguration>('sources')!;
-  }
+    private readonly httpService: HttpService
+  ) {}
 
   async createTrigger(
-    source: string,
+    sourceDefinition: SourceDefinition,
     input: {
       name: string;
       webhook: string;
@@ -54,23 +48,20 @@ export class TriggerService implements OnModuleDestroy {
     }
   ): Promise<Trigger> {
     // Get or create source map
-    let sourceTriggers = this.triggers.get(source);
+    let sourceTriggers = this.triggers.get(sourceDefinition.name);
     if (!sourceTriggers) {
       sourceTriggers = new Map<string, ActiveTrigger>();
-      this.triggers.set(source, sourceTriggers);
+      this.triggers.set(sourceDefinition.name, sourceTriggers);
     }
 
     // Check for duplicate name within source
     if (sourceTriggers.has(input.name)) {
-      throw new Error(`Trigger ${input.name} already exists for source ${source}`);
+      throw new Error(`Trigger ${input.name} already exists for source ${sourceDefinition.name}`);
     }
 
     const trigger: Trigger = {
       ...input,
     };
-
-    // Get source definition for enum optimization
-    const sourceDefinition = this.sourceConfig.sources.get(source)!;
 
     // Create View subscription with asymmetric filtering using ExpressionBuilder
     const expressionBuilder = new ExpressionBuilder(sourceDefinition);
@@ -80,10 +71,10 @@ export class TriggerService implements OnModuleDestroy {
 
     // Subscribe to View updates (skipSnapshot=true to avoid firing on existing data)
     const subscription = this.viewService
-      .getUpdates(source, filter, false, true)
+      .getUpdates(sourceDefinition.name, filter, false, true)
       .subscribe({
         next: async (event: RowUpdateEvent) => {
-          await this.processEvent(source, trigger, event);
+          await this.processEvent(sourceDefinition.name, trigger, event);
         },
         error: (error) => {
           this.logger.error(`Error in trigger ${trigger.name}: ${error.message}`);
@@ -97,46 +88,46 @@ export class TriggerService implements OnModuleDestroy {
     };
 
     sourceTriggers.set(trigger.name, activeTrigger);
-    this.logger.log(`Created trigger: ${trigger.name} for source: ${source}`);
+    this.logger.log(`Created trigger: ${trigger.name} for source: ${sourceDefinition.name}`);
 
     return trigger;
   }
 
-  async deleteTrigger(source: string, name: string): Promise<Trigger> {
-    const sourceTriggers = this.triggers.get(source);
+  async deleteTrigger(sourceDefinition: SourceDefinition, name: string): Promise<Trigger> {
+    const sourceTriggers = this.triggers.get(sourceDefinition.name);
     const activeTrigger = sourceTriggers?.get(name);
-    
+
     if (!activeTrigger) {
-      throw new Error(`Trigger ${name} not found for source ${source}`);
+      throw new Error(`Trigger ${name} not found for source ${sourceDefinition.name}`);
     }
 
     // Clean up View subscription
     activeTrigger.subscription.unsubscribe();
 
     sourceTriggers!.delete(name);
-    
+
     // Clean up source map if empty
     if (sourceTriggers!.size === 0) {
-      this.triggers.delete(source);
+      this.triggers.delete(sourceDefinition.name);
     }
-    
-    this.logger.log(`Deleted trigger: ${name} from source: ${source}`);
+
+    this.logger.log(`Deleted trigger: ${name} from source: ${sourceDefinition.name}`);
 
     return activeTrigger;
   }
 
-  async getTrigger(source: string, name: string): Promise<Trigger> {
-    const sourceTriggers = this.triggers.get(source);
+  async getTrigger(sourceDefinition: SourceDefinition, name: string): Promise<Trigger> {
+    const sourceTriggers = this.triggers.get(sourceDefinition.name);
     const trigger = sourceTriggers?.get(name);
-    
+
     if (!trigger) {
-      throw new Error(`Trigger ${name} not found for source ${source}`);
+      throw new Error(`Trigger ${name} not found for source ${sourceDefinition.name}`);
     }
     return trigger;
   }
 
-  async listTriggers(source: string): Promise<Trigger[]> {
-    const sourceTriggers = this.triggers.get(source);
+  async listTriggers(sourceDefinition: SourceDefinition): Promise<Trigger[]> {
+    const sourceTriggers = this.triggers.get(sourceDefinition.name);
     if (!sourceTriggers) {
       return [];
     }

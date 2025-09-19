@@ -1,14 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { SubscriptionService, GraphQLRowOperation } from './subscription.service';
 import { ViewService } from '../view/view.service';
 import { of } from 'rxjs';
 import { RowUpdateType } from '../view/types';
+import type { SourceDefinition } from '../config/source.types';
+import { DataType } from '../config/source.types';
 
 describe('SubscriptionService', () => {
   let subscriptionService: SubscriptionService;
   let viewService: jest.Mocked<ViewService>;
-  let configService: jest.Mocked<ConfigService>;
+
+  const testSourceDefinition: SourceDefinition = {
+    name: 'test_source',
+    primaryKeyField: 'id',
+    fields: [
+      { name: 'id', dataType: DataType.String },
+      { name: 'name', dataType: DataType.String },
+      { name: 'value', dataType: DataType.Integer }
+    ]
+  };
 
   beforeEach(async () => {
     // Minimal mock - just enough to satisfy dependencies
@@ -16,25 +26,10 @@ describe('SubscriptionService', () => {
       getUpdates: jest.fn()
     } as any;
 
-    // Mock ConfigService to return a test source configuration
-    configService = {
-      get: jest.fn().mockReturnValue({
-        sources: new Map([
-          ['test_source', {
-            name: 'test_source',
-            primaryKeyField: 'id',
-            fields: []
-          }]
-        ]),
-        enums: new Map()
-      })
-    } as any;
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SubscriptionService,
-        { provide: ViewService, useValue: viewService },
-        { provide: ConfigService, useValue: configService }
+        { provide: ViewService, useValue: viewService }
       ],
     }).compile();
 
@@ -55,7 +50,7 @@ describe('SubscriptionService', () => {
 
       viewService.getUpdates.mockReturnValue(of(mockEvent));
 
-      const subscription = subscriptionService.createSubscription('test_source');
+      const subscription = subscriptionService.createSubscription(testSourceDefinition);
 
       subscription.subscribe({
         next: (update) => {
@@ -80,7 +75,7 @@ describe('SubscriptionService', () => {
       viewService.getUpdates.mockReturnValue(of(mockEvent));
 
       const whereFilter = { value: { _gt: 100 } };
-      const subscription = subscriptionService.createSubscription('test_source', whereFilter);
+      const subscription = subscriptionService.createSubscription(testSourceDefinition, whereFilter);
 
       subscription.subscribe({
         next: (update) => {
@@ -115,7 +110,7 @@ describe('SubscriptionService', () => {
 
       viewService.getUpdates.mockReturnValue(of(mockEvent));
 
-      subscriptionService.createSubscription('test_source').subscribe({
+      subscriptionService.createSubscription(testSourceDefinition).subscribe({
         next: (update) => {
           expect(update.operation).toBe(GraphQLRowOperation.Insert);
           expect(update.data).toEqual(mockEvent.row);
@@ -134,7 +129,7 @@ describe('SubscriptionService', () => {
 
       viewService.getUpdates.mockReturnValue(of(mockEvent));
 
-      subscriptionService.createSubscription('test_source').subscribe({
+      subscriptionService.createSubscription(testSourceDefinition).subscribe({
         next: (update) => {
           expect(update.operation).toBe(GraphQLRowOperation.Update);
           expect(update.data).toEqual(mockEvent.row);
@@ -153,7 +148,7 @@ describe('SubscriptionService', () => {
 
       viewService.getUpdates.mockReturnValue(of(mockEvent));
 
-      subscriptionService.createSubscription('test_source').subscribe({
+      subscriptionService.createSubscription(testSourceDefinition).subscribe({
         next: (update) => {
           expect(update.operation).toBe(GraphQLRowOperation.Delete);
           expect(update.data).toEqual(mockEvent.row);
@@ -185,7 +180,7 @@ describe('SubscriptionService', () => {
       viewService.getUpdates.mockReturnValue(of(...events));
 
       const updates: any[] = [];
-      subscriptionService.createSubscription('test_source').subscribe({
+      subscriptionService.createSubscription(testSourceDefinition).subscribe({
         next: (update) => {
           updates.push(update);
           if (updates.length === 3) {
@@ -207,7 +202,7 @@ describe('SubscriptionService', () => {
 
       viewService.getUpdates.mockReturnValue(of(mockEvent));
 
-      subscriptionService.createSubscription('test_source').subscribe({
+      subscriptionService.createSubscription(testSourceDefinition).subscribe({
         next: (update) => {
           // Array.from preserves insertion order of Set
           expect(update.fields).toEqual(['zebra', 'apple', 'banana']);

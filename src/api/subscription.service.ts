@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Observable } from 'rxjs';
 import { map, tap } from 'rxjs/operators';
 import { ViewService } from '../view/view.service';
@@ -7,7 +6,7 @@ import { Filter } from '../view/filter';
 import { ExpressionBuilder, ExpressionTree } from './expressions';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
 import { truncateForLog } from '../common/logging.utils';
-import type { SourceConfiguration } from '../config/source.types';
+import type { SourceDefinition } from '../config/source.types';
 
 /**
  * GraphQL row operation types
@@ -40,42 +39,34 @@ const ROW_UPDATE_TYPE_MAP = {
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
-  private sourceConfig: SourceConfiguration;
 
   constructor(
-    private readonly viewService: ViewService,
-    private configService: ConfigService
-  ) {
-    // Load source configuration once
-    this.sourceConfig = this.configService.get<SourceConfiguration>('sources')!;
-  }
+    private readonly viewService: ViewService
+  ) {}
 
   /**
    * Creates a subscription stream for a data source
    * Transforms database events into GraphQL updates
    */
   createSubscription(
-    sourceName: string,
+    sourceDefinition: SourceDefinition,
     where?: ExpressionTree
   ): Observable<GraphQLUpdate> {
-    // Get source definition for enum optimization
-    const sourceDefinition = this.sourceConfig.sources.get(sourceName)!;
-
     // Parse and compile filter if provided, using ExpressionBuilder for enum optimization
     const filter = where
       ? new Filter(new ExpressionBuilder(sourceDefinition).buildExpression(where))
       : undefined;
-    
+
     this.logger.log(
-      `Subscription for ${sourceName}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`
+      `Subscription for ${sourceDefinition.name}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`
     );
 
     // Get updates from view service with deltaUpdates enabled for efficiency
-    return this.viewService.getUpdates(sourceName, filter, true).pipe(
+    return this.viewService.getUpdates(sourceDefinition.name, filter, true).pipe(
       map((event: RowUpdateEvent) => this.transformToGraphQLUpdate(event)),
       tap((update) => {
         this.logger.debug(
-          `Sending GraphQL update - source: ${sourceName}, operation: ${update.operation}, ` +
+          `Sending GraphQL update - source: ${sourceDefinition.name}, operation: ${update.operation}, ` +
           `data: ${truncateForLog(update.data)}, fields: [${update.fields.join(', ')}]`
         );
       })

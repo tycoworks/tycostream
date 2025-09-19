@@ -24,7 +24,7 @@ type SubscriptionResolver = {
  * Acts as a thin pass-through to SubscriptionService
  */
 function createSourceSubscriptionResolver(
-  sourceName: string,
+  sourceDefinition: SourceDefinition,
   subscriptionService: SubscriptionService
 ): SubscriptionResolver {
   return {
@@ -32,15 +32,15 @@ function createSourceSubscriptionResolver(
       // Create subscription through service
       // GraphQL automatically handles field selection
       const updates$ = subscriptionService.createSubscription(
-        sourceName,
+        sourceDefinition,
         args.where
       ).pipe(
         // Wrap update in source name for GraphQL response structure
         map((update: GraphQLUpdate) => ({
-          [sourceName]: update
+          [sourceDefinition.name]: update
         }))
       );
-      
+
       // Convert Observable to AsyncIterator for GraphQL
       yield* eachValueFrom(updates$);
     }
@@ -56,11 +56,11 @@ export function buildSubscriptionResolvers(
   subscriptionService: SubscriptionService
 ): Record<string, SubscriptionResolver> {
   const resolvers: Record<string, SubscriptionResolver> = {};
-  
-  sources.forEach((_, sourceName) => {
-    resolvers[sourceName] = createSourceSubscriptionResolver(sourceName, subscriptionService);
+
+  sources.forEach((sourceDefinition, sourceName) => {
+    resolvers[sourceName] = createSourceSubscriptionResolver(sourceDefinition, subscriptionService);
   });
-  
+
   return resolvers;
 }
 
