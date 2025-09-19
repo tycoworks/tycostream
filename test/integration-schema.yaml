@@ -1,3 +1,11 @@
+# Global enum definitions
+enums:
+  user_rank:
+    - bronze
+    - silver
+    - gold
+    - platinum
+
 sources:
   # First source - covers string, boolean, time, and json types
   users:
@@ -7,6 +15,7 @@ sources:
       name: String
       email: String
       active: Boolean
+      rank: user_rank  # Enum field
       created_at: Timestamp
       updated_at: Timestamp
       metadata: JSON

@@ -31,6 +31,7 @@ describe('Integration Test', () => {
         name TEXT,
         email VARCHAR(255),
         active BOOLEAN,
+        rank TEXT,
         created_at TIMESTAMP,
         updated_at TIMESTAMPTZ,
         metadata JSON
@@ -81,15 +82,15 @@ describe('Integration Test', () => {
     
     // Final expected state - only active users should be visible
     const expectedState = new Map([
-      // From initial operations
-      [1, { user_id: 1, name: 'Alice Updated', email: 'alice@example.com', active: true }],
-      
+      // From initial operations (Alice is platinum rank)
+      [1, { user_id: 1, name: 'Alice Updated', email: 'alice@example.com', active: true, rank: 'platinum' }],
+
       // From concurrent test (no email field provided, so it's null)
-      [100, { user_id: 100, name: 'Shared User', email: null, active: true }],
-      
+      [100, { user_id: 100, name: 'Shared User', email: null, active: true, rank: 'silver' }],
+
       // From late joiner test
-      [1000, { user_id: 1000, name: 'LateJoiner1', email: 'late1@test.com', active: true }],
-      [1002, { user_id: 1002, name: 'LateJoiner3', email: 'late3@test.com', active: true }]
+      [1000, { user_id: 1000, name: 'LateJoiner1', email: 'late1@test.com', active: true, rank: 'gold' }],
+      [1002, { user_id: 1002, name: 'LateJoiner3', email: 'late3@test.com', active: true, rank: 'silver' }]
     ]);
     
     // Create a client and add subscription for active users
@@ -116,13 +117,13 @@ describe('Integration Test', () => {
     });
 
     // === BASIC OPERATIONS ===
-    // Insert users - one active, one inactive
+    // Insert users - one active platinum, one inactive bronze
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active) VALUES (1, 'Alice', 'alice@test.com', true)"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1, 'Alice', 'alice@test.com', true, 'platinum')"
     );
 
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active) VALUES (2, 'Bob', 'bob@test.com', false)"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (2, 'Bob', 'bob@test.com', false, 'bronze')"
     );
 
     // Update the active user - test multi-field updates
@@ -154,19 +155,19 @@ describe('Integration Test', () => {
     // === CONCURRENT OPERATIONS ===
     // Add a user that will be shared across "concurrent" scenarios
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, active) VALUES (100, 'Shared User', true)"
+      "INSERT INTO users (user_id, name, active, rank) VALUES (100, 'Shared User', true, 'silver')"
     );
 
     // === LATE JOINER SIMULATION ===
     // Insert data that would have existed before subscription
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active) VALUES (1000, 'LateJoiner1', 'late1@test.com', true)"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1000, 'LateJoiner1', 'late1@test.com', true, 'gold')"
     );
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active) VALUES (1001, 'LateJoiner2', 'late2@test.com', false)"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1001, 'LateJoiner2', 'late2@test.com', false, 'bronze')"
     );
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active) VALUES (1002, 'LateJoiner3', 'late3@test.com', true)"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1002, 'LateJoiner3', 'late3@test.com', true, 'silver')"
     );
 
     // === TYPE TESTING WITH NULL VALUES ===
