@@ -79,8 +79,9 @@ describe('Integration Test', () => {
   it('should handle complete integration flow with filtering', async () => {
     // This is the ONE comprehensive integration test
     // We'll use a filter throughout to prove everything works with filtering enabled
-    
-    // Final expected state - only active users should be visible
+
+    // Final expected state - only active users with rank >= silver should be visible
+    // This tests enum ordinal comparison (bronze < silver < gold < platinum)
     const expectedState = new Map([
       // From initial operations (Alice is platinum rank)
       [1, { user_id: 1, name: 'Alice Updated', email: 'alice@example.com', active: true, rank: 'platinum' }],
@@ -92,14 +93,20 @@ describe('Integration Test', () => {
       [1000, { user_id: 1000, name: 'LateJoiner1', email: 'late1@test.com', active: true, rank: 'gold' }],
       [1002, { user_id: 1002, name: 'LateJoiner3', email: 'late3@test.com', active: true, rank: 'silver' }]
     ]);
-    
-    // Create a client and add subscription for active users
+
+    // Create a client and add subscription for active users with rank >= silver
+    // This tests enum ordinal comparisons
     const client = testEnv.createClient('integration-test-client');
-    
+
     await client.subscribe('active-users', {
       query: `
         subscription {
-          users(where: { active: { _eq: true } }) {
+          users(where: {
+            _and: [
+              { active: { _eq: true } },
+              { rank: { _gte: silver } }
+            ]
+          }) {
             operation
             data {
               user_id
@@ -119,6 +126,7 @@ describe('Integration Test', () => {
 
     // === BASIC OPERATIONS ===
     // Insert users - one active platinum, one inactive bronze
+    // Bronze rank should be filtered out by rank >= silver condition
     await testEnv.executeSql(
       "INSERT INTO users (user_id, name, email, active, rank) VALUES (1, 'Alice', 'alice@test.com', true, 'platinum')"
     );
@@ -169,6 +177,12 @@ describe('Integration Test', () => {
     );
     await testEnv.executeSql(
       "INSERT INTO users (user_id, name, email, active, rank) VALUES (1002, 'LateJoiner3', 'late3@test.com', true, 'silver')"
+    );
+
+    // === ENUM ORDINAL TEST ===
+    // Insert an active user with bronze rank - should NOT appear due to rank < silver
+    await testEnv.executeSql(
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1003, 'BronzeUser', 'bronze@test.com', true, 'bronze')"
     );
 
     // === TYPE TESTING WITH NULL VALUES ===
