@@ -16,10 +16,16 @@ describe('SubscriptionService', () => {
       getUpdates: jest.fn()
     } as any;
 
-    // Mock ConfigService to return an empty source configuration
+    // Mock ConfigService to return a test source configuration
     configService = {
       get: jest.fn().mockReturnValue({
-        sources: new Map(),
+        sources: new Map([
+          ['test_source', {
+            name: 'test_source',
+            primaryKeyField: 'id',
+            fields: []
+          }]
+        ]),
         enums: new Map()
       })
     } as any;

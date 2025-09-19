@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import { map, tap } from 'rxjs/operators';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
-import { buildExpression, ExpressionTree } from './expressions';
+import { ExpressionBuilder, ExpressionTree } from './expressions';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
 import { truncateForLog } from '../common/logging.utils';
 import type { SourceConfiguration } from '../config/source.types';
@@ -59,10 +59,12 @@ export class SubscriptionService {
     where?: ExpressionTree
   ): Observable<GraphQLUpdate> {
     // Get source definition for enum optimization
-    const sourceDefinition = this.sourceConfig.sources.get(sourceName);
+    const sourceDefinition = this.sourceConfig.sources.get(sourceName)!;
 
-    // Parse and compile filter if provided, with source definition for enum optimization
-    const filter = where ? new Filter(buildExpression(where, sourceDefinition)) : undefined;
+    // Parse and compile filter if provided, using ExpressionBuilder for enum optimization
+    const filter = where
+      ? new Filter(new ExpressionBuilder(sourceDefinition).buildExpression(where))
+      : undefined;
     
     this.logger.log(
       `Subscription for ${sourceName}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`

@@ -21,10 +21,26 @@ describe('TriggerService', () => {
       post: jest.fn().mockReturnValue(of({ status: 200 }))
     } as any;
 
-    // Mock ConfigService to return an empty source configuration
+    // Mock ConfigService to return a test source configuration
     configService = {
       get: jest.fn().mockReturnValue({
-        sources: new Map(),
+        sources: new Map([
+          ['test_source', {
+            name: 'test_source',
+            primaryKeyField: 'id',
+            fields: []
+          }],
+          ['source1', {
+            name: 'source1',
+            primaryKeyField: 'id',
+            fields: []
+          }],
+          ['source2', {
+            name: 'source2',
+            primaryKeyField: 'id',
+            fields: []
+          }]
+        ]),
         enums: new Map()
       })
     } as any;

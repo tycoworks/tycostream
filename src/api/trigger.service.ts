@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { randomUUID } from 'crypto';
 import { Subscription, firstValueFrom } from 'rxjs';
-import { ExpressionTree, buildExpression } from './expressions';
+import { ExpressionTree, ExpressionBuilder } from './expressions';
 import { ViewService } from '../view/view.service';
 import { Filter } from '../view/filter';
 import { RowUpdateEvent, RowUpdateType } from '../view/types';
@@ -70,11 +70,12 @@ export class TriggerService implements OnModuleDestroy {
     };
 
     // Get source definition for enum optimization
-    const sourceDefinition = this.sourceConfig.sources.get(source);
+    const sourceDefinition = this.sourceConfig.sources.get(source)!;
 
-    // Create View subscription with asymmetric filtering
-    const matchExpression = buildExpression(input.fire, sourceDefinition);
-    const unmatchExpression = input.clear ? buildExpression(input.clear, sourceDefinition) : undefined;
+    // Create View subscription with asymmetric filtering using ExpressionBuilder
+    const expressionBuilder = new ExpressionBuilder(sourceDefinition);
+    const matchExpression = expressionBuilder.buildExpression(input.fire);
+    const unmatchExpression = input.clear ? expressionBuilder.buildExpression(input.clear) : undefined;
     const filter = new Filter(matchExpression, unmatchExpression);
 
     // Subscribe to View updates (skipSnapshot=true to avoid firing on existing data)
