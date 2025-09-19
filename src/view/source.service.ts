@@ -29,16 +29,16 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
     const sources = sourceConfig?.sources;
 
     if (!sources || sources.size === 0) {
-      this.logger.warn('No source definitions loaded');
-      return;
+      throw new Error('No source definitions found.');
     }
 
-    // Store source definitions
+    // Store source definitions and log details
     for (const [sourceName, sourceDef] of sources.entries()) {
       this.sourceDefinitions.set(sourceName, sourceDef);
+      this.logger.log(`  - ${sourceName}: ${sourceDef.fields.length} fields, primary key: ${sourceDef.primaryKeyField}`);
     }
 
-    this.logger.log(`Initialized streaming manager for ${this.sourceDefinitions.size} sources: ${Array.from(this.sourceDefinitions.keys()).join(', ')}`);
+    this.logger.log(`Sources: Loaded ${this.sourceDefinitions.size} source definitions`);
   }
 
   /**

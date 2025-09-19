@@ -3,10 +3,8 @@
  * Loads configuration, initializes database streaming, and serves subscriptions
  */
 import { NestFactory } from '@nestjs/core';
-import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
-import type { SourceDefinition } from './config/source.types';
 import { getLogLevels } from './common/logging.utils';
 
 /**
@@ -31,33 +29,13 @@ async function bootstrap() {
     const app = await NestFactory.create(AppModule, {
       logger: getLogLevels(process.env.LOG_LEVEL),
     });
-    
-    const configService = app.get(ConfigService);
-    
+
     logger.log('=== tycostream starting ===');
-    
-    const dbConfig = configService.get('database');
-    logger.log(`Database config: ${dbConfig.user}@${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`);
-    
-    const graphqlConfig = configService.get('graphql');
-    logger.log(`GraphQL port: ${graphqlConfig.port}, Playground: ${graphqlConfig.playground ? 'enabled' : 'disabled'}`);
-    
-    const sourceConfig = configService.get<{ sources: Map<string, SourceDefinition> }>('sources');
-    const sources = sourceConfig?.sources;
-    if (sources && sources.size > 0) {
-      logger.log(`Loaded ${sources.size} source definitions`);
 
-      // Log source details
-      for (const [name, source] of sources) {
-        logger.log(`  - ${name}: ${source.fields.length} fields, primary key: ${source.primaryKeyField}`);
-      }
-    } else {
-      logger.warn('No source definitions loaded');
-    }
-
-    // Start the HTTP server
-    await app.listen(graphqlConfig.port);
-    logger.log(`GraphQL server running at http://localhost:${graphqlConfig.port}/graphql`);
+    // Start the HTTP server on the configured port
+    const port = parseInt(process.env.GRAPHQL_PORT || '4000', 10);
+    await app.listen(port);
+    logger.log('=== tycostream ready ===');
     
   } catch (error) {
     logger.error('Failed to start tycostream');

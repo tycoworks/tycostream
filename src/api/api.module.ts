@@ -50,7 +50,8 @@ import { TriggerService } from './trigger.service';
         const { mutationResolvers, queryResolvers } = buildTriggerResolvers(sourceConfig.sources, triggerService);
         
         const graphqlConfig = configService.get('graphql');
-        
+        logger.log(`GraphQL: Port ${graphqlConfig.port}, Playground ${graphqlConfig.playground ? 'enabled' : 'disabled'}`);
+
         // Configure landing page plugin based on GRAPHQL_UI environment variable
         const landingPagePlugin = graphqlConfig.playground
           ? ApolloServerPluginLandingPageLocalDefault({
