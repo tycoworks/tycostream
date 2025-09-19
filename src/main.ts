@@ -42,10 +42,11 @@ async function bootstrap() {
     const graphqlConfig = configService.get('graphql');
     logger.log(`GraphQL port: ${graphqlConfig.port}, Playground: ${graphqlConfig.playground ? 'enabled' : 'disabled'}`);
     
-    const sources = configService.get<Map<string, SourceDefinition>>('sources');
+    const sourceConfig = configService.get<{ sources: Map<string, SourceDefinition> }>('sources');
+    const sources = sourceConfig?.sources;
     if (sources && sources.size > 0) {
       logger.log(`Loaded ${sources.size} source definitions`);
-      
+
       // Log source details
       for (const [name, source] of sources) {
         logger.log(`  - ${name}: ${source.fields.length} fields, primary key: ${source.primaryKeyField}`);

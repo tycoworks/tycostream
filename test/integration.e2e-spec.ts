@@ -106,6 +106,7 @@ describe('Integration Test', () => {
               name
               email
               active
+              rank
             }
             fields
           }

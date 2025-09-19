@@ -24,9 +24,10 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
    * Load source definitions from configuration on startup
    */
   async onModuleInit() {
-    // Load source definitions from config
-    const sources = this.configService.get<Map<string, SourceDefinition>>('sources');
-    
+    // Load source configuration from config
+    const sourceConfig = this.configService.get<{ sources: Map<string, SourceDefinition> }>('sources');
+    const sources = sourceConfig?.sources;
+
     if (!sources || sources.size === 0) {
       this.logger.warn('No source definitions loaded');
       return;
