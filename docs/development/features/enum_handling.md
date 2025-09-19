@@ -17,21 +17,32 @@ Currently, PostgreSQL enum columns are treated as text fields in tycostream, los
 
 ### Design Decision: Enum Representation
 
-**Key Decision**: Enums are represented as integers internally for efficient ordinal comparisons, but transmitted as strings over the wire for human readability.
+**Key Decision**: Enums are stored and transmitted as strings throughout the system, with optimized expression compilation for ordinal comparisons.
 
-#### Internal vs Wire Representation
-- **Internal (Processing)**: `DataType.Integer` - Enums stored as ordinal indices (0, 1, 2...)
-- **Wire (GraphQL)**: Strings - Human-readable enum values ('pending', 'processing', etc.)
-- **Database**: Strings - PostgreSQL sends enums as text over COPY protocol
+#### Unified String Representation
+- **Storage**: Enums stored as strings matching their GraphQL representation
+- **Database**: PostgreSQL sends enums as text over COPY protocol - we preserve this
+- **GraphQL**: Direct string values with no transformation needed
 - **Identity**: The presence of an `enumType?: EnumType` field distinguishes enum fields
-- **Ordering**: Integer representation enables fast ordinal comparisons (_gt, _lt, etc.)
+- **Ordering**: Expression compiler generates optimized code for ordinal comparisons
 
-#### Why Integers Internally?
-This follows established database patterns:
-- PostgreSQL stores enums as OIDs with ordinal positions internally
-- MySQL stores enums as integers (1-based indexing)
-- Most databases optimize enum comparisons using ordinal values
-- Avoids runtime string comparisons in hot paths (filter evaluation)
+#### Expression Optimization for Ordinal Comparisons
+While enums are strings throughout the system, ordinal comparisons (_gt, _lt, etc.) are handled efficiently through compile-time optimization in the expression builder:
+
+```javascript
+// For { status: { _gt: 'pending' } } with enum [pending, processing, shipped]
+// Instead of runtime indexOf calls, we generate:
+"(datum.status === 'pending' ? 0 : datum.status === 'processing' ? 1 : datum.status === 'shipped' ? 2 : -1) > 0"
+
+// Or even better, for small enums we can optimize to direct checks:
+"(datum.status === 'processing' || datum.status === 'shipped')"
+```
+
+This approach:
+- **No allocations**: No arrays or objects created during evaluation
+- **No transformations**: Data stays as strings throughout
+- **Fast comparisons**: Ternary chains are optimized by JavaScript JIT compilers
+- **Simple data flow**: What you see in logs is what's in the system
 
 ### YAML Configuration
 
@@ -212,169 +223,42 @@ subscription HighPriorityOrders {
 4. **Consistency**: Foundation for calculated enums (same infrastructure)
 5. **Filtering**: Type-safe enum comparisons in subscriptions
 
-## Transformation Architecture
-
-### Current Implementation: Service-Level Transformation
-
-Enums are currently transformed at the service level:
-- **FieldTransformer** class handles bidirectional transformations
-- Created in SubscriptionService and TriggerService
-- Applied during expression building and output serialization
-
-### Architectural Options for Wire/Internal Transformations
-
-#### Option 1: Resolver-Level Transformation (GraphQL Boundary)
-**Most idiomatic for our dynamic schema generation**
-
-```typescript
-// In subscription.resolver.ts
-const transformer = new FieldTransformer(sourceDefinition);
-
-// Transform inputs immediately at boundary
-const internalWhere = transformer.transformExpression(args.where);
-
-// Transform outputs just before sending
-return service.createSubscription(source, internalWhere).pipe(
-  map(data => transformer.recordToWire(data))
-);
-```
-
-**Pros:**
-- Clear separation: All transformations at API boundary
-- Services work purely with internal representations
-- Single responsibility for each layer
-
-**Cons:**
-- Requires modifying resolver generation code
-- Need to pass transformer through multiple layers
-
-#### Option 2: NestJS Interceptor (AOP Style)
-**Most idiomatic for NestJS**
-
-```typescript
-@Injectable()
-export class EnumTransformInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const args = context.getArgs();
-    // Transform inputs
-    if (args.where) {
-      args.where = this.transformer.transformExpression(args.where);
-    }
-
-    return next.handle().pipe(
-      // Transform outputs
-      map(data => this.transformer.recordToWire(data))
-    );
-  }
-}
-```
-
-**Pros:**
-- Aspect-oriented: Transformation logic completely separate
-- Reusable across all resolvers
-- Very NestJS-idiomatic
-
-**Cons:**
-- Less explicit about what's happening
-- Harder to debug transformation issues
-- Would need per-source configuration
-
-#### Option 3: Custom GraphQL Scalars
-**Most idiomatic for GraphQL**
-
-```typescript
-@Scalar('TradeStatus')
-export class TradeStatusScalar implements CustomScalar<string, number> {
-  parseValue(value: string): number {
-    return this.enumValues.indexOf(value);
-  }
-
-  serialize(value: number): string {
-    return this.enumValues[value];
-  }
-}
-```
-
-**Pros:**
-- GraphQL-native approach
-- Type safety at GraphQL layer
-- Clear in schema what's happening
-
-**Cons:**
-- Requires generating custom scalars per enum
-- Doesn't work well with our dynamic schema generation
-- More complex for expression trees
-
-#### Option 4: Service Wrapper/Conduit
-**Cleanest separation of concerns**
-
-```typescript
-class TransformedSubscriptionService {
-  constructor(
-    private service: SubscriptionService,
-    private transformer: FieldTransformer
-  ) {}
-
-  createSubscription(source: string, where: ExpressionTree) {
-    const internalWhere = this.transformer.transformExpression(where);
-    return this.service.createSubscription(source, internalWhere).pipe(
-      map(data => this.transformer.recordToWire(data))
-    );
-  }
-}
-```
-
-**Pros:**
-- Complete separation of transformation from business logic
-- Easy to test in isolation
-- Services remain pure
-
-**Cons:**
-- Additional layer of abstraction
-- Need wrapper for each service
-
-### Recommendation
-
-**For tycostream**: Option 1 (Resolver-Level) is recommended because:
-1. Our schema is dynamically generated, making static approaches difficult
-2. Clear boundary between wire and internal representations
-3. Transformations happen at the earliest/latest possible points
-4. Consistent with treating this as serialization/deserialization
-
-The transformation should happen:
-- **Inbound**: Immediately upon receiving GraphQL arguments
-- **Outbound**: Just before returning GraphQL responses
-
-This treats FieldTransformer as a codec at the API boundary, which is conceptually clean.
 
 ## Implementation Status
 
 ### ✅ Phase 1: Core Enum Support (COMPLETED)
 1. **YAML Configuration** - Enums parsed from global definitions
 2. **GraphQL Schema Generation** - Proper enum types and comparison inputs
-3. **Internal Representation** - Enums stored as integers (ordinal indices)
-4. **Database String Parsing** - Materialize protocol handler converts strings to indices
-5. **Expression Compilation** - Enum comparisons work with ordinal semantics
+3. **Database Parsing** - Materialize protocol handler parses enum strings correctly
 
-### 🚧 Phase 2: Serialization Layer (IN PROGRESS)
+### ⚠️ Phase 1.5: Revert Integer Storage (REQUIRED)
+**Status**: Required before proceeding
+**Scope**: Undo the integer storage implementation
+- Remove integer conversion in `materialize.ts` parser
+- Change `DataType.Integer` back to `DataType.String` for enum fields in `sources.config.ts`
+- Remove FieldTransformer code from resolver
+- Revert any test changes expecting integers
+**Note**: This was an implementation detour - we initially stored enums as integers for performance but realized string storage with expression optimization is cleaner
 
-#### 2.1 Resolver-Level Transformation
+### 🚧 Phase 2: Expression Optimization (NEXT)
+
+#### 2.1 Enum-Aware Expression Compilation
 **Status**: Next Priority
-**Scope**: Implement transformations at GraphQL boundary
-- Implement FieldTransformer at resolver generation
-- Transform expressions on input (string → int)
-- Transform data on output (int → string)
-- Keep services working with internal representation only
-- **Tests**: Unit tests for bidirectional transformations
+**Scope**: Make expression compiler optimize enum comparisons
+- Detect enum fields in expression builder
+- Generate ternary chains for ordinal comparisons (_gt, _lt, etc.)
+- Generate direct equality checks for _eq, _neq
+- Optimize to direct boolean expressions where possible
+- **Tests**: Unit tests for expression generation with enums
 
 #### 2.2 Storage Format Support
-**Status**: Not Started (Lower Priority)
+**Status**: Future Enhancement
 **Scope**: Support both ordinal and value storage from Materialize
 - Extend YAML enum definitions with `storage: ordinal/value`
-- Update parser to handle ordinal values without conversion
+- Update parser to handle ordinal values when `storage: ordinal`
 - Add validation for ordinal range checking
 - **Tests**: Unit tests for both storage formats
-- **Note**: Currently only `storage: value` is supported
+- **Note**: Currently only `storage: value` is supported and working
 
 ### 📝 Phase 3: Validation & Documentation
 
@@ -407,15 +291,16 @@ This treats FieldTransformer as a codec at the API boundary, which is conceptual
 | Component | Status | Priority | Tests |
 |-----------|--------|----------|-------|
 | Core Enum Support | ✅ Complete | - | ✅ Unit |
-| Value Storage (`storage: value`) | ✅ Complete | - | ✅ Unit |
-| Resolver Transform | 🚧 Next | HIGH | ❌ None |
+| String Storage | ✅ Complete | - | ✅ Unit |
+| Revert Integer Storage | ⚠️ Required | IMMEDIATE | - |
+| Expression Optimization | ❌ Not Started | HIGH | ❌ None |
 | Integration Tests | ❌ Not Started | HIGH | ❌ None |
 | Ordinal Storage (`storage: ordinal`) | ❌ Not Started | LOW | ❌ None |
 | Stress Tests | ❌ Not Started | MEDIUM | ❌ None |
 | Demo | ❌ Not Started | MEDIUM | N/A |
 
-**Overall Progress**: ~35% Complete
-**Next Step**: Implement resolver-level transformations
+**Overall Progress**: ~30% Complete
+**Next Step**: Revert integer storage changes, then implement expression optimization
 
 ## Original Implementation Plan
 
