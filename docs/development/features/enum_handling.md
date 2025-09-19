@@ -46,55 +46,34 @@ This approach:
 
 ### YAML Configuration
 
-Users define enum types globally with explicit storage format, then reference them in columns.
+Users define enum types globally, then reference them in columns.
 
 #### Enum Definition
-All enums must explicitly specify their storage format:
 
 ```yaml
 enums:
-  # Value storage - database sends actual string values
   order_status:
-    values: [pending, processing, shipped, delivered, cancelled]
-    storage: value  # Database sends 'pending', 'processing', etc.
+    - pending
+    - processing
+    - shipped
+    - delivered
+    - cancelled
 
-  # Ordinal storage - database sends position indices
   trade_side:
-    values: [buy, sell]
-    storage: ordinal  # Database sends 0 for 'buy', 1 for 'sell'
+    - buy
+    - sell
 
 sources:
   orders:
     columns:
-      status: order_status  # Storage format already defined at enum level
+      status: order_status  # References the global enum
 
   trades:
     columns:
-      side: trade_side  # Storage format already defined at enum level
+      side: trade_side  # References the global enum
 ```
 
-#### Storage Formats
-
-**`storage: value`** - Database sends the actual enum value as a string
-```sql
--- Materialize sends 'buy' or 'sell'
-SELECT trade_id, side FROM trades;
-```
-
-**`storage: ordinal`** - Database sends the ordinal position as an integer (0-based)
-```sql
--- Materialize sends 0 or 1
-CREATE MATERIALIZED VIEW trades AS
-SELECT
-  trade_id,
-  CASE side
-    WHEN 'buy' THEN 0
-    WHEN 'sell' THEN 1
-  END as side
-FROM upstream_trades;
-```
-
-No default is provided - users must be explicit about what their database sends.
+The database always sends enum values as their string representation. Materialize and PostgreSQL both transmit enums as text over the COPY protocol.
 
 ### Enum Ordering and Comparisons
 
@@ -231,47 +210,46 @@ subscription HighPriorityOrders {
 2. **GraphQL Schema Generation** - Proper enum types and comparison inputs
 3. **Database Parsing** - Materialize protocol handler parses enum strings correctly
 
-### ⚠️ Phase 1.5: Revert Integer Storage (REQUIRED)
-**Status**: Required before proceeding
-**Scope**: Undo the integer storage implementation
-- Remove integer conversion in `materialize.ts` parser
-- Change `DataType.Integer` back to `DataType.String` for enum fields in `sources.config.ts`
-- Remove FieldTransformer code from resolver
-- Revert any test changes expecting integers
-**Note**: This was an implementation detour - we initially stored enums as integers for performance but realized string storage with expression optimization is cleaner
+### ✅ Phase 1.5: Revert Integer Storage (COMPLETED)
+**Status**: Completed
+**Scope**: Reverted integer storage implementation
+- ✅ Removed integer conversion in `materialize.ts` parser
+- ✅ Changed `DataType.Integer` back to `DataType.String` for enum fields in `sources.config.ts`
+- ✅ Removed FieldTransformer code from resolver
+- ✅ Reverted test changes expecting integers
+**Note**: Successfully reverted to clean string storage throughout
 
-### 🚧 Phase 2: Expression Optimization (NEXT)
+### ✅ Phase 2: Expression Optimization (COMPLETED)
 
 #### 2.1 Enum-Aware Expression Compilation
-**Status**: Next Priority
-**Scope**: Make expression compiler optimize enum comparisons
-- Detect enum fields in expression builder
-- Generate ternary chains for ordinal comparisons (_gt, _lt, etc.)
-- Generate direct equality checks for _eq, _neq
-- Optimize to direct boolean expressions where possible
-- **Tests**: Unit tests for expression generation with enums
+**Status**: Completed
+**Scope**: Expression compiler now optimizes enum comparisons
+- ✅ Created ExpressionBuilder class that takes SourceDefinition
+- ✅ Detects enum fields and generates optimized ternary chains for ordinal comparisons
+- ✅ Generates direct equality checks for _eq, _neq
+- ✅ Optimizes to direct boolean expressions where possible
+- ✅ **Tests**: Unit tests verify expression generation with enums
 
-#### 2.2 Storage Format Support
-**Status**: Future Enhancement
-**Scope**: Support both ordinal and value storage from Materialize
-- Extend YAML enum definitions with `storage: ordinal/value`
-- Update parser to handle ordinal values when `storage: ordinal`
-- Add validation for ordinal range checking
-- **Tests**: Unit tests for both storage formats
-- **Note**: Currently only `storage: value` is supported and working
+#### 2.2 Refactoring for Clean Architecture
+**Status**: Completed
+**Scope**: Pass SourceDefinition directly to services
+- ✅ Refactored SubscriptionService to receive SourceDefinition from resolver
+- ✅ Refactored TriggerService to receive SourceDefinition from resolver
+- ✅ Eliminated redundant source lookups in services
+- ✅ Consolidated service initialization logging
 
 ### 📝 Phase 3: Validation & Documentation
 
 #### 3.1 Integration Tests
-**Status**: Not Started
+**Status**: ✅ Completed
 **Scope**: End-to-end enum functionality
-- Test enum filtering with WHERE clauses
-- Test enum ordering (_gt, _lt comparisons)
-- Test mixed storage formats (some int, some string)
-- Test null handling for optional enums
+- ✅ Test enum filtering with WHERE clauses (rank >= silver)
+- ✅ Test enum ordering (_gte comparisons work correctly)
+- ✅ Test that bronze rank users are filtered out
+- ✅ Test combined conditions (active AND rank >= silver)
 
 #### 3.2 Stress Tests
-**Status**: Not Started
+**Status**: 🚧 In Progress
 **Scope**: Performance validation
 - High-frequency updates with enum transformations
 - Multiple concurrent subscriptions with enum filters
@@ -292,15 +270,15 @@ subscription HighPriorityOrders {
 |-----------|--------|----------|-------|
 | Core Enum Support | ✅ Complete | - | ✅ Unit |
 | String Storage | ✅ Complete | - | ✅ Unit |
-| Revert Integer Storage | ⚠️ Required | IMMEDIATE | - |
-| Expression Optimization | ❌ Not Started | HIGH | ❌ None |
-| Integration Tests | ❌ Not Started | HIGH | ❌ None |
-| Ordinal Storage (`storage: ordinal`) | ❌ Not Started | LOW | ❌ None |
-| Stress Tests | ❌ Not Started | MEDIUM | ❌ None |
+| Revert Integer Storage | ✅ Complete | - | ✅ Verified |
+| Expression Optimization | ✅ Complete | - | ✅ Unit |
+| Integration Tests | ✅ Complete | - | ✅ E2E |
+| Ordinal Storage (`storage: ordinal`) | ❌ Not Needed | LOW | - |
+| Stress Tests | 🚧 In Progress | MEDIUM | ❌ None |
 | Demo | ❌ Not Started | MEDIUM | N/A |
 
-**Overall Progress**: ~30% Complete
-**Next Step**: Revert integer storage changes, then implement expression optimization
+**Overall Progress**: ~80% Complete
+**Next Step**: Add enum filtering to stress test, then update demo
 
 ## Original Implementation Plan
 
