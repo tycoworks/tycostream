@@ -64,7 +64,6 @@ const ALERTS_SUBSCRIPTION = `
 let positionsGridApi;
 let tradesGridApi;
 let alertsGridApi;
-let countdownSeconds = 15;
 
 // Setup Apollo client
 const wsClient = createClient({ url: 'ws://localhost:4000/graphql' });
@@ -73,21 +72,19 @@ const client = new ApolloClient({
   cache: new InMemoryCache()
 });
 
-// Wait 15 seconds for backend to be ready, then initialize
-setTimeout(() => {
-  console.log('Initializing subscriptions...');
-  
-  // Subscribe to positions
-  subscribeToPositions();
-  
-  // Subscribe to alerts
-  subscribeToAlerts();
-  
-  // Create position trigger for large realized P&L losses
-  createPositionTrigger();
-  
-  console.log('Subscriptions initialized - data should start flowing soon!');
-}, 15000);
+// Initialize subscriptions immediately
+console.log('Initializing subscriptions...');
+
+// Subscribe to positions
+subscribeToPositions();
+
+// Subscribe to alerts
+subscribeToAlerts();
+
+// Create position trigger for large realized P&L losses
+createPositionTrigger();
+
+console.log('Subscriptions initialized - data should start flowing soon!');
 
 function subscribeToPositions() {
   client.subscribe({ query: gql(POSITIONS_SUBSCRIPTION) }).subscribe(({ data }) => {
@@ -334,7 +331,7 @@ function getPnlColumnConfig() {
 
 function createPositionsGrid() {
   const gridApi = createGrid(document.querySelector('#positions-grid'), {
-    overlayNoRowsTemplate: '<span style="padding: 10px">Connecting to backend in 15s...</span>',
+    overlayNoRowsTemplate: '<span style="padding: 10px">Backend still loading...please refresh</span>',
     theme: 'legacy',
     columnDefs: positionsFields.map(field => ({ field, ...positionsColumnConfig[field] })),
     rowData: [],
@@ -374,7 +371,7 @@ function createTradesGrid() {
 
 function createAlertsGrid() {
   return createGrid(document.querySelector('#alerts-grid'), {
-    overlayNoRowsTemplate: '<span style="padding: 10px">Connecting to backend in 15s...</span>',
+    overlayNoRowsTemplate: '<span style="padding: 10px">No alerts</span>',
     theme: 'legacy',
     columnDefs: alertsFields.map(field => ({ field, ...alertsColumnConfig[field] })),
     rowData: [],
@@ -390,25 +387,3 @@ function createAlertsGrid() {
 positionsGridApi = createPositionsGrid();
 tradesGridApi = createTradesGrid();
 alertsGridApi = createAlertsGrid();
-
-// Update countdown in grid overlays
-function updateCountdown() {
-  if (countdownSeconds > 0) {
-    const message = `Connecting to backend in ${countdownSeconds}s...`;
-    positionsGridApi.setGridOption('overlayNoRowsTemplate', `<span style="padding: 10px">${message}</span>`);
-    alertsGridApi.setGridOption('overlayNoRowsTemplate', `<span style="padding: 10px">${message}</span>`);
-    // Force the overlay to show
-    positionsGridApi.showNoRowsOverlay();
-    alertsGridApi.showNoRowsOverlay();
-    countdownSeconds--;
-    setTimeout(updateCountdown, 1000);
-  } else {
-    positionsGridApi.setGridOption('overlayNoRowsTemplate', '<span style="padding: 10px">Initializing data stream...</span>');
-    alertsGridApi.setGridOption('overlayNoRowsTemplate', '<span style="padding: 10px">Waiting for alerts...</span>');
-    positionsGridApi.showNoRowsOverlay();
-    alertsGridApi.showNoRowsOverlay();
-  }
-}
-
-// Start countdown
-updateCountdown();
