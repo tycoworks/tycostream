@@ -202,8 +202,9 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         idField: 'event_id'
       });
       
-      // Engineering Active Trigger: Match when department = "engineering" AND status = "active"
-      // Unmatch when still in engineering but status changes to non-active
+      // Engineering Active Trigger: Match when department = "engineering" AND status >= "active"
+      // Tests enum ordinal comparison - since "active" is the highest, _gte: active only matches active
+      // Unmatch when still in engineering but status < active
       await triggerClient2.trigger('engineering-active', {
         query: `
           mutation CreateEngineeringActiveTrigger($webhookUrl: String!) {
@@ -211,12 +212,12 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
               name: "engineering_active_trigger"
               webhook: $webhookUrl
               fire: {
-                department: { _eq: "engineering" }
-                status: { _eq: "active" }
+                department: { _eq: engineering }
+                status: { _gte: active }
               }
               clear: {
-                department: { _eq: "engineering" }
-                status: { _neq: "active" }
+                department: { _eq: engineering }
+                status: { _lt: active }
               }
             }) {
               name
@@ -244,11 +245,11 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
               name: "operations_value_trigger"
               webhook: $webhookUrl
               fire: {
-                department: { _eq: "operations" }
+                department: { _eq: operations }
                 value: { _gte: 300 }
               }
               clear: {
-                department: { _eq: "operations" }
+                department: { _eq: operations }
                 value: { _lt: 250 }
               }
             }) {
@@ -269,7 +270,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       });
       
       console.log('Triggers set up successfully');
-      
+
       // Execute the operations asynchronously
       const operationsPromise = (async () => {
         for (const { sql, params } of allOperations) {
@@ -277,26 +278,26 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         }
         console.log('All database operations completed');
       })();
-      
+
       // Create clients at staggered intervals
       console.log('Creating subscription clients at staggered intervals...');
       const clientSpawnInterval = Math.floor((allOperations.length * INSERT_DELAY_MS * 2.5) / NUM_CLIENTS);
       
-      // Start clients with department filters
+      // Start clients with department filters (department is now an enum)
       for (let i = 0; i < NUM_CLIENTS; i++) {
         const clientDepartment = DEPARTMENTS[i % DEPARTMENTS.length];
         const baseDepartmentState = DEPARTMENT_STATES.get(clientDepartment)!;
-        
+
         // Get expected state for this department using the scenario
         const departmentExpectedState = scenario.getSubscriptionState(baseDepartmentState);
-        
+
         console.log(`Client ${i}: Subscribing to department '${clientDepartment}' (expecting ${departmentExpectedState.size} rows)`);
-        
+
         const client = testEnv.createClient(`stress-client-${i}`);
         await client.subscribe('department-filter', {
           query: `
             subscription {
-              stress_test(where: {department: {_eq: "${clientDepartment}"}}) {
+              stress_test(where: {department: {_eq: ${clientDepartment}}}) {
                 operation
                 data {
                   id

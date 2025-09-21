@@ -1,8 +1,21 @@
+# Define enums with ordinal precedence
+enums:
+  status:
+    - inactive
+    - pending
+    - active
+
+  department:
+    - engineering
+    - operations
+    - finance
+    - sales
+
 sources:
   stress_test:
     primary_key: id
     columns:
       id: Integer
       value: Float
-      status: String
-      department: String
+      status: status      # Enum field
+      department: department  # Enum field
