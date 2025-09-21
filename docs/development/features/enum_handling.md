@@ -203,192 +203,55 @@ subscription HighPriorityOrders {
 5. **Filtering**: Type-safe enum comparisons in subscriptions
 
 
-## Implementation Status
+## Implementation
 
-### ✅ Phase 1: Core Enum Support (COMPLETED)
-1. **YAML Configuration** - Enums parsed from global definitions
-2. **GraphQL Schema Generation** - Proper enum types and comparison inputs
-3. **Database Parsing** - Materialize protocol handler parses enum strings correctly
+### Phase 1: Core Enum Support
 
-### ✅ Phase 1.5: Revert Integer Storage (COMPLETED)
-**Status**: Completed
-**Scope**: Reverted integer storage implementation
-- ✅ Removed integer conversion in `materialize.ts` parser
-- ✅ Changed `DataType.Integer` back to `DataType.String` for enum fields in `sources.config.ts`
-- ✅ Removed FieldTransformer code from resolver
-- ✅ Reverted test changes expecting integers
-**Note**: Successfully reverted to clean string storage throughout
+**YAML Configuration** - Parse global enum definitions and column references from YAML. Enums are defined globally and referenced by columns.
 
-### ✅ Phase 2: Expression Optimization (COMPLETED)
+**GraphQL Schema Generation** - Generate proper GraphQL enum types and comparison input types. Each enum gets its own type and comparison operators.
 
-#### 2.1 Enum-Aware Expression Compilation
-**Status**: Completed
-**Scope**: Expression compiler now optimizes enum comparisons
-- ✅ Created ExpressionBuilder class that takes SourceDefinition
-- ✅ Detects enum fields and generates optimized ternary chains for ordinal comparisons
-- ✅ Generates direct equality checks for _eq, _neq
-- ✅ Optimizes to direct boolean expressions where possible
-- ✅ **Tests**: Unit tests verify expression generation with enums
+**Database Parsing** - Materialize protocol handler parses enum values as strings, no special conversion needed.
 
-#### 2.2 Refactoring for Clean Architecture
-**Status**: Completed
-**Scope**: Pass SourceDefinition directly to services
-- ✅ Refactored SubscriptionService to receive SourceDefinition from resolver
-- ✅ Refactored TriggerService to receive SourceDefinition from resolver
-- ✅ Eliminated redundant source lookups in services
-- ✅ Consolidated service initialization logging
+### Phase 2: Expression Optimization
 
-### 📝 Phase 3: Validation & Documentation
+**Enum-Aware Expression Compilation** - Create ExpressionBuilder class that takes SourceDefinition and generates optimized code for enum comparisons. Instead of runtime indexOf calls, generate ternary chains or direct boolean expressions.
 
-#### 3.1 Integration Tests
-**Status**: ✅ Completed
-**Scope**: End-to-end enum functionality
-- ✅ Test enum filtering with WHERE clauses (rank >= silver)
-- ✅ Test enum ordering (_gte comparisons work correctly)
-- ✅ Test that bronze rank users are filtered out
-- ✅ Test combined conditions (active AND rank >= silver)
+**Clean Architecture** - Refactor services to receive SourceDefinition directly from resolvers, eliminating redundant source lookups and improving performance.
 
-#### 3.2 Stress Tests
-**Status**: 🚧 In Progress
-**Scope**: Performance validation
-- High-frequency updates with enum transformations
-- Multiple concurrent subscriptions with enum filters
-- Large enum value sets (50+ values)
-- Memory/CPU profiling of transformation overhead
+### Phase 3: Schema Generator Support
 
-#### 3.3 Demo Update
-**Status**: Not Started
-**Scope**: Showcase enum capabilities
-- Add trade_side or order_status enum to demo schema
-- Show type-safe filtering by enum values
-- Demonstrate ordinal comparisons
-- Compare performance vs string comparisons
+**Command-Line Interface** - Extend generate-schema.sh with:
+- `-e` flag for defining enums: `-e side "buy,sell"`
+- `-c` flag for column mapping: `-c side:side`
+- Generates `enums:` section at top of YAML output
+- Works with both tables and materialized views
 
-#### 3.4 Schema Generator Script Update
-**Status**: Not Started
-**Scope**: Update generate-schema.sh to support manual enum specification
-- Accept enum definitions via CLI flags like `-e status[pending,processing,shipped,delivered]`
-- Generate `enums:` section at top of YAML output when enums are specified
-- Map specified columns to their enum type names instead of String
-- Example usage: `./generate-schema.sh -s orders -p id -e status[pending,processing,shipped]`
-**Note**: Automatic detection not possible since Materialize doesn't support native PostgreSQL enum types
+Example:
+```bash
+./generate-schema.sh \
+  -e side "buy,sell" \
+  -e event_type "FIRE,CLEAR" \
+  -s live_pnl -p instrument_id \
+  -s trades -p id -c side:side \
+  -s alerts -p id -c event_type:event_type
+```
 
-#### 3.5 Documentation
-**Status**: Not Started
-**Scope**: Update user-facing documentation
-- Add enum usage to main README
-- Document YAML enum syntax
-- Show GraphQL query examples with enums
-- Explain ordinal comparison behavior
+Note: Manual specification required since Materialize doesn't support native PostgreSQL enum types.
 
-### 📊 Progress Summary
+## Testing
 
-| Component | Status | Priority | Tests |
-|-----------|--------|----------|-------|
-| Core Enum Support | ✅ Complete | - | ✅ Unit |
-| String Storage | ✅ Complete | - | ✅ Unit |
-| Revert Integer Storage | ✅ Complete | - | ✅ Verified |
-| Expression Optimization | ✅ Complete | - | ✅ Unit |
-| Integration Tests | ✅ Complete | - | ✅ E2E |
-| Stress Tests | 🚧 In Progress | HIGH | ❌ None |
-| Schema Generator Script | ❌ Not Started | HIGH | ❌ None |
-| Demo | ❌ Not Started | MEDIUM | N/A |
-| Documentation | ❌ Not Started | MEDIUM | N/A |
+**Unit Tests**:
+- `src/config/sources.config.spec.ts` - Enum parsing from YAML
+- `src/api/schema.spec.ts` - GraphQL enum type generation
+- `src/api/expressions.spec.ts` - Enum-aware expression compilation
+- `src/database/materialize.spec.ts` - Enum value parsing
+- `src/view/view.spec.ts` - Enum field handling
 
-**Overall Progress**: ~70% Complete
-**Next Steps**:
-1. Complete stress test with enum filtering
-2. Update generate-schema.sh script to support enums
-3. Add enum examples to demo
-4. Update README documentation
+**Integration Tests**:
+- `test/integration.e2e-spec.ts` - End-to-end enum filtering with `rank` enum
+- `test/stress-test.e2e-spec.ts` - Performance testing with `status` and `department` enums
 
-## Original Implementation Plan
-
-### Step 1: YAML Configuration
-
-**Goal**: Parse global enum definitions and column references from YAML
-
-**Changes**:
-1. Extend `src/config/source.types.ts`:
-   ```typescript
-   interface EnumType {
-     name: string;
-     values: string[];
-   }
-
-   interface SourceField {
-     name: string;
-     dataType: DataType;      // String for enums
-     enumType?: EnumType;     // Present only for enum fields
-   }
-
-   interface YamlSourcesFile {
-     enums?: Record<string, string[]>;  // Global enum definitions
-     sources: Record<string, YamlSourceConfig>;
-   }
-   ```
-
-2. Update `src/config/sources.config.ts`:
-   - Parse global `enums` section
-   - Validate that enum references in columns exist in global enums
-   - Pass enum definitions through to schema generation
-
-**Testable**: Config loads with enum definitions
-
----
-
-### Step 2: GraphQL Enum Generation
-
-**Goal**: Generate GraphQL enum types and comparisons
-
-**Changes**:
-1. Update `src/api/schema.ts`:
-   - Add `buildEnumTypes()` function to generate enum types
-   - Add `buildEnumComparisonTypes()` for comparison inputs
-   - Modify `buildFieldDefinitions()` to use enum types
-   - Update `buildExpressionInputTypes()` to use enum comparisons
-
-2. Create enum type mapping in `src/common/types.ts`:
-   - Add `isEnumType()` helper
-   - Update `getGraphQLType()` to handle enums
-
-**Testable**: GraphQL introspection shows enum types and comparisons
-
----
-
-### Step 3: Runtime Data Handling
-
-**Goal**: Handle enum values through the data pipeline
-
-**Changes**:
-1. Update `src/database/materialize.ts`:
-   - ParseValue handles enum columns as strings
-   - No special parsing needed (PostgreSQL sends enums as text)
-
-2. Verify `src/common/expressions.ts`:
-   - Enum comparisons work with existing expression evaluator
-   - Enums compare as strings at runtime
-
-**Testable**: Subscriptions filter correctly on enum values
-
----
-
-### Step 4: Testing
-
-**Goal**: Comprehensive test coverage
-
-**Changes**:
-1. Create `test/enum-schema.yaml` with enum examples
-2. Add integration tests for:
-   - Enum filtering in subscriptions
-   - Multiple enum comparisons
-   - Null handling for optional enums
-3. Test GraphQL type generation
-4. Update demo to showcase enum usage:
-   - Add order_status enum to demo schema
-   - Show enum filtering in demo queries
-
-**Testable**: All enum operations work end-to-end
 
 ## Technical Considerations
 
