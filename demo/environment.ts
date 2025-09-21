@@ -91,8 +91,8 @@ Starting test environment:
     try {
       const instrumentId = Math.floor(Math.random() * instruments.size) + 1;
       const quantity = Math.floor(Math.random() * (MAX_TRADE_QUANTITY - MIN_TRADE_QUANTITY + 1)) + MIN_TRADE_QUANTITY;
-      const signedQuantity = Math.random() < TRADE_BIAS ? quantity : -quantity;
-      await insertTrade(instrumentId, signedQuantity);
+      const side = Math.random() < TRADE_BIAS ? 'buy' : 'sell';
+      await insertTrade(instrumentId, side, quantity);
     } catch (error) {
       console.error('Error inserting trade:', error);
     }
@@ -142,6 +142,7 @@ async function setupDatabase() {
     CREATE TABLE trades (
       id INT,
       instrument_id INT,
+      side TEXT NOT NULL,
       quantity INT NOT NULL,
       price NUMERIC NOT NULL,
       executed_at TIMESTAMP NOT NULL
@@ -189,14 +190,15 @@ async function setupDatabase() {
       SELECT
         i.id AS instrument_id,
         i.symbol,
-        SUM(t.quantity) AS net_position,
+        SUM(CASE WHEN t.side = 'buy' THEN t.quantity ELSE -t.quantity END) AS net_position,
         md.Price AS last_price,
-        round((ABS(SUM(t.quantity)) * md.Price)::numeric, 2) AS market_value,
+        round((ABS(SUM(CASE WHEN t.side = 'buy' THEN t.quantity ELSE -t.quantity END)) * md.Price)::numeric, 2) AS market_value,
         round((
-          SUM(CASE WHEN t.quantity < 0 THEN t.price * ABS(t.quantity) ELSE 0 END) -
-          SUM(CASE WHEN t.quantity > 0 THEN t.price * t.quantity ELSE 0 END)
+          SUM(CASE WHEN t.side = 'sell' THEN t.price * t.quantity ELSE 0 END) -
+          SUM(CASE WHEN t.side = 'buy' THEN t.price * t.quantity ELSE 0 END)
         )::numeric, 2) as realized_pnl,
-        round(((SUM(t.quantity) * md.Price) - SUM(t.price * t.quantity))::numeric, 2) AS unrealized_pnl
+        round(((SUM(CASE WHEN t.side = 'buy' THEN t.quantity ELSE -t.quantity END) * md.Price) -
+               SUM(CASE WHEN t.side = 'buy' THEN t.price * t.quantity ELSE -t.price * t.quantity END))::numeric, 2) AS unrealized_pnl
       FROM trades AS t
       JOIN instruments AS i ON i.id = t.instrument_id
       JOIN latest_market_data AS md ON md.instrument_id = i.id
@@ -219,7 +221,8 @@ async function insertInitialData() {
     
     // Create initial position if specified
     if (instrument.initialPosition !== 0) {
-      await insertTrade(id, instrument.initialPosition);
+      const side = instrument.initialPosition > 0 ? 'buy' : 'sell';
+      await insertTrade(id, side, Math.abs(instrument.initialPosition));
     }
   }
   
@@ -252,17 +255,16 @@ async function insertMarketData(instrumentId: number) {
 /**
  * Inserts a trade record at the current market price
  */
-async function insertTrade(instrumentId: number, quantity: number) {
+async function insertTrade(instrumentId: number, side: string, quantity: number) {
   const instrument = instruments.get(instrumentId)!;
   const price = instrument.price;
-  
+
   await testEnv.executeSql(`
-    INSERT INTO trades (id, instrument_id, quantity, price, executed_at) 
-    VALUES ($1, $2, $3, $4, NOW())
-  `, [tradeId++, instrumentId, quantity, price]);
-  
-  const side = quantity > 0 ? 'BUY' : 'SELL';
-  console.log(`Trade: ${side} Instrument ${instrumentId}, quantity ${Math.abs(quantity)} @ ${price}`);
+    INSERT INTO trades (id, instrument_id, side, quantity, price, executed_at)
+    VALUES ($1, $2, $3, $4, $5, NOW())
+  `, [tradeId++, instrumentId, side, quantity, price]);
+
+  console.log(`Trade: ${side.toUpperCase()} Instrument ${instrumentId}, quantity ${quantity} @ ${price}`);
 }
 
 /**

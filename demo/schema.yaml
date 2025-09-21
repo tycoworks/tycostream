@@ -1,3 +1,8 @@
+enums:
+  side:
+    - buy
+    - sell
+
 sources:
   live_pnl:
     primary_key: instrument_id
@@ -15,6 +20,7 @@ sources:
     columns:
       id: Integer
       instrument_id: Integer
+      side: side
       quantity: Integer
       price: Float
       executed_at: Timestamp

@@ -245,7 +245,7 @@ function getPositionsColumnConfig() {
 
 function getTradesColumnConfig() {
   return {
-    executed_at: { 
+    executed_at: {
       headerName: 'Executed At',
       width: 200,
       valueFormatter: params => {
@@ -256,15 +256,21 @@ function getTradesColumnConfig() {
     },
     id: { hide: true },
     instrument_id: { hide: true },
-    quantity: { 
+    side: {
+      headerName: 'Side',
+      width: 80,
+      cellStyle: params => ({
+        color: params.value === 'buy' ? 'green' : params.value === 'sell' ? 'red' : 'black',
+        fontWeight: 'normal'
+      }),
+      valueFormatter: params => params.value ? params.value.toUpperCase() : ''
+    },
+    quantity: {
       headerName: 'Quantity',
       width: 120,
-      valueFormatter: params => params.value != null ? Number(params.value).toLocaleString() : '',
-      cellStyle: params => ({
-        color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black'
-      })
+      valueFormatter: params => params.value != null ? Number(params.value).toLocaleString() : ''
     },
-    price: { 
+    price: {
       headerName: 'Price',
       width: 120,
       valueFormatter: params => params.value != null ? Number(params.value).toFixed(2) : ''
