@@ -185,21 +185,32 @@ async function setupDatabase() {
       ORDER BY instrument_id, Timestamp DESC
   `);
 
+  // Create intermediate view that normalizes trades to signed quantities and costs
+  await testEnv.executeSql(`
+    CREATE MATERIALIZED VIEW trades_normalized AS
+      SELECT
+        id,
+        instrument_id,
+        side,
+        quantity,
+        CASE WHEN side = 'buy' THEN quantity ELSE -quantity END AS signed_quantity,
+        CASE WHEN side = 'buy' THEN -price * quantity ELSE price * quantity END AS cash_flow,
+        price,
+        executed_at
+      FROM trades
+  `);
+
   await testEnv.executeSql(`
     CREATE MATERIALIZED VIEW live_pnl AS
       SELECT
         i.id AS instrument_id,
         i.symbol,
-        SUM(CASE WHEN t.side = 'buy' THEN t.quantity ELSE -t.quantity END) AS net_position,
+        SUM(t.signed_quantity) AS net_position,
         md.Price AS last_price,
-        round((ABS(SUM(CASE WHEN t.side = 'buy' THEN t.quantity ELSE -t.quantity END)) * md.Price)::numeric, 2) AS market_value,
-        round((
-          SUM(CASE WHEN t.side = 'sell' THEN t.price * t.quantity ELSE 0 END) -
-          SUM(CASE WHEN t.side = 'buy' THEN t.price * t.quantity ELSE 0 END)
-        )::numeric, 2) as realized_pnl,
-        round(((SUM(CASE WHEN t.side = 'buy' THEN t.quantity ELSE -t.quantity END) * md.Price) -
-               SUM(CASE WHEN t.side = 'buy' THEN t.price * t.quantity ELSE -t.price * t.quantity END))::numeric, 2) AS unrealized_pnl
-      FROM trades AS t
+        round((ABS(SUM(t.signed_quantity)) * md.Price)::numeric, 2) AS market_value,
+        round(SUM(t.cash_flow)::numeric, 2) as realized_pnl,
+        round(((SUM(t.signed_quantity) * md.Price) + SUM(t.cash_flow))::numeric, 2) AS unrealized_pnl
+      FROM trades_normalized AS t
       JOIN instruments AS i ON i.id = t.instrument_id
       JOIN latest_market_data AS md ON md.instrument_id = i.id
       GROUP BY i.id, i.symbol, md.Price

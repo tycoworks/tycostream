@@ -3,6 +3,10 @@ enums:
     - buy
     - sell
 
+  event_type:
+    - FIRE
+    - CLEAR
+
 sources:
   live_pnl:
     primary_key: instrument_id
@@ -32,5 +36,5 @@ sources:
       event_id: String
       timestamp: Timestamp
       trigger_name: String
-      event_type: String
+      event_type: event_type
       data: JSON
