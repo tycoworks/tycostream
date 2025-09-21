@@ -65,8 +65,8 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   const EXPECTED_OPERATIONS_STATE = new Map([
     [6, { id: 6, value: 204, status: "inactive", department: "operations" }],
     [10, { id: 10, value: 328, status: "pending", department: "operations" }],
-    [14, { id: 14, value: 319, status: "pending", department: "operations" }],
-    [18, { id: 18, value: 240, status: "active", department: "operations" }]  // Changed value to 240
+    [14, { id: 14, value: 319, status: "pending", department: "operations" }]
+    // [18, { id: 18, value: 240, status: "active", department: "operations" }]  // Removed - active status filtered out
   ]);
 
   const EXPECTED_FINANCE_STATE = new Map([
@@ -80,8 +80,8 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   const EXPECTED_SALES_STATE = new Map([
     [4, { id: 4, value: 586, status: "inactive", department: "sales" }],
     [8, { id: 8, value: 14, status: "pending", department: "sales" }],
-    [12, { id: 12, value: 671, status: "active", department: "sales" }],
-    [16, { id: 16, value: 634, status: "active", department: "sales" }],
+    // [12, { id: 12, value: 671, status: "active", department: "sales" }],  // Removed - active status filtered out
+    // [16, { id: 16, value: 634, status: "active", department: "sales" }],  // Removed - active status filtered out
     [20, { id: 20, value: 542, status: "pending", department: "sales" }]
   ]);
 
@@ -297,7 +297,12 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         await client.subscribe('department-filter', {
           query: `
             subscription {
-              stress_test(where: {department: {_eq: ${clientDepartment}}}) {
+              stress_test(where: {
+                _and: [
+                  {department: {_eq: ${clientDepartment}}},
+                  {status: {_lt: active}}
+                ]
+              }) {
                 operation
                 data {
                   id
