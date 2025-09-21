@@ -33,9 +33,14 @@ LOG_LEVEL=debug" > .env
 
 ```bash
 # Download and run schema generator in one command
-# Format: -s <source_name> -p <primary_key_column>
+# Supports both tables and materialized views
+# Optional: Define enums with -e and map columns with -c
 curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
-  bash -s -- -s users -p id -s orders -p order_id > schema.yaml
+  bash -s -- \
+    -e status "pending,active,completed" \
+    -e side "buy,sell" \
+    -s users -p id -c status:status \
+    -s orders -p order_id -c side:side > schema.yaml
 ```
 
 ### 3. Start tycostream:

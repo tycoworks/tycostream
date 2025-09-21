@@ -1,8 +1,15 @@
 #!/bin/bash
 
 # Generate schema.yaml from PostgreSQL/Materialize database
+# Supports both tables and materialized views as sources
 # Usage: ./generate-schema.sh [-e enum_name "value1,value2"] -s source1 -p pk1 [-c column:enum] [-s source2 -p pk2 ...] > schema.yaml
-# Example: ./generate-schema.sh -e status "pending,active,completed" -e side "buy,sell" -s trades -p id -c side:side -c trade_status:status > schema.yaml
+# Example:
+#   ./generate-schema.sh \
+#     -e side "buy,sell" \
+#     -e event_type "FIRE,CLEAR" \
+#     -s live_pnl -p instrument_id \
+#     -s trades -p id -c side:side \
+#     -s alerts -p id -c event_type:event_type > schema.yaml
 
 set -e
 
