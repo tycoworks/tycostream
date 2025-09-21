@@ -1,16 +1,17 @@
 #!/bin/bash
 
 # Generate schema.yaml from PostgreSQL/Materialize database
-# Usage: ./generate-schema.sh -s source1 -p pk1 [-s source2 -p pk2 ...] > schema.yaml
-# Example: ./generate-schema.sh -s users -p id -s orders -p id > schema.yaml
+# Usage: ./generate-schema.sh [-e enum_name "value1,value2"] -s source1 -p pk1 [-c column:enum] [-s source2 -p pk2 ...] > schema.yaml
+# Example: ./generate-schema.sh -e status "pending,active,completed" -e side "buy,sell" -s trades -p id -c side:side -c trade_status:status > schema.yaml
 
 set -e
 
 # Check arguments
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 -s source -p primary_key ..." >&2
-    echo "Example: $0 -s users -p id -s orders -p id > schema.yaml" >&2
+    echo "Usage: $0 [-e enum_name \"value1,value2\"] -s source -p primary_key [-c column:enum] ..." >&2
+    echo "Example: $0 -e status \"pending,active\" -s users -p id -c user_status:status > schema.yaml" >&2
     echo "Note: Primary key is required for each source" >&2
+    echo "      Use -c to map columns to enums (e.g., -c status:status or -c order_status:status)" >&2
     exit 1
 fi
 
@@ -54,14 +55,38 @@ map_type() {
     esac
 }
 
-# Parse arguments to build list of sources and their primary keys
+# Parse arguments to build list of sources, primary keys, enums, and column mappings
 SOURCES=""
 PRIMARY_KEYS=""
+ENUMS=""
+COLUMN_MAPPINGS=""  # Pipe-separated list of source|column:enum mappings
 current_source=""
+current_enum=""
 current_index=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -e|--enum)
+            if [ -n "$2" ] && [[ ! "$2" =~ ^- ]]; then
+                current_enum="$2"
+                if [ -n "$3" ] && [[ ! "$3" =~ ^- ]]; then
+                    # Store enum as name:values
+                    if [ -z "$ENUMS" ]; then
+                        ENUMS="$current_enum:$3"
+                    else
+                        ENUMS="$ENUMS|$current_enum:$3"
+                    fi
+                    shift 3
+                else
+                    echo "Error: -e requires enum name and values" >&2
+                    echo "Example: -e status \"pending,active,completed\"" >&2
+                    exit 1
+                fi
+            else
+                echo "Error: -e requires an enum name" >&2
+                exit 1
+            fi
+            ;;
         -s|--source)
             # Check if previous source has a primary key
             if [ -n "$current_source" ]; then
@@ -107,9 +132,28 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
+        -c|--column)
+            if [ -z "$current_source" ]; then
+                echo "Error: -c must come after -s" >&2
+                exit 1
+            fi
+            if [ -n "$2" ] && [[ ! "$2" =~ ^- ]]; then
+                # Add column mapping for current source
+                if [ -z "$COLUMN_MAPPINGS" ]; then
+                    COLUMN_MAPPINGS="$current_source|$2"
+                else
+                    COLUMN_MAPPINGS="$COLUMN_MAPPINGS,$current_source|$2"
+                fi
+                shift 2
+            else
+                echo "Error: -c requires a column:enum mapping" >&2
+                echo "Example: -c status:status or -c order_status:status" >&2
+                exit 1
+            fi
+            ;;
         *)
             echo "Error: Unknown option $1" >&2
-            echo "Usage: $0 -s source [-p primary_key] ..." >&2
+            echo "Usage: $0 [-e enum_name \"values\"] -s source -p primary_key [-c column:enum] ..." >&2
             exit 1
             ;;
     esac
@@ -125,11 +169,28 @@ fi
 
 if [ -z "$SOURCES" ]; then
     echo "Error: No sources specified" >&2
-    echo "Usage: $0 -s source -p primary_key ..." >&2
+    echo "Usage: $0 [-e enum_name \"values\"] -s source -p primary_key [-c column:enum] ..." >&2
     exit 1
 fi
 
-# Start output
+# Output enums if any were defined
+if [ -n "$ENUMS" ]; then
+    echo "enums:"
+    IFS='|' read -ra ENUM_ARRAY <<< "$ENUMS"
+    for enum in "${ENUM_ARRAY[@]}"; do
+        IFS=':' read -r name values <<< "$enum"
+        echo "  $name:"
+        IFS=',' read -ra VALUE_ARRAY <<< "$values"
+        for value in "${VALUE_ARRAY[@]}"; do
+            # Trim whitespace
+            value=$(echo "$value" | xargs)
+            echo "    - $value"
+        done
+    done
+    echo ""
+fi
+
+# Start sources output
 echo "sources:"
 
 # Convert to arrays
@@ -158,8 +219,28 @@ for source in "${SOURCE_ARRAY[@]}"; do
 
     # Process each column (format: name|nullable|type)
     while IFS='|' read -r name nullable type; do
-        mapped_type=$(map_type "$type")
-        echo "      $name: $mapped_type"
+        # Check if this column has an explicit enum mapping
+        enum_match=""
+        if [ -n "$COLUMN_MAPPINGS" ]; then
+            IFS=',' read -ra MAPPING_ARRAY <<< "$COLUMN_MAPPINGS"
+            for mapping in "${MAPPING_ARRAY[@]}"; do
+                IFS='|' read -r map_source map_col_enum <<< "$mapping"
+                if [ "$map_source" = "$source" ]; then
+                    IFS=':' read -r col_name enum_name <<< "$map_col_enum"
+                    if [ "$col_name" = "$name" ]; then
+                        enum_match="$enum_name"
+                        break
+                    fi
+                fi
+            done
+        fi
+
+        if [ -n "$enum_match" ]; then
+            echo "      $name: $enum_match"
+        else
+            mapped_type=$(map_type "$type")
+            echo "      $name: $mapped_type"
+        fi
     done <<< "$COLUMNS"
 
     ((index++))
