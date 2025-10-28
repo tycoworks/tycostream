@@ -152,6 +152,35 @@ The calculated state system:
 4. Source emits rows with synthetic fields included
 5. View applies filtering on the complete row (including calculated fields)
 
+### Event Identity and Deduplication
+
+Each event in the stream includes a unique `eventId` with the format `source:primaryKey:timestamp`. This enables:
+
+**Deduplication**: Clients can track which events they've processed, avoiding duplicate handling on reconnection:
+```typescript
+const processedEvents = new Set<string>();
+subscription.subscribe((event) => {
+  if (processedEvents.has(event.eventId)) return; // Skip duplicate
+  processedEvents.add(event.eventId);
+  // Process state transition
+});
+```
+
+**Audit Trail**: State transitions can be logged with stable identifiers:
+```typescript
+if (event.row.risk_level === 'critical') {
+  auditLog.write({
+    eventId: event.eventId,
+    message: `Position ${event.row.position_id} entered critical state`,
+    timestamp: new Date()
+  });
+}
+```
+
+**Idempotency**: Multiple subscribers or retries can safely process the same event without side effects, as they can detect when an event has already been handled.
+
+This is particularly valuable for calculated states where state transitions (safe → critical) are business-critical events that applications need to track reliably.
+
 ### Integration with Triggers and Views
 
 #### Triggers
