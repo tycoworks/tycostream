@@ -92,4 +92,4 @@ https://github.com/user-attachments/assets/20ca8223-cec1-43fa-bafb-868ce2ae9985
 
 ## What's Next
 
-See the [roadmap](./docs/development/roadmap.md) for planned features.
+See the [roadmap](./docs/roadmap.md) for planned features.
