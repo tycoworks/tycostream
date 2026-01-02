@@ -90,8 +90,6 @@ https://github.com/user-attachments/assets/20ca8223-cec1-43fa-bafb-868ce2ae9985
 
 ---
 
-## Vision & Roadmap
+## What's Next
 
-tycostream aims to become the '**Hasura for streaming databases**.'
-
-See the [vision](./docs/development/vision.md) and [roadmap](./docs/development/roadmap.md) for more details.
+See the [roadmap](./docs/development/roadmap.md) for planned features.
