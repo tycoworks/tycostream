@@ -53,7 +53,7 @@ Starting test environment:
       name: 'materialize',
       workers: '1'
     },
-    graphqlUI: false,
+    graphqlUI: true,
     logLevel: 'error',
     webhook: {
       port: 3001

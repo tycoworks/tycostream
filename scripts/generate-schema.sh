@@ -224,8 +224,8 @@ for source in "${SOURCE_ARRAY[@]}"; do
 
     echo "    columns:"
 
-    # Process each column (format: name|nullable|type)
-    while IFS='|' read -r name nullable type; do
+    # Process each column (format: name|nullable|type|comment)
+    while IFS='|' read -r name nullable type comment; do
         # Check if this column has an explicit enum mapping
         enum_match=""
         if [ -n "$COLUMN_MAPPINGS" ]; then
