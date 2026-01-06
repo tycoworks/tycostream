@@ -114,7 +114,7 @@ This starts a complete example with:
 
 Visit http://localhost:5173 to see the demo UI.
 
-https://github.com/user-attachments/assets/20ca8223-cec1-43fa-bafb-868ce2ae9985
+https://github.com/user-attachments/assets/c5406eb6-0f1e-48ae-ae78-0cadb874b443
 
 ---
 
