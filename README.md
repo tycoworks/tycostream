@@ -6,9 +6,11 @@ tycostream turns [Materialize](https://materialize.com/) views into GraphQL APIs
 - **Subscriptions** — Subscribe to any view and get updates over WebSockets
 - **Triggers** — Fire webhooks when data meets specific conditions
 
+[Learn more about why I built this →](https://tycoworks.substack.com/p/tycostream-turn-materialize-views)
+
 ---
 
-## 🏁 Quickstart
+## Quickstart
 
 ### 1. Configure connection details
 
