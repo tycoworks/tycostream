@@ -1,9 +1,7 @@
 import { Module, Logger } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
-import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { YogaDriver, YogaDriverConfig } from '@graphql-yoga/nestjs';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
-import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import { generateSchema } from './schema';
 import type { SourceConfiguration } from '../config/source.types';
 import { buildSubscriptionResolvers } from './subscription.resolver';
@@ -18,8 +16,8 @@ import { SubscriptionService } from './subscription.service';
 @Module({
   imports: [
     ViewModule,
-    GraphQLModule.forRootAsync<ApolloDriverConfig>({
-      driver: ApolloDriver,
+    GraphQLModule.forRootAsync<YogaDriverConfig>({
+      driver: YogaDriver,
       imports: [ConfigModule, ViewModule],
       /**
        * Factory function runs after ConfigModule loads source definitions
@@ -53,37 +51,18 @@ import { SubscriptionService } from './subscription.service';
           `GraphQL: Port ${graphqlConfig.port}, Playground ${graphqlConfig.playground ? 'enabled' : 'disabled'}`,
         );
 
-        // Configure landing page plugin based on GRAPHQL_UI environment variable
-        const landingPagePlugin = graphqlConfig.playground
-          ? ApolloServerPluginLandingPageLocalDefault({
-              embed: true,
-              includeCookies: true,
-            })
-          : ApolloServerPluginLandingPageDisabled();
-
+        // Subscriptions are served over SSE, Yoga's default. Leaving the
+        // driver's `subscriptions` option unset keeps WebSockets off.
         return {
           typeDefs,
-          introspection: true, // Always enable introspection for API discovery
-          csrfPrevention: true, // Always enabled - Apollo Sandbox handles this properly
-          playground: false, // Explicitly disable - we handle via plugins instead
-          plugins: [landingPagePlugin],
-          subscriptions: {
-            'graphql-ws': true,
-            'subscriptions-transport-ws': true,
-          },
+          graphiql: graphqlConfig.playground, // GRAPHQL_UI turns on the GraphiQL UI
+          maskedErrors: false, // Send resolver error messages to clients, as Apollo did
           resolvers: {
             Query: {
               ping: () => 'pong',
             },
             Subscription: subscriptionResolvers,
           },
-          // CORS configuration for development when playground is enabled
-          ...(graphqlConfig.playground && {
-            cors: {
-              origin: true,
-              credentials: true,
-            },
-          }),
         };
       },
       inject: [ConfigService, ViewService],

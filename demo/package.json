@@ -25,9 +25,9 @@
     "vite": "^7.0.0"
   },
   "dependencies": {
-    "@apollo/client": "^3.13.8",
+    "@apollo/client": "^4.3.7",
+    "@graphql-yoga/apollo-link": "^6.0.1",
     "ag-grid-community": "^34.0.0",
-    "graphql": "^16.11.0",
-    "graphql-ws": "^6.0.5"
+    "graphql": "^16.11.0"
   }
 }

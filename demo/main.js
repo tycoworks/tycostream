@@ -2,8 +2,7 @@ import { createGrid, ModuleRegistry, AllCommunityModule } from 'ag-grid-communit
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
 import { ApolloClient, InMemoryCache, gql } from '@apollo/client/core';
-import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
-import { createClient } from 'graphql-ws';
+import { YogaLink } from '@graphql-yoga/apollo-link';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -48,10 +47,9 @@ const TRADES_SUBSCRIPTION = `
 let positionsGridApi;
 let tradesGridApi;
 
-// Setup Apollo client
-const wsClient = createClient({ url: 'ws://localhost:4000/graphql' });
+// Setup Apollo client (subscriptions arrive over SSE)
 const client = new ApolloClient({
-  link: new GraphQLWsLink(wsClient),
+  link: new YogaLink({ endpoint: 'http://localhost:4000/graphql' }),
   cache: new InMemoryCache()
 });
 

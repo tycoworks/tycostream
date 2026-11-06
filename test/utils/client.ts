@@ -1,7 +1,5 @@
 import { ApolloClient, InMemoryCache } from '@apollo/client';
-import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
-import { createClient } from 'graphql-ws';
-import WebSocket from 'ws';
+import { YogaLink } from '@graphql-yoga/apollo-link';
 import { createSubscriptionHandler } from './subscription';
 import { EventHandler, Stats } from './events';
 import { StateManager, StatefulItem, State } from './state';
@@ -29,17 +27,11 @@ export class TestClient<TData = any> implements StatefulItem {
   stateManager: StateManager<EventHandler>;
 
   constructor(private options: TestClientOptions) {
-    // Create Apollo client with WebSocket support using graphql-ws
+    // Create Apollo client that receives subscriptions over SSE
     const { host, port, path } = options.graphqlEndpoint;
-    const wsUrl = `ws://${host}:${port}${path}`;
-
-    const wsClient = createClient({
-      url: wsUrl,
-      webSocketImpl: WebSocket as any,
-    });
 
     this.graphqlClient = new ApolloClient({
-      link: new GraphQLWsLink(wsClient),
+      link: new YogaLink({ endpoint: `http://${host}:${port}${path}` }),
       cache: new InMemoryCache(),
     });
 
