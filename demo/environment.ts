@@ -23,7 +23,6 @@ let testEnv: TestEnvironment;
 // Auto-incrementing ID counters for market data and trades
 let marketDataId = 1;
 let tradeId = 1;
-let alertId = 1;
 
 // Automatically start the demo when this file is executed directly
 if (require.main === module) {
@@ -54,17 +53,9 @@ Starting test environment:
       workers: '1'
     },
     graphqlUI: true,
-    logLevel: 'error',
-    webhook: {
-      port: 3001
-    }
+    logLevel: 'error'
   });
   console.log('Test environment created successfully');
-  
-  // Set up webhook handler for demo alerts
-  console.log('Setting up webhook handler...');
-  await setupWebhook();
-  console.log('Webhook handler setup complete');
   
   // Initialize database schema and tables
   console.log('Setting up database schema...');
@@ -115,17 +106,6 @@ Starting test environment:
 }
 
 /**
- * Set up webhook handler for alerts
- */
-async function setupWebhook() {
-  testEnv.registerWebhook('/webhook', async (payload) => {
-    console.log('Webhook received:', JSON.stringify(payload, null, 2));
-    await insertAlert(payload.event_id, payload.trigger_name, payload.event_type, payload.data);
-  });
-  console.log('Webhook handler registered at http://localhost:3001/webhook');
-}
-
-/**
  * Creates database tables and materialized views for the demo
  */
 async function setupDatabase() {  
@@ -155,17 +135,6 @@ async function setupDatabase() {
       instrument_id INT NOT NULL,
       Price DOUBLE PRECISION,
       Timestamp BIGINT
-    )
-  `);
-
-  await testEnv.executeSql(`
-    CREATE TABLE alerts (
-      id INTEGER,
-      event_id TEXT,
-      timestamp TIMESTAMPTZ DEFAULT NOW(),
-      trigger_name TEXT,
-      event_type TEXT,
-      data JSONB
     )
   `);
 
@@ -276,24 +245,6 @@ async function insertTrade(instrumentId: number, side: string, quantity: number)
   `, [tradeId++, instrumentId, side, quantity, price]);
 
   console.log(`Trade: ${side.toUpperCase()} Instrument ${instrumentId}, quantity ${quantity} @ ${price}`);
-}
-
-/**
- * Inserts an alert record from a webhook payload
- */
-async function insertAlert(eventId: string, triggerName: string, eventType: string, data: any) {
-  await testEnv.executeSql(`
-    INSERT INTO alerts (id, event_id, trigger_name, event_type, data)
-    VALUES ($1, $2, $3, $4, $5)
-  `, [
-    alertId++,
-    eventId,
-    triggerName,
-    eventType,
-    JSON.stringify(data)
-  ]);
-  
-  console.log(`Alert inserted: ${eventId} - ${triggerName} - ${eventType}`);
 }
 
 export { runLiveEnvironment };

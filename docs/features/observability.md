@@ -58,15 +58,6 @@ tycostream_db_errors_total             # Database errors by type
 tycostream_db_reconnects_total         # Database reconnection attempts
 ```
 
-#### Trigger Metrics
-```
-tycostream_triggers_active             # Active triggers
-tycostream_triggers_fired_total        # Triggers fired by name
-tycostream_triggers_webhook_success    # Successful webhook deliveries
-tycostream_triggers_webhook_failures   # Failed webhook deliveries
-tycostream_triggers_webhook_duration   # Webhook delivery time
-```
-
 ### Business Metrics
 
 ```
@@ -142,7 +133,6 @@ For Milestone 3, add distributed tracing:
 - GraphQL request processing
 - Database queries
 - View filtering
-- Webhook delivery
 - Cache operations
 ```
 
@@ -197,7 +187,6 @@ Create dashboards for:
 - Slow consumer detected
 - High buffer usage
 - Increased latency
-- Failed webhook deliveries
 
 ## Development vs Production
 

@@ -1,10 +1,6 @@
 # tycostream
 
-tycostream turns [Materialize](https://materialize.com/) views into GraphQL APIs, so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
-
-**Key features:**
-- **Subscriptions** — Subscribe to any view and get updates over WebSockets
-- **Triggers** — Fire webhooks when data meets specific conditions
+tycostream turns [Materialize](https://materialize.com/) views into GraphQL subscriptions over WebSockets, so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
 
 [Learn more about why I built this →](https://tycoworks.substack.com/p/tycostream-turn-materialize-views)
 

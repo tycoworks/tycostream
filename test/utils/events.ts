@@ -47,7 +47,7 @@ export interface EventProcessor<TData = any> {
 }
 
 /**
- * Interface for event sources (GraphQL subscriptions, webhooks, etc.)
+ * Interface for event sources (GraphQL subscriptions)
  * Handles setting up the transport and delivering events via callback
  */
 export interface EventStream<TData = any> {

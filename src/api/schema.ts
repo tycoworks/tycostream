@@ -26,10 +26,7 @@ export function generateSchema(config: SourceConfiguration): string {
   const enumComparisonTypes = buildEnumComparisonTypes(enums);
   const comparisonTypes = buildComparisonTypes();
   const expressionInputTypes = buildExpressionInputTypes(sources);
-  const triggerInputTypes = buildTriggerInputTypes(sources);
   const sourceTypes = buildSourceTypes(sources);
-  const queryFields = buildQueryFields(sources);
-  const mutationFields = buildMutationFields(sources);
   const subscriptionFields = buildSubscriptionFields(sources);
   
   let schema = `
@@ -44,14 +41,6 @@ export function generateSchema(config: SourceConfiguration): string {
 
     ${enumTypeDefinitions}
     
-    # Trigger type (returned by queries and mutations)
-    type Trigger {
-      name: ${GraphQLString.name}!
-      webhook: ${GraphQLString.name}!
-      fire: ${GraphQLString.name}!
-      clear: ${GraphQLString.name}
-    }
-    
     # ================== INPUT TYPES ==================
 
 ${comparisonTypes}
@@ -60,22 +49,15 @@ ${enumComparisonTypes}
 
 ${expressionInputTypes}
     
-${triggerInputTypes}
-    
     # ================== OBJECT TYPES ==================
     
 ${sourceTypes}
     
     # ================== ROOT TYPES ==================
     
-    # Queries
+    # Basic query (required by GraphQL)
     type Query {
-${queryFields}
-    }
-    
-    # Mutations
-    type Mutation {
-${mutationFields}
+      ping: ${GraphQLString.name}
     }
     
     # Subscriptions
@@ -209,36 +191,6 @@ ${fields}
 }
 
 /**
- * Build query fields for triggers
- * Creates query fields for listing and getting triggers per source
- */
-function buildQueryFields(sources: Map<string, SourceDefinition>): string {
-  const fields: string[] = [];
-  
-  for (const sourceName of sources.keys()) {
-    fields.push(`      ${sourceName}_triggers: [Trigger!]!`);
-    fields.push(`      ${sourceName}_trigger(name: ${GraphQLString.name}!): Trigger`);
-  }
-  
-  return fields.join('\n');
-}
-
-/**
- * Build mutation fields for triggers
- * Creates mutation fields for creating and deleting triggers per source
- */
-function buildMutationFields(sources: Map<string, SourceDefinition>): string {
-  const fields: string[] = [];
-  
-  for (const sourceName of sources.keys()) {
-    fields.push(`      create_${sourceName}_trigger(input: ${sourceName}TriggerInput!): Trigger!`);
-    fields.push(`      delete_${sourceName}_trigger(name: ${GraphQLString.name}!): Trigger!`);
-  }
-  
-  return fields.join('\n');
-}
-
-/**
  * Build subscription fields for all sources
  * Creates a subscription field for each source that returns its update type
  */
@@ -251,7 +203,7 @@ function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string
 /**
  * Build expression input types for all sources
  * Creates expression input types for each source with field comparisons and logical operators
- * Used by both subscriptions (where) and triggers (fire/clear)
+ * Used by subscriptions (where)
  */
 function buildExpressionInputTypes(sources: Map<string, SourceDefinition>): string {
   const inputTypes: string[] = [];
@@ -264,32 +216,12 @@ function buildExpressionInputTypes(sources: Map<string, SourceDefinition>): stri
       })
       .join('\n');
     
-    inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions and triggers)
+    inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions)
     input ${sourceName}Expression {
 ${fieldComparisons}
       _and: [${sourceName}Expression!]
       _or: [${sourceName}Expression!]
       _not: ${sourceName}Expression
-    }`);
-  }
-  
-  return inputTypes.join('\n\n');
-}
-
-/**
- * Build trigger input types for all sources
- * Creates input types for creating triggers for each source
- */
-function buildTriggerInputTypes(sources: Map<string, SourceDefinition>): string {
-  const inputTypes: string[] = [];
-  
-  for (const sourceName of sources.keys()) {
-    inputTypes.push(`    # ${sourceName} trigger input
-    input ${sourceName}TriggerInput {
-      name: ${GraphQLString.name}!
-      webhook: ${GraphQLString.name}!
-      fire: ${sourceName}Expression!
-      clear: ${sourceName}Expression
     }`);
   }
   

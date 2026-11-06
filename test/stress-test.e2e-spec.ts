@@ -40,13 +40,13 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     { type: OperationType.UPDATE, id: 10, fields: { status: "pending" } },
     { type: OperationType.INSERT, id: 16, fields: { value: 292, status: "inactive", department: "sales" } },
     { type: OperationType.UPDATE, id: 16, fields: { value: 634, status: "active" } },
-    { type: OperationType.UPDATE, id: 11, fields: { value: 450 } },  // CLEAR high_value_trigger (was 677, drops below 500)
+    { type: OperationType.UPDATE, id: 11, fields: { value: 450 } },
     { type: OperationType.INSERT, id: 17, fields: { value: 191, status: "pending", department: "engineering" } },
     { type: OperationType.UPDATE, id: 9, fields: { value: 113 } },
-    { type: OperationType.UPDATE, id: 9, fields: { status: "inactive" } },  // CLEAR engineering_active_trigger
+    { type: OperationType.UPDATE, id: 9, fields: { status: "inactive" } },
     { type: OperationType.INSERT, id: 18, fields: { value: 922, status: "active", department: "operations" } },
     { type: OperationType.DELETE, id: 13, fields: {} },
-    { type: OperationType.UPDATE, id: 18, fields: { value: 240 } },  // CLEAR operations_value_trigger (was 922, drops below 250)
+    { type: OperationType.UPDATE, id: 18, fields: { value: 240 } },
     { type: OperationType.INSERT, id: 19, fields: { value: 900, status: "inactive", department: "finance" } },
     { type: OperationType.UPDATE, id: 15, fields: { status: "inactive" } },
     { type: OperationType.INSERT, id: 20, fields: { value: 542, status: "pending", department: "sales" } },
@@ -94,31 +94,6 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
 
   const DEPARTMENTS = Array.from(DEPARTMENT_STATES.keys());
 
-  // Expected trigger events for base iteration (will be expanded for multiple iterations)
-  const EXPECTED_HIGH_VALUE_EVENTS = [
-    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 7, value: 720, status: 'inactive', department: 'finance' }},
-    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 11, value: 677, status: 'pending', department: 'finance' }},
-    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 12, value: 671, status: 'active', department: 'sales' }},
-    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 15, value: 807, status: 'active', department: 'finance' }},
-    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 16, value: 634, status: 'active', department: 'sales' }},
-    { event_type: 'CLEAR', trigger_name: 'high_value_trigger', data: { id: 11, value: 450, status: 'pending', department: 'finance' }},  // CLEAR when 11 drops below 500
-    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }},
-    { event_type: 'CLEAR', trigger_name: 'high_value_trigger', data: { id: 18, value: 240, status: 'active', department: 'operations' }},  // CLEAR when 18 drops below 500
-    { event_type: 'FIRE', trigger_name: 'high_value_trigger', data: { id: 19, value: 900, status: 'inactive', department: 'finance' }}
-  ];
-
-  const EXPECTED_ENGINEERING_ACTIVE_EVENTS = [
-    { event_type: 'FIRE', trigger_name: 'engineering_active_trigger', data: { id: 9, value: 26, status: 'active', department: 'engineering' }},
-    { event_type: 'CLEAR', trigger_name: 'engineering_active_trigger', data: { id: 9, value: 113, status: 'inactive', department: 'engineering' }}  // CLEAR when status changes
-  ];
-
-  const EXPECTED_OPERATIONS_VALUE_EVENTS = [
-    { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 10, value: 328, status: 'inactive', department: 'operations' }},
-    { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 14, value: 319, status: 'pending', department: 'operations' }},
-    { event_type: 'FIRE', trigger_name: 'operations_value_trigger', data: { id: 18, value: 922, status: 'active', department: 'operations' }},
-    { event_type: 'CLEAR', trigger_name: 'operations_value_trigger', data: { id: 18, value: 240, status: 'active', department: 'operations' }}  // CLEAR when 18 drops below 250
-  ];
-
   beforeAll(async () => {
     console.log(`Starting stress test with ${OPERATION_SEQUENCE.length} base operations and ${NUM_CLIENTS} concurrent clients`);
     
@@ -135,10 +110,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
         workers: '4'
       },
       graphqlUI: false,
-      logLevel: 'error',
-      webhook: {
-        port: 3001
-      }
+      logLevel: 'error'
     });
     
     // Create test table
@@ -156,7 +128,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     await testEnv.stop();
   });
 
-  it('should handle concurrent clients with static operations and triggers', async () => {
+  it('should handle concurrent clients with static operations', async () => {
     // Create test scenario with all operations and expected states
     const scenario = new TestScenario(OPERATION_SEQUENCE, NUM_ITERATIONS);
     const allOperations = scenario.getOperations();
@@ -164,113 +136,6 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     console.log(`Executing ${allOperations.length} operations (${NUM_ITERATIONS} iterations of ${OPERATION_SEQUENCE.length} operations)...`);
     
     try {
-      // Set up triggers before starting operations
-      console.log('Setting up triggers...');
-      
-      // Create trigger clients
-      const triggerClient1 = testEnv.createClient('trigger-high-value');
-      const triggerClient2 = testEnv.createClient('trigger-engineering-active');
-      const triggerClient3 = testEnv.createClient('trigger-operations-value');
-      
-      // High Value Trigger: Match when value >= 600, unmatch when value < 500
-      await triggerClient1.trigger('high-value', {
-        query: `
-          mutation CreateHighValueTrigger($webhookUrl: String!) {
-            create_stress_test_trigger(input: {
-              name: "high_value_trigger"
-              webhook: $webhookUrl
-              fire: {
-                value: { _gte: 600 }
-              }
-              clear: {
-                value: { _lt: 500 }
-              }
-            }) {
-              name
-              webhook
-            }
-          }
-        `,
-        deleteQuery: `
-          mutation DeleteHighValueTrigger($name: String!) {
-            delete_stress_test_trigger(name: $name) {
-              name
-            }
-          }
-        `,
-        expectedEvents: scenario.getTriggerEvents(EXPECTED_HIGH_VALUE_EVENTS),
-        idField: 'event_id'
-      });
-      
-      // Engineering Active Trigger: Match when department = "engineering" AND status >= "active"
-      // Tests enum ordinal comparison - since "active" is the highest, _gte: active only matches active
-      // Unmatch when still in engineering but status < active
-      await triggerClient2.trigger('engineering-active', {
-        query: `
-          mutation CreateEngineeringActiveTrigger($webhookUrl: String!) {
-            create_stress_test_trigger(input: {
-              name: "engineering_active_trigger"
-              webhook: $webhookUrl
-              fire: {
-                department: { _eq: engineering }
-                status: { _gte: active }
-              }
-              clear: {
-                department: { _eq: engineering }
-                status: { _lt: active }
-              }
-            }) {
-              name
-              webhook
-            }
-          }
-        `,
-        deleteQuery: `
-          mutation DeleteEngineeringActiveTrigger($name: String!) {
-            delete_stress_test_trigger(name: $name) {
-              name
-            }
-          }
-        `,
-        expectedEvents: scenario.getTriggerEvents(EXPECTED_ENGINEERING_ACTIVE_EVENTS),
-        idField: 'event_id'
-      });
-      
-      // Operations Value Trigger: Match when department = "operations" AND value >= 300
-      // Unmatch when still in operations but value drops below 250 (hysteresis)
-      await triggerClient3.trigger('operations-value', {
-        query: `
-          mutation CreateOperationsValueTrigger($webhookUrl: String!) {
-            create_stress_test_trigger(input: {
-              name: "operations_value_trigger"
-              webhook: $webhookUrl
-              fire: {
-                department: { _eq: operations }
-                value: { _gte: 300 }
-              }
-              clear: {
-                department: { _eq: operations }
-                value: { _lt: 250 }
-              }
-            }) {
-              name
-              webhook
-            }
-          }
-        `,
-        deleteQuery: `
-          mutation DeleteOperationsValueTrigger($name: String!) {
-            delete_stress_test_trigger(name: $name) {
-              name
-            }
-          }
-        `,
-        expectedEvents: scenario.getTriggerEvents(EXPECTED_OPERATIONS_VALUE_EVENTS),
-        idField: 'event_id'
-      });
-      
-      console.log('Triggers set up successfully');
-
       // Execute the operations asynchronously
       const operationsPromise = (async () => {
         for (const { sql, params } of allOperations) {
@@ -332,11 +197,10 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
       await testEnv.waitForCompletion();
       
       console.log(`Stress test completed successfully. All ${NUM_CLIENTS} subscription clients received their department-filtered data.`);
-      console.log(`All 3 trigger clients received their expected webhook events (both FIRE and CLEAR).`);
       
       // Log final stats
       const stats = testEnv.getStats();
-      console.log(`Test completed: received ${stats.totalReceived}/${stats.totalExpected} total items across all clients and triggers`);
+      console.log(`Test completed: received ${stats.totalReceived}/${stats.totalExpected} total items across all clients`);
       
     } catch (error) {
       console.error('Test failed:', error);

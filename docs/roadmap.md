@@ -18,13 +18,6 @@
 - ✅ Multiple sources per database
 - ✅ Multiple concurrent clients supported
 
-## 🔔 Event Triggers
-
-- ✅ Webhook delivery on data conditions
-- ✅ Different fire/clear thresholds (hysteresis support)
-- ✅ GraphQL mutations for trigger management
-- ✅ In-memory trigger storage (ephemeral)
-
 ## 🚀 Developer Experience
 
 - ✅ Start with a single npm run command

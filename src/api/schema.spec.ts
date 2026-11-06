@@ -12,10 +12,16 @@ describe('generateSchema', () => {
   it('should generate root types even with no sources', () => {
     const schema = generateSchema(createConfig());
     
-    // Should have all three root types
+    // Query and Subscription root types; there are no mutations
     expect(schema).toContain('type Query {');
-    expect(schema).toContain('type Mutation {');
     expect(schema).toContain('type Subscription {');
+    expect(schema).not.toContain('type Mutation');
+  });
+
+  it('should define a ping query, since GraphQL requires at least one query field', () => {
+    const schema = generateSchema(createConfig());
+    
+    expect(schema).toContain('ping: String');
   });
 
   it('should define RowOperation enum for subscription events', () => {
@@ -25,16 +31,6 @@ describe('generateSchema', () => {
     expect(schema).toContain('INSERT');
     expect(schema).toContain('UPDATE');
     expect(schema).toContain('DELETE');
-  });
-
-  it('should define Trigger type for trigger operations', () => {
-    const schema = generateSchema(createConfig());
-    
-    expect(schema).toContain('type Trigger {');
-    expect(schema).toContain('name: String!');
-    expect(schema).toContain('webhook: String!');
-    expect(schema).toContain('fire: String!');
-    expect(schema).toContain('clear: String');
   });
 
   it('should define comparison input types for filtering', () => {
@@ -58,67 +54,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('input BooleanComparison');
   });
 
-  it('should generate query fields for triggers', () => {
-    const sources = new Map<string, SourceDefinition>([
-      ['trades', {
-        name: 'trades',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.Integer },
-          { name: 'symbol', dataType: DataType.String },
-        ],
-      }],
-    ]);
-    
-    const schema = generateSchema(createConfig(sources));
-    
-    // Should have trigger query fields
-    expect(schema).toContain('trades_triggers: [Trigger!]!');
-    expect(schema).toContain('trades_trigger(name: String!): Trigger');
-  });
-
-  it('should generate mutation fields for triggers', () => {
-    const sources = new Map<string, SourceDefinition>([
-      ['trades', {
-        name: 'trades',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.Integer },
-          { name: 'symbol', dataType: DataType.String },
-        ],
-      }],
-    ]);
-    
-    const schema = generateSchema(createConfig(sources));
-    
-    // Should have trigger mutation fields
-    expect(schema).toContain('create_trades_trigger(input: tradesTriggerInput!): Trigger!');
-    expect(schema).toContain('delete_trades_trigger(name: String!): Trigger!');
-  });
-
-  it('should generate trigger input types for each source', () => {
-    const sources = new Map<string, SourceDefinition>([
-      ['trades', {
-        name: 'trades',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.Integer },
-          { name: 'symbol', dataType: DataType.String },
-        ],
-      }],
-    ]);
-    
-    const schema = generateSchema(createConfig(sources));
-    
-    // Should have trigger input type
-    expect(schema).toContain('input tradesTriggerInput {');
-    expect(schema).toContain('name: String!');
-    expect(schema).toContain('webhook: String!');
-    expect(schema).toContain('fire: tradesExpression!');
-    expect(schema).toContain('clear: tradesExpression');
-  });
-
-  it('should generate expression input types that work for both subscriptions and triggers', () => {
+  it('should generate expression input types for subscription filters', () => {
     const sources = new Map<string, SourceDefinition>([
       ['trades', {
         name: 'trades',

@@ -2,7 +2,7 @@
 
 ## Overview
 
-tycostream is a real-time data streaming platform that bridges database sources (views, tables, or any SELECT-able object) to GraphQL subscriptions and webhook triggers. It provides a simple, configuration-driven approach to exposing streaming SQL data through a unified GraphQL API for both subscriptions and trigger management.
+tycostream is a real-time data streaming component that bridges database sources (views, tables, or any SELECT-able object) to GraphQL subscriptions. It provides a simple, configuration-driven approach to exposing streaming SQL data through a GraphQL API.
 
 ## Technology Stack
 
@@ -57,11 +57,9 @@ Core streaming logic that bridges database and API layers:
 Unified GraphQL API for all operations:
 - Dynamic GraphQL schema generation from YAML configuration
 - Subscription endpoints with filtered streaming support
-- Mutation/Query endpoints for trigger management (create/delete/list)
 - WebSocket handling via NestJS GraphQL module
 - Automatic client connection lifecycle management
 - Filter expression parsing and validation
-- Field selection support for webhook payloads
 
 ### Configuration & Common (`src/config/` and `src/common/`)
 Shared infrastructure:
@@ -74,7 +72,7 @@ Shared infrastructure:
 ## Data Flow
 
 1. **Initial Connection**
-   - Client connects via GraphQL WebSocket subscription or creates trigger via GraphQL mutation
+   - Client connects via GraphQL WebSocket subscription
    - ViewService creates a View instance for the source + filter combination
    - Source connects to database if not already connected
 
@@ -83,7 +81,6 @@ Shared infrastructure:
    - Initial rows populate Source's in-memory cache
    - View filters cached state based on filter expression
    - GraphQL clients receive filtered snapshot as individual events
-   - Triggers can skip snapshot for "from now on" semantics
 
 3. **Live Updates**
    - Materialize sends incremental updates (may have partial data)
@@ -91,7 +88,6 @@ Shared infrastructure:
    - Updates applied to cache and propagated through unified stream
    - View transforms events: filtering rows in/out based on expression
    - GraphQL: Filtered events delivered to subscribed clients
-   - Triggers: INSERT events fire webhooks (match), DELETE events clear (unmatch)
 
 4. **Late Joiner Handling**
    - New subscribers receive filtered cached state immediately
@@ -132,5 +128,3 @@ The architecture supports several evolution paths without major rewrites:
 - **Advanced Filtering**: Push complex filters to Materialize WHERE clauses for efficiency
 - **Multiple Sources**: Router pattern for source-specific handlers
 - **Monitoring**: OpenTelemetry instrumentation points
-- **Webhook Delivery**: Retry logic, dead letter queues, and delivery guarantees
-- **Trigger Persistence**: Optional database backing for trigger definitions

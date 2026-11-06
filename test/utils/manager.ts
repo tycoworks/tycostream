@@ -2,7 +2,6 @@ import { TestClient } from './client';
 import { Stats } from './events';
 import { State, StateManager, StatefulItem } from './state';
 import { GraphQLEndpoint } from './environment';
-import { WebhookEndpoint } from './webhook';
 
 export class TestClientManager<TData = any> implements StatefulItem {
   // === State Management ===
@@ -11,15 +10,12 @@ export class TestClientManager<TData = any> implements StatefulItem {
   // === Configuration ===
   private livenessTimeoutMs: number;
   private graphqlEndpoint: GraphQLEndpoint;
-  private webhookEndpoint: WebhookEndpoint;
 
   constructor(
     graphqlEndpoint: GraphQLEndpoint,
-    webhookEndpoint: WebhookEndpoint,
     livenessTimeoutMs: number = 30000
   ) {
     this.graphqlEndpoint = graphqlEndpoint;
-    this.webhookEndpoint = webhookEndpoint;
     this.livenessTimeoutMs = livenessTimeoutMs;
     
     // Initialize state manager
@@ -44,7 +40,6 @@ export class TestClientManager<TData = any> implements StatefulItem {
     const client = new TestClient<TData>({
       clientId: id,
       graphqlEndpoint: this.graphqlEndpoint,
-      webhookEndpoint: this.webhookEndpoint,
       livenessTimeoutMs: this.livenessTimeoutMs
     });
 

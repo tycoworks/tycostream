@@ -5,7 +5,7 @@ import { ViewService } from './view.service';
 
 /**
  * View module provides filtered real-time data views
- * Exports ViewService for GraphQL subscriptions and triggers
+ * Exports ViewService for GraphQL subscriptions
  */
 @Module({
   imports: [DatabaseModule],

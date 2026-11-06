@@ -95,28 +95,4 @@ export class TestScenario {
     
     return expandedState;
   }
-  
-  /**
-   * Get trigger events based on base trigger events
-   * The base events contain the expected events for one iteration
-   * This expands them to all iterations, maintaining order
-   */
-  getTriggerEvents(baseTriggerEvents: any[]): any[] {
-    const expandedEvents: any[] = [];
-    
-    // Expand the trigger events for all iterations
-    for (let iteration = 0; iteration < this.numIterations; iteration++) {
-      baseTriggerEvents.forEach(event => {
-        expandedEvents.push({
-          ...event,
-          data: {
-            ...event.data,
-            id: this.getAdjustedId(event.data.id, iteration)
-          }
-        });
-      });
-    }
-    
-    return expandedEvents;
-  }
 }

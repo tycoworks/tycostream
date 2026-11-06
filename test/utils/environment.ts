@@ -10,7 +10,6 @@ import { TestClientManager } from './manager';
 import { TestClient } from './client';
 import { Stats } from './events';
 import sourcesConfig from '../../src/config/sources.config';
-import { WebhookServer } from './webhook';
 
 /**
  * Database configuration for TestEnvironment
@@ -22,13 +21,6 @@ export interface DatabaseConfig {
   password: string;  // Database password
   name: string;      // Database name
   workers: string;   // Number of Materialize workers
-}
-
-/**
- * Webhook server configuration
- */
-export interface WebhookConfig {
-  port: number;
 }
 
 /**
@@ -50,7 +42,6 @@ export interface TestEnvironmentConfig {
   database: DatabaseConfig;
   graphqlUI: boolean;        // Enable GraphQL UI
   logLevel: 'verbose' | 'debug' | 'log' | 'warn' | 'error' | 'fatal';  // Log level
-  webhook: WebhookConfig;  // Webhook server configuration (always required)
 }
 
 /**
@@ -62,7 +53,6 @@ export class TestEnvironment {
   private databaseContainer: StartedTestContainer;
   private databaseClient: Client;
   private databasePort: number;  // Mapped port from Docker container
-  private webhookServer: WebhookServer;
   private config: TestEnvironmentConfig;
   private clientManager: TestClientManager;
 
@@ -92,11 +82,6 @@ export class TestEnvironment {
     this.app = await this.createTestApp();
     await this.app.listen(this.config.appPort);
     console.log(`Application listening on port ${this.config.appPort}`);
-    
-    // Create and start webhook server
-    console.log('Starting webhook server...');
-    this.webhookServer = this.createWebhookServer();
-    console.log(`Webhook server listening on port ${this.config.webhook.port}`);
     
     // Create client manager with all dependencies configured
     console.log('Creating client manager...');
@@ -141,10 +126,6 @@ export class TestEnvironment {
     await this.clientManager.dispose();
     console.log('Test clients disposed');
     
-    // Close webhook server
-    console.log('Stopping webhook server...');
-    this.webhookServer.stop();
-    console.log('Webhook server stopped');
     // Close app first
     console.log('Closing NestJS application...');
     await this.app.close();
@@ -182,13 +163,6 @@ export class TestEnvironment {
    */
   get port(): number {
     return this.config.appPort;
-  }
-
-  /**
-   * Register a webhook handler
-   */
-  registerWebhook(endpoint: string, handler: (payload: any) => Promise<void>): string {
-    return this.webhookServer.register(endpoint, handler);
   }
 
   /**
@@ -250,15 +224,6 @@ export class TestEnvironment {
   }
 
   /**
-   * Create and start a webhook server
-   */
-  private createWebhookServer(): WebhookServer {
-    const server = new WebhookServer(this.config.webhook.port);
-    server.start();
-    return server;
-  }
-
-  /**
    * Set up environment variables for the test
    */
   private setupEnvironmentVariables(): void {
@@ -311,6 +276,6 @@ export class TestEnvironment {
       path: '/graphql'
     };
     
-    return new TestClientManager(graphqlEndpoint, this.webhookServer, 30000);
+    return new TestClientManager(graphqlEndpoint, 30000);
   }
 }

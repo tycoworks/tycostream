@@ -10,7 +10,6 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 // State for currently selected instrument
 let selectedInstrumentId = null;
 let tradesSubscription = null;
-let alertsSubscription = null;
 
 // Setup positions grid
 const positionsColumnConfig = getPositionsColumnConfig();
@@ -44,26 +43,10 @@ const TRADES_SUBSCRIPTION = `
     }
   }
 `;
-// Setup alerts grid
-const alertsColumnConfig = getAlertsColumnConfig();
-const alertsFields = Object.keys(alertsColumnConfig);
-
-const ALERTS_SUBSCRIPTION = `
-  subscription AlertsSubscription {
-    alerts {
-      operation
-      data {
-        ${alertsFields.join('\n        ')}
-      }
-      fields
-    }
-  }
-`;
 
 // Grid instances - will be initialized after functions are defined
 let positionsGridApi;
 let tradesGridApi;
-let alertsGridApi;
 
 // Setup Apollo client
 const wsClient = createClient({ url: 'ws://localhost:4000/graphql' });
@@ -77,12 +60,6 @@ console.log('Initializing subscriptions...');
 
 // Subscribe to positions
 subscribeToPositions();
-
-// Subscribe to alerts
-subscribeToAlerts();
-
-// Create position trigger for large realized P&L losses
-createPositionTrigger();
 
 console.log('Subscriptions initialized - data should start flowing soon!');
 
@@ -99,42 +76,6 @@ function subscribeToPositions() {
     if (operation === 'DELETE' && rowData.instrument_id === selectedInstrumentId) {
       selectPosition(null);
     }
-  });
-}
-
-function subscribeToAlerts() {
-  alertsSubscription = client.subscribe({ query: gql(ALERTS_SUBSCRIPTION) }).subscribe(({ data }) => {
-    if (!data?.alerts) return;
-    
-    const { operation, data: rowData, fields: changedFields } = data.alerts;
-    if (!rowData) return;
-    
-    // Add alerts at the top for newest first
-    handleGridUpdate(alertsGridApi, operation, rowData, changedFields, 'id', 0);
-  });
-}
-
-function createPositionTrigger() {
-  const CREATE_TRIGGER_MUTATION = gql`
-    mutation CreatePositionTrigger {
-      create_live_pnl_trigger(input: {
-        name: "large_realized_loss",
-        webhook: "http://localhost:3001/webhook",
-        fire: {
-          realized_pnl: { _lt: -1000000 }
-        },
-        clear: {
-          realized_pnl: { _gte: -500000 }
-        }
-      }) {
-        name
-        webhook
-      }
-    }
-  `;
-  
-  client.mutate({
-    mutation: CREATE_TRIGGER_MUTATION
   });
 }
 
@@ -275,49 +216,6 @@ function getTradesColumnConfig() {
   };
 }
 
-function getAlertsColumnConfig() {
-  return {
-    id: { hide: true },
-    event_id: { 
-      headerName: 'Event ID',
-      width: 150
-    },
-    timestamp: { 
-      headerName: 'Timestamp',
-      width: 200,
-      valueFormatter: params => {
-        if (!params.value) return '';
-        const date = new Date(params.value);
-        return date.toLocaleString();
-      }
-    },
-    trigger_name: { 
-      headerName: 'Trigger',
-      width: 150
-    },
-    event_type: { 
-      headerName: 'Event',
-      width: 120,
-      cellStyle: params => ({
-        color: params.value === 'FIRE' ? 'orange' : params.value === 'CLEAR' ? 'green' : 'black',
-      })
-    },
-    data: { 
-      headerName: 'Data',
-      flex: 1,
-      valueFormatter: params => {
-        if (!params.value) return '';
-        try {
-          const parsed = JSON.parse(params.value);
-          return JSON.stringify(parsed, null, 2);
-        } catch {
-          return params.value;
-        }
-      }
-    }
-  };
-}
-
 function getPnlColumnConfig() {
   return {
     valueFormatter: params => params.value != null 
@@ -369,21 +267,6 @@ function createTradesGrid() {
   });
 }
 
-function createAlertsGrid() {
-  return createGrid(document.querySelector('#alerts-grid'), {
-    overlayNoRowsTemplate: '<span style="padding: 10px">No alerts</span>',
-    theme: 'legacy',
-    columnDefs: alertsFields.map(field => ({ field, ...alertsColumnConfig[field] })),
-    rowData: [],
-    getRowId: params => String(params.data.id),
-    defaultColDef: {
-      sortable: true,
-      resizable: true
-    }
-  });
-}
-
 // Initialize grids now that functions are defined
 positionsGridApi = createPositionsGrid();
 tradesGridApi = createTradesGrid();
-alertsGridApi = createAlertsGrid();

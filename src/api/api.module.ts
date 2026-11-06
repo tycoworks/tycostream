@@ -1,5 +1,4 @@
 import { Module, Logger } from '@nestjs/common';
-import { HttpModule, HttpService } from '@nestjs/axios';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -11,8 +10,6 @@ import { buildSubscriptionResolvers } from './subscription.resolver';
 import { ViewModule } from '../view/view.module';
 import { ViewService } from '../view/view.service';
 import { SubscriptionService } from './subscription.service';
-import { buildTriggerResolvers } from './trigger.resolver';
-import { TriggerService } from './trigger.service';
 
 /**
  * API module provides GraphQL subscriptions
@@ -21,15 +18,14 @@ import { TriggerService } from './trigger.service';
 @Module({
   imports: [
     ViewModule,
-    HttpModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
-      imports: [ConfigModule, ViewModule, HttpModule],
+      imports: [ConfigModule, ViewModule],
       /**
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
        */
-      useFactory: async (configService: ConfigService, viewService: ViewService, httpService: HttpService) => {
+      useFactory: async (configService: ConfigService, viewService: ViewService) => {
         const logger = new Logger('GraphQLModule');
         
         // Get source configuration from config
@@ -43,11 +39,9 @@ import { TriggerService } from './trigger.service';
         
         // Create service instances for resolvers
         const subscriptionService = new SubscriptionService(viewService);
-        const triggerService = new TriggerService(viewService, httpService);
         
         // Build resolvers
         const subscriptionResolvers = buildSubscriptionResolvers(sourceConfig.sources, subscriptionService);
-        const { mutationResolvers, queryResolvers } = buildTriggerResolvers(sourceConfig.sources, triggerService);
         
         const graphqlConfig = configService.get('graphql');
         logger.log(`GraphQL: Port ${graphqlConfig.port}, Playground ${graphqlConfig.playground ? 'enabled' : 'disabled'}`);
@@ -71,8 +65,9 @@ import { TriggerService } from './trigger.service';
             'subscriptions-transport-ws': true,
           },
           resolvers: {
-            Query: queryResolvers,
-            Mutation: mutationResolvers,
+            Query: {
+              ping: () => 'pong',
+            },
             Subscription: subscriptionResolvers,
           },
           // CORS configuration for development when playground is enabled
@@ -84,7 +79,7 @@ import { TriggerService } from './trigger.service';
           }),
         };
       },
-      inject: [ConfigService, ViewService, HttpService],
+      inject: [ConfigService, ViewService],
     }),
   ],
   controllers: [],

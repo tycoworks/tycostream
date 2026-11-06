@@ -22,8 +22,6 @@ Our E2E test suite is organized into different test categories, each serving a s
   - All supported data types
   - Multiple sources in parallel
   - Error handling for invalid queries
-  - GraphQL triggers with webhook callbacks
-  - Trigger hysteresis (asymmetric fire/clear thresholds)
 - **Runtime**: ~30 seconds
 - **Use case**: Pull request validation, release testing
 
@@ -35,7 +33,6 @@ Our E2E test suite is organized into different test categories, each serving a s
   - Large snapshots (9,000+ rows)
   - Late joining clients during heavy load
   - Staggered client connections
-  - Concurrent triggers with webhook events alongside subscriptions
 - **Runtime**: ~8 minutes for full test
 - **Configuration**: Use environment variables STRESS_TEST_ROWS, STRESS_TEST_CLIENTS, STRESS_TEST_DELAY
 - **Use case**: Performance validation, load testing
@@ -77,9 +74,6 @@ Per our implementation standards, the system follows a **fail-fast philosophy**:
 - Multiple concurrent connections
 - Complex operation sequences
 - Full `all_types` table testing
-- GraphQL triggers (fire/clear conditions)
-- Webhook delivery for trigger events
-- Trigger hysteresis to prevent rapid firing/unfiring
 
 ## Data Types Tested
 
@@ -103,8 +97,8 @@ The test schema includes two tables to ensure comprehensive type coverage:
 ## Test Infrastructure
 
 The test suite uses a custom test infrastructure with:
-- **TestEnvironment**: Manages test infrastructure (database container, NestJS app, SQL execution, webhook server)
-- **TestClient**: Manages individual WebSocket subscriptions and trigger webhooks with state tracking
+- **TestEnvironment**: Manages test infrastructure (database container, NestJS app, SQL execution)
+- **TestClient**: Manages individual WebSocket subscriptions with state tracking
 - **TestClientManager**: Manages multiple WebSocket test clients concurrently
 - **TestScenario**: Generates test operations and expected states for multiple iterations
 
@@ -113,5 +107,4 @@ The test suite uses a custom test infrastructure with:
 - Docker must be running
 - Port 4001 must be available for the test GraphQL server  
 - Port 4100 must be available for the stress test GraphQL server
-- Port 3001 must be available for the webhook server (trigger callbacks)
 - The Materialize image (`materialize/materialized:v0.124.0`) will be automatically pulled if not present

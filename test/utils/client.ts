@@ -3,17 +3,14 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import * as WebSocket from 'ws';
 import { createSubscriptionHandler } from './subscription';
-import { createTriggerHandler } from './trigger';
 import { EventHandler, Stats, State } from './events';
 import { StateManager, StatefulItem } from './state';
 import { GraphQLEndpoint } from './environment';
-import { WebhookEndpoint } from './webhook';
 
 // Constructor options - just configuration
 export interface TestClientOptions {
   clientId: string;
   graphqlEndpoint: GraphQLEndpoint;
-  webhookEndpoint: WebhookEndpoint;
   livenessTimeoutMs: number;
 }
 
@@ -23,14 +20,6 @@ export interface SubscriptionOptions<TData = any> {
   dataPath: string; // Path to data in GraphQL response, e.g. "users" or "all_types"
   idField: string; // Field name for ID in the data (e.g., "id", "user_id")
   expectedState: Map<string | number, TData>; // Required - what state we expect to reach
-}
-
-// Trigger/webhook options
-export interface TriggerOptions<TData = any> {
-  query: string;                         // GraphQL mutation to create trigger
-  deleteQuery: string;                   // GraphQL mutation to delete trigger (required for cleanup)
-  expectedEvents: TData[];              // Expected webhook payloads in order
-  idField: string;                      // Primary key field for state tracking
 }
 
 export class TestClient<TData = any> implements StatefulItem {
@@ -76,29 +65,6 @@ export class TestClient<TData = any> implements StatefulItem {
       dataPath: options.dataPath,
       idField: options.idField,
       expectedState: options.expectedState,
-      graphqlClient: this.graphqlClient,
-      onStateChange: () => this.handleStateChange(),
-      livenessTimeoutMs: this.options.livenessTimeoutMs
-    });
-    
-    await handler.start();
-    this.stateManager.add(id, handler);
-  }
-  
-  async trigger(id: string, options: TriggerOptions<TData>): Promise<void> {
-    if (this.stateManager.has(id)) {
-      throw new Error(`Client ${this.options.clientId}: Handler '${id}' already exists`);
-    }
-    
-    // Create and start trigger handler
-    const handler = createTriggerHandler<TData>({
-      id,
-      clientId: this.options.clientId,
-      query: options.query,
-      deleteQuery: options.deleteQuery,
-      idField: options.idField,
-      expectedEvents: options.expectedEvents,
-      webhookEndpoint: this.options.webhookEndpoint,
       graphqlClient: this.graphqlClient,
       onStateChange: () => this.handleStateChange(),
       livenessTimeoutMs: this.options.livenessTimeoutMs

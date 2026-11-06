@@ -6,10 +6,8 @@
 # Example:
 #   ./generate-schema.sh \
 #     -e side "buy,sell" \
-#     -e event_type "FIRE,CLEAR" \
 #     -s live_pnl -p instrument_id \
-#     -s trades -p id -c side:side \
-#     -s alerts -p id -c event_type:event_type > schema.yaml
+#     -s trades -p id -c side:side > schema.yaml
 
 set -e
 

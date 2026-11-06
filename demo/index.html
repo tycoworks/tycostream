@@ -11,8 +11,7 @@
     }
     .top-section {
       display: flex;
-      height: 50vh;
-      border-bottom: 2px solid #ccc;
+      height: 100vh;
     }
     .positions-container {
       width: 65%;
@@ -35,16 +34,6 @@
       flex: 1;
       overflow: hidden;
     }
-    .bottom-section {
-      height: 50vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    #alerts-grid { 
-      flex: 1;
-      overflow: hidden;
-    }
     .grid-title {
       padding: 8px;
       background: #f0f0f0;
@@ -64,10 +53,6 @@
       <div class="grid-title">Trades</div>
       <div id="trades-grid" class="ag-theme-alpine"></div>
     </div>
-  </div>
-  <div class="bottom-section">
-    <div class="grid-title">Alerts</div>
-    <div id="alerts-grid" class="ag-theme-alpine"></div>
   </div>
   <script type="module" src="/main.js"></script>
 </body>
