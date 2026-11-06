@@ -1,5 +1,5 @@
 // Test infrastructure exports
-export { TestClient, TestClientOptions } from './client';
-export { TestClientManager } from './manager';
-export { TestEnvironment } from './environment';
-export { OperationType, OperationTemplate, TestScenario } from './scenario';
+export { TestClient, TestClientOptions } from './client.js';
+export { TestClientManager } from './manager.js';
+export { TestEnvironment } from './environment.js';
+export { OperationType, OperationTemplate, TestScenario } from './scenario.js';

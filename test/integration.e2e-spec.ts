@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { TestEnvironment } from './utils';
+import { TestEnvironment } from './utils/index.js';
 
 describe('Integration Test', () => {
   let testEnv: TestEnvironment;
@@ -8,7 +8,7 @@ describe('Integration Test', () => {
     // Bootstrap complete test environment
     testEnv = await TestEnvironment.create({
       appPort: 4001,
-      schemaPath: path.join(__dirname, 'integration-schema.yaml'),
+      schemaPath: path.join(import.meta.dirname, 'integration-schema.yaml'),
       database: {
         host: 'localhost',
         port: 6875,

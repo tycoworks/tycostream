@@ -1,32 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseStreamService } from './stream.service';
-import { DatabaseStream } from './stream';
-import type { ProtocolHandler } from './types';
+import { DatabaseStreamService } from './stream.service.js';
+import { DatabaseStream } from './stream.js';
+import type { ProtocolHandler } from './types.js';
+import type { Mock } from 'vitest';
 
 // Mock DatabaseStream
-jest.mock('./stream', () => {
+vi.mock('./stream.js', () => {
   return {
-    DatabaseStream: jest
+    DatabaseStream: vi
       .fn()
-      .mockImplementation((config, sourceName, protocolHandler) => ({
-        sourceName,
-        protocolHandler,
-        connect: jest.fn().mockResolvedValue(undefined),
-        disconnect: jest.fn(),
-        onModuleDestroy: jest.fn().mockResolvedValue(undefined),
-      })),
+      .mockImplementation(function (config, sourceName, protocolHandler) {
+        return {
+          sourceName,
+          protocolHandler,
+          connect: vi.fn().mockResolvedValue(undefined),
+          disconnect: vi.fn(),
+          onModuleDestroy: vi.fn().mockResolvedValue(undefined),
+        };
+      }),
   };
 });
 
 // Mock pg module
-jest.mock('pg', () => {
+vi.mock('pg', () => {
   return {
-    Client: jest.fn().mockImplementation(() => ({
-      connect: jest.fn(),
-      end: jest.fn(),
-      query: jest.fn(),
-    })),
+    Client: vi.fn().mockImplementation(function () {
+      return {
+        connect: vi.fn(),
+        end: vi.fn(),
+        query: vi.fn(),
+      };
+    }),
   };
 });
 
@@ -36,7 +41,7 @@ describe('DatabaseStreamService', () => {
 
   beforeEach(async () => {
     // Clear all mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -44,7 +49,7 @@ describe('DatabaseStreamService', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn().mockReturnValue({
+            get: vi.fn().mockReturnValue({
               host: 'localhost',
               port: 6875,
               database: 'materialize',
@@ -64,7 +69,7 @@ describe('DatabaseStreamService', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -72,7 +77,7 @@ describe('DatabaseStreamService', () => {
   });
 
   it('should throw on init when database configuration is missing', async () => {
-    (configService.get as jest.Mock).mockReturnValue(undefined);
+    (configService.get as Mock).mockReturnValue(undefined);
 
     await expect(service.onModuleInit()).rejects.toThrow(
       'Database configuration not found',
@@ -81,13 +86,13 @@ describe('DatabaseStreamService', () => {
 
   describe('getStream', () => {
     const mockProtocolHandler: ProtocolHandler = {
-      createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE TO test'),
-      parseLine: jest.fn(),
+      createSubscribeQuery: vi.fn().mockReturnValue('SUBSCRIBE TO test'),
+      parseLine: vi.fn(),
     };
 
     beforeEach(() => {
       // Reset the mock to clear any created streams
-      (DatabaseStream as jest.Mock).mockClear();
+      (DatabaseStream as Mock).mockClear();
     });
 
     it('should create a new DatabaseStream for first request', () => {
@@ -136,7 +141,7 @@ describe('DatabaseStreamService', () => {
 
       // Mock the stream as disposed
       Object.defineProperty(firstStream, 'isDisposed', {
-        get: jest.fn().mockReturnValue(true),
+        get: vi.fn().mockReturnValue(true),
         configurable: true,
       });
 
@@ -153,13 +158,13 @@ describe('DatabaseStreamService', () => {
 
     it('should handle multiple protocol handlers for same source', () => {
       const protocolHandler1: ProtocolHandler = {
-        createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE 1'),
-        parseLine: jest.fn(),
+        createSubscribeQuery: vi.fn().mockReturnValue('SUBSCRIBE 1'),
+        parseLine: vi.fn(),
       };
 
       const protocolHandler2: ProtocolHandler = {
-        createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE 2'),
-        parseLine: jest.fn(),
+        createSubscribeQuery: vi.fn().mockReturnValue('SUBSCRIBE 2'),
+        parseLine: vi.fn(),
       };
 
       // Same source name, but different protocol handlers
@@ -175,14 +180,14 @@ describe('DatabaseStreamService', () => {
 
   describe('removeStream', () => {
     const mockProtocolHandler: ProtocolHandler = {
-      createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE TO test'),
-      parseLine: jest.fn(),
+      createSubscribeQuery: vi.fn().mockReturnValue('SUBSCRIBE TO test'),
+      parseLine: vi.fn(),
     };
 
     it('should remove stream and call disconnect', () => {
       // Create a stream
       const stream = service.getStream('test_source', mockProtocolHandler);
-      const disconnectSpy = stream.disconnect as jest.Mock;
+      const disconnectSpy = stream.disconnect as Mock;
 
       // Remove it
       service.removeStream('test_source');
@@ -204,8 +209,8 @@ describe('DatabaseStreamService', () => {
 
   describe('onModuleDestroy', () => {
     const mockProtocolHandler: ProtocolHandler = {
-      createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE TO test'),
-      parseLine: jest.fn(),
+      createSubscribeQuery: vi.fn().mockReturnValue('SUBSCRIBE TO test'),
+      parseLine: vi.fn(),
     };
 
     it('should disconnect all active streams', async () => {
@@ -214,9 +219,9 @@ describe('DatabaseStreamService', () => {
       const stream2 = service.getStream('source2', mockProtocolHandler);
       const stream3 = service.getStream('source3', mockProtocolHandler);
 
-      const disconnect1 = stream1.disconnect as jest.Mock;
-      const disconnect2 = stream2.disconnect as jest.Mock;
-      const disconnect3 = stream3.disconnect as jest.Mock;
+      const disconnect1 = stream1.disconnect as Mock;
+      const disconnect2 = stream2.disconnect as Mock;
+      const disconnect3 = stream3.disconnect as Mock;
 
       // Call onModuleDestroy
       await service.onModuleDestroy();

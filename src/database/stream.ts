@@ -1,10 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { to as copyTo } from 'pg-copy-streams';
 import { Client } from 'pg';
-import { StreamBuffer } from './buffer';
-import type { ProtocolHandler } from './types';
-import { DatabaseRowUpdateType } from './types';
-import type { DatabaseConfig } from '../config/database.config';
+import { StreamBuffer } from './buffer.js';
+import type { ProtocolHandler } from './types.js';
+import { DatabaseRowUpdateType } from './types.js';
+import type { DatabaseConfig } from '../config/database.config.js';
 
 /**
  * Represents a streaming connection to a database source

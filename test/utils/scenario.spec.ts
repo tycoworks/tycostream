@@ -1,4 +1,4 @@
-import { OperationType, OperationTemplate, TestScenario } from './scenario';
+import { OperationType, OperationTemplate, TestScenario } from './scenario.js';
 
 describe('TestScenario', () => {
   describe('getOperations', () => {

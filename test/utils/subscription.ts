@@ -5,7 +5,7 @@ import {
   EventHandler,
   EventHandlerConfig,
   Stats,
-} from './events';
+} from './events.js';
 
 /**
  * GraphQL subscription event stream

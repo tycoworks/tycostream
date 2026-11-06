@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import databaseConfig from './config/database.config';
-import graphqlConfig from './config/graphql.config';
-import sourcesConfig from './config/sources.config';
-import { DatabaseModule } from './database/database.module';
-import { ViewModule } from './view/view.module';
-import { ApiModule } from './api/api.module';
+import databaseConfig from './config/database.config.js';
+import graphqlConfig from './config/graphql.config.js';
+import sourcesConfig from './config/sources.config.js';
+import { DatabaseModule } from './database/database.module.js';
+import { ViewModule } from './view/view.module.js';
+import { ApiModule } from './api/api.module.js';
 
 /**
  * Root application module that bootstraps the tycostream server

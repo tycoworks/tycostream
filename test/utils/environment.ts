@@ -3,13 +3,13 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { Client } from 'pg';
-import { AppModule } from '../../src/app.module';
-import databaseConfig from '../../src/config/database.config';
-import graphqlConfig from '../../src/config/graphql.config';
-import { TestClientManager } from './manager';
-import { TestClient } from './client';
-import { Stats } from './events';
-import sourcesConfig from '../../src/config/sources.config';
+import { AppModule } from '../../src/app.module.js';
+import databaseConfig from '../../src/config/database.config.js';
+import graphqlConfig from '../../src/config/graphql.config.js';
+import { TestClientManager } from './manager.js';
+import { TestClient } from './client.js';
+import { Stats } from './events.js';
+import sourcesConfig from '../../src/config/sources.config.js';
 
 /**
  * Database configuration for TestEnvironment

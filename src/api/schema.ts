@@ -3,9 +3,9 @@ import type {
   SourceField,
   EnumType,
   SourceConfiguration,
-} from '../config/source.types';
-import { DataType } from '../common/types';
-import { GraphQLRowOperation } from './subscription.resolver';
+} from '../config/source.types.js';
+import { DataType } from '../common/types.js';
+import { GraphQLRowOperation } from './subscription.resolver.js';
 import {
   GraphQLString,
   GraphQLInt,

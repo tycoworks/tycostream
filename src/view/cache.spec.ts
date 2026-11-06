@@ -1,4 +1,4 @@
-import { SimpleCache } from './cache';
+import { SimpleCache } from './cache.js';
 
 describe('SimpleCache', () => {
   let cache: SimpleCache;

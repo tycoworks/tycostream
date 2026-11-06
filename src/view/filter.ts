@@ -1,4 +1,4 @@
-import { Expression } from './types';
+import { Expression } from './types.js';
 
 /**
  * Filter configuration with match/unmatch conditions

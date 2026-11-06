@@ -1,5 +1,5 @@
-import { Filter } from './filter';
-import { Expression } from './types';
+import { Filter } from './filter.js';
+import { Expression } from './types.js';
 
 describe('Filter', () => {
   describe('constructor', () => {

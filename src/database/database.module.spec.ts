@@ -1,5 +1,5 @@
-import { DatabaseModule } from './database.module';
-import { DatabaseStreamService } from './stream.service';
+import { DatabaseModule } from './database.module.js';
+import { DatabaseStreamService } from './stream.service.js';
 
 describe('DatabaseModule', () => {
   it('should be defined', () => {

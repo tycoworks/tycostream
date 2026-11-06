@@ -1,9 +1,9 @@
 // Types for source definitions loaded from YAML
 
-import { DataType } from '../common/types';
+import { DataType } from '../common/types.js';
 
 // Re-export for use by other modules
-export { DataType } from '../common/types';
+export { DataType } from '../common/types.js';
 
 /**
  * Defines an enum type with its allowed values

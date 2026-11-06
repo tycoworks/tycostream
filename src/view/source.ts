@@ -9,13 +9,13 @@ import {
   from,
   finalize,
 } from 'rxjs';
-import { DatabaseStream } from '../database/stream';
-import { DatabaseRowUpdateType } from '../database/types';
-import type { SourceDefinition } from '../config/source.types';
-import { RowUpdateType, type RowUpdateEvent } from './types';
-import type { Cache } from './cache.types';
-import { SimpleCache } from './cache';
-import { truncateForLog } from '../common/logging.utils';
+import { DatabaseStream } from '../database/stream.js';
+import { DatabaseRowUpdateType } from '../database/types.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { RowUpdateType, type RowUpdateEvent } from './types.js';
+import type { Cache } from './cache.types.js';
+import { SimpleCache } from './cache.js';
+import { truncateForLog } from '../common/logging.utils.js';
 
 /**
  * Represents a cached data source with streaming updates

@@ -1,21 +1,23 @@
-import { Source } from './source';
-import type { SourceDefinition } from '../config/source.types';
-import { DataType } from '../config/source.types';
-import { DatabaseRowUpdateType } from '../database/types';
-import { RowUpdateType, type RowUpdateEvent } from './types';
+import { Source } from './source.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { DataType } from '../config/source.types.js';
+import { DatabaseRowUpdateType } from '../database/types.js';
+import { RowUpdateType, type RowUpdateEvent } from './types.js';
 import { take, toArray } from 'rxjs/operators';
 import { firstValueFrom } from 'rxjs';
 
 // Mock DatabaseStream before importing StreamingService
 const mockDatabaseStream = {
-  connect: jest.fn().mockResolvedValue(undefined),
-  disconnect: jest.fn(),
+  connect: vi.fn().mockResolvedValue(undefined),
+  disconnect: vi.fn(),
   streaming: false,
 };
 
-jest.mock('../database/stream', () => {
+vi.mock('../database/stream.js', () => {
   return {
-    DatabaseStream: jest.fn().mockImplementation(() => mockDatabaseStream),
+    DatabaseStream: vi.fn().mockImplementation(function () {
+      return mockDatabaseStream;
+    }),
   };
 });
 
@@ -40,12 +42,12 @@ describe('Source', () => {
     source = new Source(
       mockDatabaseStream as any,
       mockSourceDef,
-      jest.fn(), // Required callback
+      vi.fn(), // Required callback
     );
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('getUpdates', () => {
@@ -303,7 +305,7 @@ describe('Source', () => {
     });
 
     it('should call disposal callback when disposed', async () => {
-      const onDispose = jest.fn();
+      const onDispose = vi.fn();
       const sourceWithCallback = new Source(
         mockDatabaseStream as any,
         mockSourceDef,

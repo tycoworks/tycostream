@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
-import { Expression } from '../view/types';
-import type { SourceDefinition } from '../config/source.types';
+import { Expression } from '../view/types.js';
+import type { SourceDefinition } from '../config/source.types.js';
 
 /**
  * GraphQL/Hasura-style expression tree for filtering

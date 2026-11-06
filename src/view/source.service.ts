@@ -5,10 +5,10 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Source } from './source';
-import { DatabaseStreamService } from '../database/stream.service';
-import { MaterializeProtocolHandler } from '../database/materialize';
-import type { SourceDefinition } from '../config/source.types';
+import { Source } from './source.js';
+import { DatabaseStreamService } from '../database/stream.service.js';
+import { MaterializeProtocolHandler } from '../database/materialize.js';
+import type { SourceDefinition } from '../config/source.types.js';
 
 /**
  * Manages multiple Source instances for different data sources

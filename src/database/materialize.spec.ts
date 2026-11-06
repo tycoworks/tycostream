@@ -1,7 +1,7 @@
-import { MaterializeProtocolHandler } from './materialize';
-import type { SourceDefinition, EnumType } from '../config/source.types';
-import { DataType } from '../config/source.types';
-import { DatabaseRowUpdateType } from './types';
+import { MaterializeProtocolHandler } from './materialize.js';
+import type { SourceDefinition, EnumType } from '../config/source.types.js';
+import { DataType } from '../config/source.types.js';
+import { DatabaseRowUpdateType } from './types.js';
 
 describe('MaterializeProtocolHandler', () => {
   let handler: MaterializeProtocolHandler;

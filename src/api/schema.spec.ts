@@ -1,9 +1,9 @@
-import { generateSchema } from './schema';
+import { generateSchema } from './schema.js';
 import type {
   SourceDefinition,
   SourceConfiguration,
-} from '../config/source.types';
-import { DataType } from '../config/source.types';
+} from '../config/source.types.js';
+import { DataType } from '../config/source.types.js';
 
 describe('generateSchema', () => {
   // Helper to create a SourceConfiguration for tests

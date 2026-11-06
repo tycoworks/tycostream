@@ -1,20 +1,21 @@
-import { View } from './view';
-import { Filter } from './filter';
-import { RowUpdateEvent, RowUpdateType } from './types';
+import { View } from './view.js';
+import { Filter } from './filter.js';
+import { RowUpdateEvent, RowUpdateType } from './types.js';
 import { Subject } from 'rxjs';
-import type { Source } from './source';
+import type { Source } from './source.js';
+import type { Mocked } from 'vitest';
 
 describe('View', () => {
-  let mockSource: jest.Mocked<Source>;
+  let mockSource: Mocked<Source>;
   let mockUpdates$: Subject<RowUpdateEvent>;
 
   beforeEach(() => {
     mockUpdates$ = new Subject<RowUpdateEvent>();
 
     mockSource = {
-      getPrimaryKeyField: jest.fn().mockReturnValue('id'),
-      getUpdates: jest.fn().mockReturnValue(mockUpdates$),
-      onModuleDestroy: jest.fn(),
+      getPrimaryKeyField: vi.fn().mockReturnValue('id'),
+      getUpdates: vi.fn().mockReturnValue(mockUpdates$),
+      onModuleDestroy: vi.fn(),
     } as any;
   });
   describe('processEvent', () => {
@@ -149,7 +150,7 @@ describe('View', () => {
     });
 
     it('should skip filter evaluation for UPDATE when fields dont affect filter', () => {
-      const evaluateMock = jest.fn((row) => row.active === true);
+      const evaluateMock = vi.fn((row) => row.active === true);
       const filter = new Filter({
         evaluate: evaluateMock,
         fields: new Set(['active']),
@@ -641,7 +642,7 @@ describe('View', () => {
   });
 
   describe('getUpdates', () => {
-    it('should emit transformed events that pass the filter', (done) => {
+    it('should emit transformed events that pass the filter', async () => {
       const filter = new Filter({
         expression: 'value > 10',
         fields: new Set(['value']),
@@ -672,11 +673,9 @@ describe('View', () => {
       mockUpdates$.next(failingEvent);
 
       // Give time for async operations
-      setTimeout(() => {
-        expect(receivedEvents).toHaveLength(1);
-        expect(receivedEvents[0]).toEqual(passingEvent);
-        done();
-      }, 10);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(receivedEvents).toHaveLength(1);
+      expect(receivedEvents[0]).toEqual(passingEvent);
     });
   });
 });

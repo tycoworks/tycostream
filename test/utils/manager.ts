@@ -1,7 +1,7 @@
-import { TestClient } from './client';
-import { Stats } from './events';
-import { State, StateManager, StatefulItem } from './state';
-import { GraphQLEndpoint } from './environment';
+import { TestClient } from './client.js';
+import { Stats } from './events.js';
+import { State, StateManager, StatefulItem } from './state.js';
+import { GraphQLEndpoint } from './environment.js';
 
 export class TestClientManager<TData = any> implements StatefulItem {
   // === State Management ===
