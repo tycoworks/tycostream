@@ -22,6 +22,8 @@ GRAPHQL_UI=true
 SCHEMA_PATH=./schema.yaml
 LOG_LEVEL=debug" > .env
 
+# LOG_LEVEL can be trace, debug, info, warn or error
+
 # If Materialize runs on your host machine and you're using Docker:
 # macOS/Windows: Change DATABASE_HOST to host.docker.internal
 # Linux: Change DATABASE_HOST to 172.17.0.1

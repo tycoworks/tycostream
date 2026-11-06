@@ -56,7 +56,6 @@ import { SubscriptionService } from './subscription.service';
         return {
           typeDefs,
           graphiql: graphqlConfig.playground, // GRAPHQL_UI turns on the GraphiQL UI
-          maskedErrors: false, // Send resolver error messages to clients, as Apollo did
           resolvers: {
             Query: {
               ping: () => 'pong',
