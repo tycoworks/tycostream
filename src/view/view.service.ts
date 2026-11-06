@@ -1,9 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { SourceService } from './source.service';
-import { View } from './view';
-import { Filter } from './filter';
-import type { RowUpdateEvent } from './types';
+import { SourceService } from './source.service.js';
+import { View } from './view.js';
+import { Filter } from './filter.js';
+import type { RowUpdateEvent } from './types.js';
 
 /**
  * ViewService manages views of streaming data

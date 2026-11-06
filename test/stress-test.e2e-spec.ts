@@ -4,7 +4,7 @@ import {
   OperationType,
   OperationTemplate,
   TestScenario,
-} from './utils';
+} from './utils/index.js';
 
 describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
   let testEnv: TestEnvironment;
@@ -204,7 +204,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     // Bootstrap test environment
     testEnv = await TestEnvironment.create({
       appPort: 4100,
-      schemaPath: path.join(__dirname, 'stress-test-schema.yaml'),
+      schemaPath: path.join(import.meta.dirname, 'stress-test-schema.yaml'),
       database: {
         host: 'localhost',
         port: 6875,

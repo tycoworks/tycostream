@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
-import sourcesConfig from './sources.config';
-import { DataType } from '../common/types';
+import sourcesConfig from './sources.config.js';
+import { DataType } from '../common/types.js';
 import type { Mock } from 'vitest';
 
 vi.mock('fs');

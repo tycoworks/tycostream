@@ -77,7 +77,7 @@ export interface EventHandlerConfig {
   livenessTimeoutMs: number; // Timeout for liveness checking
 }
 
-import { StatefulItem } from './state';
+import { StatefulItem } from './state.js';
 
 /**
  * Event handler that works with any EventStream and EventProcessor

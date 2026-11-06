@@ -1,12 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseStreamService } from './stream.service';
-import { DatabaseStream } from './stream';
-import type { ProtocolHandler } from './types';
+import { DatabaseStreamService } from './stream.service.js';
+import { DatabaseStream } from './stream.js';
+import type { ProtocolHandler } from './types.js';
 import type { Mock } from 'vitest';
 
 // Mock DatabaseStream
-vi.mock('./stream', () => {
+vi.mock('./stream.js', () => {
   return {
     DatabaseStream: vi
       .fn()

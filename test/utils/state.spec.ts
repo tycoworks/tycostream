@@ -1,4 +1,4 @@
-import { StateManager, State, StatefulItem } from './state';
+import { StateManager, State, StatefulItem } from './state.js';
 
 /**
  * Mock implementation of StatefulItem for testing

@@ -1,6 +1,6 @@
-import { ExpressionBuilder } from './expressions';
-import type { SourceDefinition } from '../config/source.types';
-import { DataType } from '../config/source.types';
+import { ExpressionBuilder } from './expressions.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { DataType } from '../config/source.types.js';
 
 describe('GraphQL Expressions', () => {
   // Mock source definition without enums for basic tests

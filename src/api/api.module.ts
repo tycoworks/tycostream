@@ -2,12 +2,12 @@ import { Module, Logger } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { YogaDriver, YogaDriverConfig } from '@graphql-yoga/nestjs';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { generateSchema } from './schema';
-import type { SourceConfiguration } from '../config/source.types';
-import { buildSubscriptionResolvers } from './subscription.resolver';
-import { ViewModule } from '../view/view.module';
-import { ViewService } from '../view/view.service';
-import { SubscriptionService } from './subscription.service';
+import { generateSchema } from './schema.js';
+import type { SourceConfiguration } from '../config/source.types.js';
+import { buildSubscriptionResolvers } from './subscription.resolver.js';
+import { ViewModule } from '../view/view.module.js';
+import { ViewService } from '../view/view.service.js';
+import { SubscriptionService } from './subscription.service.js';
 
 /**
  * API module provides GraphQL subscriptions

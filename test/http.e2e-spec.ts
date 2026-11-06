@@ -3,11 +3,11 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import type { App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
-import databaseConfig from '../src/config/database.config';
-import graphqlConfig from '../src/config/graphql.config';
-import sourcesConfig from '../src/config/sources.config';
+import type { App } from 'supertest/types.js';
+import { AppModule } from '../src/app.module.js';
+import databaseConfig from '../src/config/database.config.js';
+import graphqlConfig from '../src/config/graphql.config.js';
+import sourcesConfig from '../src/config/sources.config.js';
 
 /**
  * HTTP behaviour of the GraphQL endpoint that browser clients rely on,
@@ -22,7 +22,10 @@ async function createApp(graphqlUI: boolean): Promise<INestApplication<App>> {
   process.env.DATABASE_NAME = 'materialize';
   process.env.GRAPHQL_PORT = '4200';
   process.env.GRAPHQL_UI = graphqlUI.toString();
-  process.env.SCHEMA_PATH = path.join(__dirname, 'integration-schema.yaml');
+  process.env.SCHEMA_PATH = path.join(
+    import.meta.dirname,
+    'integration-schema.yaml',
+  );
 
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],

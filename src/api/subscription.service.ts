@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map, tap } from 'rxjs/operators';
-import { ViewService } from '../view/view.service';
-import { Filter } from '../view/filter';
-import { ExpressionBuilder, ExpressionTree } from './expressions';
-import { RowUpdateEvent, RowUpdateType } from '../view/types';
-import { truncateForLog } from '../common/logging.utils';
-import type { SourceDefinition } from '../config/source.types';
+import { ViewService } from '../view/view.service.js';
+import { Filter } from '../view/filter.js';
+import { ExpressionBuilder, ExpressionTree } from './expressions.js';
+import { RowUpdateEvent, RowUpdateType } from '../view/types.js';
+import { truncateForLog } from '../common/logging.utils.js';
+import type { SourceDefinition } from '../config/source.types.js';
 
 /**
  * GraphQL row operation types

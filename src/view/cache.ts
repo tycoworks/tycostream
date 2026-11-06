@@ -1,4 +1,4 @@
-import type { Cache } from './cache.types';
+import type { Cache } from './cache.types.js';
 
 /**
  * Simple cache for storing row data by primary key

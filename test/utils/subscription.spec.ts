@@ -1,5 +1,5 @@
-import { SubscriptionProcessor } from './subscription';
-import { GraphQLRowOperation } from './events';
+import { SubscriptionProcessor } from './subscription.js';
+import { GraphQLRowOperation } from './events.js';
 
 describe('SubscriptionProcessor', () => {
   let processor: SubscriptionProcessor;

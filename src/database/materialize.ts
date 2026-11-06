@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
-import type { SourceDefinition } from '../config/source.types';
-import { DataType } from '../common/types';
-import type { ProtocolHandler } from './types';
-import { DatabaseRowUpdateType } from './types';
+import type { SourceDefinition } from '../config/source.types.js';
+import { DataType } from '../common/types.js';
+import type { ProtocolHandler } from './types.js';
+import { DatabaseRowUpdateType } from './types.js';
 
 /**
  * Handles Materialize-specific protocol details: query generation and data parsing

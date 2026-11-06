@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { SourceService } from './source.service';
-import { DatabaseStreamService } from '../database/stream.service';
-import type { SourceDefinition } from '../config/source.types';
-import { DataType } from '../config/source.types';
+import { SourceService } from './source.service.js';
+import { DatabaseStreamService } from '../database/stream.service.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { DataType } from '../config/source.types.js';
 import type { Mocked } from 'vitest';
 
 describe('SourceService', () => {

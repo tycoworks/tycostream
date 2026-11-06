@@ -4,7 +4,7 @@ import {
   EventProcessor,
   State,
   Stats,
-} from './events';
+} from './events.js';
 
 /**
  * Mock EventStream for testing

@@ -5,6 +5,7 @@
   "author": "",
   "private": true,
   "license": "MIT",
+  "type": "module",
   "scripts": {
     "build": "nest build",
     "start": "node dist/main",

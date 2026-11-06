@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   SubscriptionService,
   GraphQLRowOperation,
-} from './subscription.service';
-import { ViewService } from '../view/view.service';
+} from './subscription.service.js';
+import { ViewService } from '../view/view.service.js';
 import { of } from 'rxjs';
-import { RowUpdateType } from '../view/types';
-import type { SourceDefinition } from '../config/source.types';
-import { DataType } from '../config/source.types';
+import { RowUpdateType } from '../view/types.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { DataType } from '../config/source.types.js';
 import type { Mocked } from 'vitest';
 
 describe('SubscriptionService', () => {

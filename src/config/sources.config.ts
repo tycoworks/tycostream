@@ -8,8 +8,8 @@ import type {
   SourceField,
   EnumType,
   SourceConfiguration,
-} from './source.types';
-import { DataType } from '../common/types';
+} from './source.types.js';
+import { DataType } from '../common/types.js';
 
 const logger = new Logger('SourcesConfig');
 

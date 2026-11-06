@@ -1,8 +1,8 @@
-import { Source } from './source';
-import type { SourceDefinition } from '../config/source.types';
-import { DataType } from '../config/source.types';
-import { DatabaseRowUpdateType } from '../database/types';
-import { RowUpdateType, type RowUpdateEvent } from './types';
+import { Source } from './source.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { DataType } from '../config/source.types.js';
+import { DatabaseRowUpdateType } from '../database/types.js';
+import { RowUpdateType, type RowUpdateEvent } from './types.js';
 import { take, toArray } from 'rxjs/operators';
 import { firstValueFrom } from 'rxjs';
 
@@ -13,7 +13,7 @@ const mockDatabaseStream = {
   streaming: false,
 };
 
-vi.mock('../database/stream', () => {
+vi.mock('../database/stream.js', () => {
   return {
     DatabaseStream: vi.fn().mockImplementation(function () {
       return mockDatabaseStream;

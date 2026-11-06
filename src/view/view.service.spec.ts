@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ViewService } from './view.service';
-import { SourceService } from './source.service';
-import { Source } from './source';
-import { Filter } from './filter';
+import { ViewService } from './view.service.js';
+import { SourceService } from './source.service.js';
+import { Source } from './source.js';
+import { Filter } from './filter.js';
 import { Subject } from 'rxjs';
-import type { RowUpdateEvent } from './types';
+import type { RowUpdateEvent } from './types.js';
 import type { Mocked } from 'vitest';
 
 describe('ViewService', () => {

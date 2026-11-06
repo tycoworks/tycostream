@@ -1,9 +1,9 @@
 import { ApolloClient, InMemoryCache } from '@apollo/client';
 import { YogaLink } from '@graphql-yoga/apollo-link';
-import { createSubscriptionHandler } from './subscription';
-import { EventHandler, Stats } from './events';
-import { StateManager, StatefulItem, State } from './state';
-import { GraphQLEndpoint } from './environment';
+import { createSubscriptionHandler } from './subscription.js';
+import { EventHandler, Stats } from './events.js';
+import { StateManager, StatefulItem, State } from './state.js';
+import { GraphQLEndpoint } from './environment.js';
 
 // Constructor options - just configuration
 export interface TestClientOptions {

@@ -1,7 +1,7 @@
 import { eachValueFrom } from 'rxjs-for-await';
 import { map } from 'rxjs/operators';
-import type { SourceDefinition } from '../config/source.types';
-import { SubscriptionService, GraphQLUpdate } from './subscription.service';
+import type { SourceDefinition } from '../config/source.types.js';
+import { SubscriptionService, GraphQLUpdate } from './subscription.service.js';
 
 /**
  * GraphQL subscription payload structure
@@ -72,4 +72,4 @@ export function buildSubscriptionResolvers(
 }
 
 // Re-export for backward compatibility
-export { GraphQLRowOperation } from './subscription.service';
+export { GraphQLRowOperation } from './subscription.service.js';

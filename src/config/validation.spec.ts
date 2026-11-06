@@ -1,5 +1,5 @@
 import { IsString, IsNumber, Min } from 'class-validator';
-import { validateConfig } from './validation';
+import { validateConfig } from './validation.js';
 
 class TestConfig {
   @IsString()

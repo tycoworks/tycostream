@@ -1,8 +1,8 @@
-import { View } from './view';
-import { Filter } from './filter';
-import { RowUpdateEvent, RowUpdateType } from './types';
+import { View } from './view.js';
+import { Filter } from './filter.js';
+import { RowUpdateEvent, RowUpdateType } from './types.js';
 import { Subject } from 'rxjs';
-import type { Source } from './source';
+import type { Source } from './source.js';
 import type { Mocked } from 'vitest';
 
 describe('View', () => {

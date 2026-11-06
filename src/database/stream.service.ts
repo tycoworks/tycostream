@@ -5,9 +5,9 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { DatabaseConfig } from '../config/database.config';
-import { DatabaseStream } from './stream';
-import type { ProtocolHandler } from './types';
+import type { DatabaseConfig } from '../config/database.config.js';
+import { DatabaseStream } from './stream.js';
+import type { ProtocolHandler } from './types.js';
 
 /**
  * Database stream management service

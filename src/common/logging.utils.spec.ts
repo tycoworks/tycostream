@@ -1,4 +1,4 @@
-import { truncateForLog, getLogLevels } from './logging.utils';
+import { truncateForLog, getLogLevels } from './logging.utils.js';
 
 describe('logging.utils', () => {
   describe('truncateForLog', () => {

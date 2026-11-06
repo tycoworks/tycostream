@@ -1,7 +1,7 @@
-import { DatabaseStream } from './stream';
-import type { DatabaseConfig } from '../config/database.config';
-import type { ProtocolHandler } from './types';
-import { DatabaseRowUpdateType } from './types';
+import { DatabaseStream } from './stream.js';
+import type { DatabaseConfig } from '../config/database.config.js';
+import type { ProtocolHandler } from './types.js';
+import { DatabaseRowUpdateType } from './types.js';
 import { Client } from 'pg';
 import type { Mock, Mocked } from 'vitest';
 
