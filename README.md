@@ -104,3 +104,7 @@ npm start
 ## What's Next
 
 See the [roadmap](./docs/roadmap.md) for planned features.
+
+## Licence
+
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your option.
