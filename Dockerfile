@@ -21,7 +21,7 @@ COPY *.yaml ./
 RUN npm run build
 
 # Remove dev dependencies and clean cache
-RUN npm ci --omit=dev && \
+RUN npm ci --omit=dev --ignore-scripts && \
     npm cache clean --force
 
 # Expose GraphQL port

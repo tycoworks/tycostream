@@ -17,7 +17,8 @@
     "test": "jest",
     "test:utils": "jest --config ./test/jest-utils.json",
     "e2e": "jest --config ./test/jest-e2e.json --runInBand",
-    "demo": "(cd demo && ts-node environment.ts &) && cd demo && vite"
+    "demo": "(cd demo && ts-node environment.ts &) && cd demo && vite",
+    "prepare": "husky"
   },
   "dependencies": {
     "@apollo/client": "^4.0.4",
@@ -63,7 +64,9 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.14.0",
     "graphql-ws": "^6.0.6",
+    "husky": "^9.1.7",
     "jest": "^30.5.2",
+    "lint-staged": "^17.6.0",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
@@ -92,5 +95,8 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "lint-staged": {
+    "{src,test}/**/*.ts": "eslint --fix"
   }
 }
