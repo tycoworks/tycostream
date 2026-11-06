@@ -5,11 +5,12 @@ import { Source } from './source';
 import { Filter } from './filter';
 import { Subject } from 'rxjs';
 import type { RowUpdateEvent } from './types';
+import type { Mocked } from 'vitest';
 
 describe('ViewService', () => {
   let viewService: ViewService;
-  let sourceService: jest.Mocked<SourceService>;
-  let mockSource: jest.Mocked<Source>;
+  let sourceService: Mocked<SourceService>;
+  let mockSource: Mocked<Source>;
   let sourceUpdates$: Subject<RowUpdateEvent>;
 
   beforeEach(async () => {
@@ -18,14 +19,14 @@ describe('ViewService', () => {
 
     // Mock Source
     mockSource = {
-      getUpdates: jest.fn().mockReturnValue(sourceUpdates$),
-      getPrimaryKeyField: jest.fn().mockReturnValue('id'),
-      dispose: jest.fn(),
+      getUpdates: vi.fn().mockReturnValue(sourceUpdates$),
+      getPrimaryKeyField: vi.fn().mockReturnValue('id'),
+      dispose: vi.fn(),
     } as any;
 
     // Mock SourceService
     sourceService = {
-      getSource: jest.fn().mockReturnValue(mockSource),
+      getSource: vi.fn().mockReturnValue(mockSource),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -39,7 +40,7 @@ describe('ViewService', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     sourceUpdates$.complete();
   });
 
@@ -71,20 +72,21 @@ describe('ViewService', () => {
       expect(sourceService.getSource).toHaveBeenCalledWith('test_source');
     });
 
-    it('should return an observable that can be subscribed to', (done) => {
-      const updates$ = viewService.getUpdates('test_source');
+    it('should return an observable that can be subscribed to', () =>
+      new Promise<void>((done, fail) => {
+        const updates$ = viewService.getUpdates('test_source');
 
-      // Should be able to subscribe without error
-      const subscription = updates$.subscribe({
-        next: () => {},
-        error: done.fail,
-        complete: () => done(),
-      });
+        // Should be able to subscribe without error
+        const subscription = updates$.subscribe({
+          next: () => {},
+          error: fail,
+          complete: () => done(),
+        });
 
-      // Complete the source to end the test
-      sourceUpdates$.complete();
-      subscription.unsubscribe();
-    });
+        // Complete the source to end the test
+        sourceUpdates$.complete();
+        subscription.unsubscribe();
+      }));
   });
 
   describe('multiple subscribers', () => {

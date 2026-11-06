@@ -11,7 +11,7 @@
     "outDir": "./dist",
     "incremental": true,
     "skipLibCheck": true,
-    "types": ["node", "jest"],
+    "types": ["node", "vitest/globals"],
     "strict": false,
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,

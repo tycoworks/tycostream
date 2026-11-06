@@ -76,7 +76,7 @@ describe('EventHandler', () => {
   let processor: MockEventProcessor;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     stream = new MockEventStream();
     processor = new MockEventProcessor(3);
 
@@ -88,7 +88,7 @@ describe('EventHandler', () => {
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('liveness detection', () => {
@@ -102,7 +102,7 @@ describe('EventHandler', () => {
       expect(handler.getState()).toBe(State.Active);
 
       // Fast-forward past liveness timeout
-      jest.advanceTimersByTime(1001);
+      vi.advanceTimersByTime(1001);
 
       expect(handler.getState()).toBe(State.Stalled);
     });
@@ -111,15 +111,15 @@ describe('EventHandler', () => {
       await handler.start();
 
       // Advance time but not past timeout
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
       stream.emit('event1');
 
       // Advance another 500ms (total 1000ms, but timer was reset)
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
       expect(handler.getState()).toBe(State.Active);
 
       // Advance past timeout from last event
-      jest.advanceTimersByTime(501);
+      vi.advanceTimersByTime(501);
       expect(handler.getState()).toBe(State.Stalled);
     });
 
@@ -127,7 +127,7 @@ describe('EventHandler', () => {
       await handler.start();
 
       // Let it stall
-      jest.advanceTimersByTime(1001);
+      vi.advanceTimersByTime(1001);
       expect(handler.getState()).toBe(State.Stalled);
 
       // Emit event to recover
@@ -135,11 +135,11 @@ describe('EventHandler', () => {
       expect(handler.getState()).toBe(State.Active);
 
       // Timer should be reset
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
       expect(handler.getState()).toBe(State.Active);
 
       // Should stall again after timeout
-      jest.advanceTimersByTime(501);
+      vi.advanceTimersByTime(501);
       expect(handler.getState()).toBe(State.Stalled);
     });
 
@@ -154,7 +154,7 @@ describe('EventHandler', () => {
       expect(handler.getState()).toBe(State.Completed);
 
       // Advance time - should not transition to stalled
-      jest.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
       expect(handler.getState()).toBe(State.Completed);
     });
 
@@ -167,7 +167,7 @@ describe('EventHandler', () => {
       expect(handler.getState()).toBe(State.Failed);
 
       // Advance time - should not transition to stalled
-      jest.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
       expect(handler.getState()).toBe(State.Failed);
     });
 
@@ -176,22 +176,22 @@ describe('EventHandler', () => {
 
       // Emit 2 events rapidly (processor expects 3 to complete)
       stream.emit('event1');
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       stream.emit('event2');
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       // Should still be active (not enough events to complete, not timed out)
       expect(handler.getState()).toBe(State.Active);
 
       // Now wait for timeout from last event (at 100ms)
-      jest.advanceTimersByTime(900); // Total: 1100ms (1000ms from last event)
+      vi.advanceTimersByTime(900); // Total: 1100ms (1000ms from last event)
       expect(handler.getState()).toBe(State.Stalled);
     });
   });
 
   describe('state change callback', () => {
     it('should call onStateChange when state changes', async () => {
-      const onStateChange = jest.fn();
+      const onStateChange = vi.fn();
 
       handler = new EventHandler(stream, processor, {
         id: 'test-handler',
@@ -203,7 +203,7 @@ describe('EventHandler', () => {
       await handler.start();
 
       // Transition to stalled
-      jest.advanceTimersByTime(1001);
+      vi.advanceTimersByTime(1001);
       expect(onStateChange).toHaveBeenCalled();
 
       // Recover
@@ -219,7 +219,7 @@ describe('EventHandler', () => {
     });
 
     it('should not call onStateChange for same state', async () => {
-      const onStateChange = jest.fn();
+      const onStateChange = vi.fn();
 
       handler = new EventHandler(stream, processor, {
         id: 'test-handler',
@@ -242,7 +242,7 @@ describe('EventHandler', () => {
   describe('edge cases', () => {
     it('should handle start without events', async () => {
       await handler.start();
-      jest.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(5000);
       expect(handler.getState()).toBe(State.Stalled);
     });
 
@@ -257,7 +257,7 @@ describe('EventHandler', () => {
       await handler.start();
 
       // Let it stall
-      jest.advanceTimersByTime(1001);
+      vi.advanceTimersByTime(1001);
       expect(handler.getState()).toBe(State.Stalled);
 
       // Cleanup should work
@@ -274,7 +274,7 @@ describe('EventHandler', () => {
       await handler.start();
 
       // Should stall immediately
-      jest.advanceTimersByTime(1);
+      vi.advanceTimersByTime(1);
       expect(handler.getState()).toBe(State.Stalled);
     });
 
@@ -288,7 +288,7 @@ describe('EventHandler', () => {
       await handler.start();
 
       // Advance time but less than timeout
-      jest.advanceTimersByTime(1000000); // 1 second
+      vi.advanceTimersByTime(1000000); // 1 second
 
       // Should still be active (timeout not reached)
       expect(handler.getState()).toBe(State.Active);

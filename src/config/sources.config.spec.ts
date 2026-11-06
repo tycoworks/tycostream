@@ -2,9 +2,10 @@ import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 import sourcesConfig from './sources.config';
 import { DataType } from '../common/types';
+import type { Mock } from 'vitest';
 
-jest.mock('fs');
-jest.mock('js-yaml');
+vi.mock('fs');
+vi.mock('js-yaml');
 
 describe('SourcesConfig', () => {
   const mockYamlContent = `
@@ -26,12 +27,12 @@ sources:
 `;
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should load source definitions from YAML', () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue(mockYamlContent);
-    (yaml.load as jest.Mock).mockReturnValue({
+    (fs.readFileSync as Mock).mockReturnValue(mockYamlContent);
+    (yaml.load as Mock).mockReturnValue({
       sources: {
         trades: {
           primary_key: 'id',
@@ -72,7 +73,7 @@ sources:
   it('should throw error when schema file is missing', () => {
     const error = new Error('ENOENT') as NodeJS.ErrnoException;
     error.code = 'ENOENT';
-    (fs.readFileSync as jest.Mock).mockImplementation(() => {
+    (fs.readFileSync as Mock).mockImplementation(() => {
       throw error;
     });
 
@@ -80,8 +81,8 @@ sources:
   });
 
   it('should throw error when no sources are defined', () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue('sources: {}');
-    (yaml.load as jest.Mock).mockReturnValue({
+    (fs.readFileSync as Mock).mockReturnValue('sources: {}');
+    (yaml.load as Mock).mockReturnValue({
       sources: {},
     });
 
@@ -91,8 +92,8 @@ sources:
   });
 
   it('should throw on invalid primary key', () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue(mockYamlContent);
-    (yaml.load as jest.Mock).mockReturnValue({
+    (fs.readFileSync as Mock).mockReturnValue(mockYamlContent);
+    (yaml.load as Mock).mockReturnValue({
       sources: {
         invalid: {
           primary_key: 'missing_field',
@@ -109,8 +110,8 @@ sources:
   });
 
   it('should throw error for invalid DataType names', () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue('sources with invalid type');
-    (yaml.load as jest.Mock).mockReturnValue({
+    (fs.readFileSync as Mock).mockReturnValue('sources with invalid type');
+    (yaml.load as Mock).mockReturnValue({
       sources: {
         test: {
           primary_key: 'id',
@@ -128,8 +129,8 @@ sources:
   });
 
   it('should throw error for case-sensitive type names', () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue('sources with wrong case');
-    (yaml.load as jest.Mock).mockReturnValue({
+    (fs.readFileSync as Mock).mockReturnValue('sources with wrong case');
+    (yaml.load as Mock).mockReturnValue({
       sources: {
         test: {
           primary_key: 'id',
@@ -147,8 +148,8 @@ sources:
   });
 
   it('should parse enum definitions and attach to fields', () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue('test');
-    (yaml.load as jest.Mock).mockReturnValue({
+    (fs.readFileSync as Mock).mockReturnValue('test');
+    (yaml.load as Mock).mockReturnValue({
       enums: {
         trade_side: ['buy', 'sell'],
         order_status: ['pending', 'filled', 'cancelled'],
@@ -200,8 +201,8 @@ sources:
   });
 
   it('should validate enum definitions', () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue('test');
-    (yaml.load as jest.Mock).mockReturnValue({
+    (fs.readFileSync as Mock).mockReturnValue('test');
+    (yaml.load as Mock).mockReturnValue({
       enums: {
         empty_enum: [], // Invalid: empty array
       },

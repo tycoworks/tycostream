@@ -4,11 +4,12 @@ import { SourceService } from './source.service';
 import { DatabaseStreamService } from '../database/stream.service';
 import type { SourceDefinition } from '../config/source.types';
 import { DataType } from '../config/source.types';
+import type { Mocked } from 'vitest';
 
 describe('SourceService', () => {
   let sourceService: SourceService;
-  let mockConfigService: jest.Mocked<ConfigService>;
-  let mockConnectionService: jest.Mocked<DatabaseStreamService>;
+  let mockConfigService: Mocked<ConfigService>;
+  let mockConnectionService: Mocked<DatabaseStreamService>;
 
   const mockSourceDefs = new Map<string, SourceDefinition>([
     [
@@ -41,16 +42,16 @@ describe('SourceService', () => {
 
   beforeEach(async () => {
     mockConfigService = {
-      get: jest.fn(),
+      get: vi.fn(),
     } as any;
 
     mockConnectionService = {
-      getStream: jest.fn().mockReturnValue({
-        connect: jest.fn().mockResolvedValue(undefined),
-        disconnect: jest.fn(),
+      getStream: vi.fn().mockReturnValue({
+        connect: vi.fn().mockResolvedValue(undefined),
+        disconnect: vi.fn(),
         streaming: false,
       }),
-      removeStream: jest.fn(),
+      removeStream: vi.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -133,7 +134,7 @@ describe('SourceService', () => {
 
       // Mock the source as disposed
       Object.defineProperty(firstSource, 'isDisposed', {
-        get: jest.fn().mockReturnValue(true),
+        get: vi.fn().mockReturnValue(true),
         configurable: true,
       });
 
@@ -189,8 +190,8 @@ describe('SourceService', () => {
       const pnlService = sourceService.getSource('live_pnl');
 
       // Spy on their cleanup methods
-      const tradesCleanup = jest.spyOn(tradesService, 'dispose');
-      const pnlCleanup = jest.spyOn(pnlService, 'dispose');
+      const tradesCleanup = vi.spyOn(tradesService, 'dispose');
+      const pnlCleanup = vi.spyOn(pnlService, 'dispose');
 
       // Destroy module
       await sourceService.onModuleDestroy();
