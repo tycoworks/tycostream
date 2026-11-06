@@ -12,7 +12,7 @@ export enum DataType {
   // Numeric types
   Integer,
   Float,
-  BigInt,  // Special handling - stored as string to preserve precision
+  BigInt, // Special handling - stored as string to preserve precision
 
   // String types
   String,
@@ -25,6 +25,6 @@ export enum DataType {
 
   // Other types
   Boolean,
-  JSON,      // JSON/JSONB data
-  Array,     // Array types
+  JSON, // JSON/JSONB data
+  Array, // Array types
 }

@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { DatabaseConfig } from '../config/database.config';
 import { DatabaseStream } from './stream';
@@ -25,19 +30,26 @@ export class DatabaseStreamService implements OnModuleInit, OnModuleDestroy {
       throw new Error('Database configuration not found');
     }
     this.dbConfig = config;
-    this.logger.log(`Database: ${this.dbConfig.user}@${this.dbConfig.host}:${this.dbConfig.port}/${this.dbConfig.database}`);
+    this.logger.log(
+      `Database: ${this.dbConfig.user}@${this.dbConfig.host}:${this.dbConfig.port}/${this.dbConfig.database}`,
+    );
   }
 
   /**
    * Get or create a DatabaseStream for a specific source
    * Manages the lifecycle of database streams
    */
-  getStream(sourceName: string, protocolHandler: ProtocolHandler): DatabaseStream {
+  getStream(
+    sourceName: string,
+    protocolHandler: ProtocolHandler,
+  ): DatabaseStream {
     let stream = this.streams.get(sourceName);
 
     // Check if existing stream is disposed and needs recreation
     if (stream && stream.isDisposed) {
-      this.logger.debug(`DatabaseStream ${sourceName} is disposed, creating fresh instance`);
+      this.logger.debug(
+        `DatabaseStream ${sourceName} is disposed, creating fresh instance`,
+      );
       this.streams.delete(sourceName);
       stream = undefined;
     }
@@ -68,7 +80,7 @@ export class DatabaseStreamService implements OnModuleInit, OnModuleDestroy {
    */
   async onModuleDestroy() {
     this.logger.log(`Closing ${this.streams.size} database streams`);
-    
+
     // Disconnect all streams
     for (const [sourceName, stream] of this.streams) {
       this.logger.debug(`Disconnecting stream for ${sourceName}`);

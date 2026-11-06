@@ -1,4 +1,4 @@
-import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { to as copyTo } from 'pg-copy-streams';
 import { Client } from 'pg';
 import { StreamBuffer } from './buffer';
@@ -20,13 +20,17 @@ export class DatabaseStream {
   private client: Client | null = null;
   private isShuttingDown = false;
   private connected = false;
-  private updateCallback?: (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => void;
+  private updateCallback?: (
+    row: Record<string, any>,
+    timestamp: bigint,
+    updateType: DatabaseRowUpdateType,
+  ) => void;
   private errorCallback?: (error: Error) => void;
 
   constructor(
     private readonly config: DatabaseConfig,
     private readonly sourceName: string,
-    private readonly protocolHandler: ProtocolHandler
+    private readonly protocolHandler: ProtocolHandler,
   ) {}
 
   /**
@@ -41,8 +45,12 @@ export class DatabaseStream {
    * Follows pg client naming convention
    */
   async connect(
-    onUpdate: (row: Record<string, any>, timestamp: bigint, updateType: DatabaseRowUpdateType) => void,
-    onError?: (error: Error) => void
+    onUpdate: (
+      row: Record<string, any>,
+      timestamp: bigint,
+      updateType: DatabaseRowUpdateType,
+    ) => void,
+    onError?: (error: Error) => void,
   ): Promise<void> {
     if (this.connected) {
       this.logger.warn('Already connected');
@@ -61,7 +69,7 @@ export class DatabaseStream {
       // Create COPY query that wraps the SUBSCRIBE
       const subscribeQuery = this.protocolHandler.createSubscribeQuery();
       const copyQuery = `COPY (${subscribeQuery}) TO STDOUT`;
-      
+
       this.logger.log(`Executing query: ${copyQuery}`);
 
       // Start streaming
@@ -71,7 +79,7 @@ export class DatabaseStream {
         if (this.isShuttingDown) return;
 
         const lines = this.buffer.processChunk(chunk);
-        
+
         for (const line of lines) {
           this.processLine(line);
         }
@@ -79,7 +87,7 @@ export class DatabaseStream {
 
       copyStream.on('error', (error) => {
         this.connected = false;
-        
+
         // Only treat as error if not shutting down
         if (!this.isShuttingDown) {
           this.logger.error('Stream error');
@@ -92,12 +100,16 @@ export class DatabaseStream {
 
       copyStream.on('end', () => {
         this.connected = false;
-        
+
         // Only warn about unexpected stream end
         if (!this.isShuttingDown) {
-          this.logger.warn('COPY stream ended unexpectedly', { sourceName: this.sourceName });
+          this.logger.warn('COPY stream ended unexpectedly', {
+            sourceName: this.sourceName,
+          });
           // Stream end without error usually means database closed connection
-          const error = new Error(`Database stream ended unexpectedly for source ${this.sourceName}`);
+          const error = new Error(
+            `Database stream ended unexpectedly for source ${this.sourceName}`,
+          );
           if (this.errorCallback) {
             this.errorCallback(error);
           }
@@ -128,17 +140,16 @@ export class DatabaseStream {
   disconnect(): void {
     this.logger.debug(`Ending connection for ${this.sourceName}`);
     this.isShuttingDown = true;
-    
+
     if (this.connected && this.client) {
       // Close the client directly
-      this.client.end().catch(error => {
+      this.client.end().catch((error) => {
         this.logger.error('Error closing client during disconnect', error);
       });
       this.connected = false;
       this.client = null;
     }
   }
-
 
   /**
    * Create a new database client
@@ -170,8 +181,11 @@ export class DatabaseStream {
       return client;
     } catch (error) {
       this.logger.error('Failed to connect to streaming database');
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Database connection failed: ${errorMessage}`);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Database connection failed: ${errorMessage}`, {
+        cause: error,
+      });
     }
   }
 
@@ -181,7 +195,7 @@ export class DatabaseStream {
    */
   private processLine(line: string): void {
     const parsed = this.protocolHandler.parseLine(line);
-    
+
     if (parsed && this.updateCallback) {
       // Send raw update to parent service - parent will determine insert vs update
       this.updateCallback(parsed.row, parsed.timestamp, parsed.updateType);

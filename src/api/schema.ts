@@ -1,7 +1,18 @@
-import type { SourceDefinition, SourceField, EnumType, SourceConfiguration } from '../config/source.types';
+import type {
+  SourceDefinition,
+  SourceField,
+  EnumType,
+  SourceConfiguration,
+} from '../config/source.types';
 import { DataType } from '../common/types';
 import { GraphQLRowOperation } from './subscription.resolver';
-import { GraphQLString, GraphQLInt, GraphQLFloat, GraphQLBoolean, GraphQLID } from 'graphql';
+import {
+  GraphQLString,
+  GraphQLInt,
+  GraphQLFloat,
+  GraphQLBoolean,
+  GraphQLID,
+} from 'graphql';
 import type { GraphQLScalarType } from 'graphql';
 
 /**
@@ -11,7 +22,7 @@ enum ComparisonInputType {
   String = 'StringComparison',
   Int = 'IntComparison',
   Float = 'FloatComparison',
-  Boolean = 'BooleanComparison'
+  Boolean = 'BooleanComparison',
 }
 
 /**
@@ -26,13 +37,10 @@ export function generateSchema(config: SourceConfiguration): string {
   const enumComparisonTypes = buildEnumComparisonTypes(enums);
   const comparisonTypes = buildComparisonTypes();
   const expressionInputTypes = buildExpressionInputTypes(sources);
-  const triggerInputTypes = buildTriggerInputTypes(sources);
   const sourceTypes = buildSourceTypes(sources);
-  const queryFields = buildQueryFields(sources);
-  const mutationFields = buildMutationFields(sources);
   const subscriptionFields = buildSubscriptionFields(sources);
-  
-  let schema = `
+
+  const schema = `
     # ================== ENUMS & BASE TYPES ==================
 
     # Row operation types for subscriptions
@@ -44,14 +52,6 @@ export function generateSchema(config: SourceConfiguration): string {
 
     ${enumTypeDefinitions}
     
-    # Trigger type (returned by queries and mutations)
-    type Trigger {
-      name: ${GraphQLString.name}!
-      webhook: ${GraphQLString.name}!
-      fire: ${GraphQLString.name}!
-      clear: ${GraphQLString.name}
-    }
-    
     # ================== INPUT TYPES ==================
 
 ${comparisonTypes}
@@ -60,22 +60,15 @@ ${enumComparisonTypes}
 
 ${expressionInputTypes}
     
-${triggerInputTypes}
-    
     # ================== OBJECT TYPES ==================
     
 ${sourceTypes}
     
     # ================== ROOT TYPES ==================
     
-    # Queries
+    # Basic query (required by GraphQL)
     type Query {
-${queryFields}
-    }
-    
-    # Mutations
-    type Mutation {
-${mutationFields}
+      ping: ${GraphQLString.name}
     }
     
     # Subscriptions
@@ -97,7 +90,7 @@ function buildEnumTypes(enumTypes: Map<string, EnumType>): string {
   const enumDefinitions: string[] = [];
 
   for (const enumType of enumTypes.values()) {
-    const values = enumType.values.map(value => `      ${value}`).join('\n');
+    const values = enumType.values.map((value) => `      ${value}`).join('\n');
     enumDefinitions.push(`    # User-defined enum: ${enumType.name}
     enum ${enumType.name} {
 ${values}
@@ -188,10 +181,10 @@ function buildComparisonTypes(): string {
  */
 function buildSourceTypes(sources: Map<string, SourceDefinition>): string {
   const types: string[] = [];
-  
+
   for (const [sourceName, sourceDefinition] of sources) {
     const fields = buildFieldDefinitions(sourceDefinition);
-    
+
     types.push(`    # ${sourceName} type
     type ${sourceName} {
 ${fields}
@@ -204,67 +197,44 @@ ${fields}
       fields: [${GraphQLString.name}!]!
     }`);
   }
-  
+
   return types.join('\n\n');
-}
-
-/**
- * Build query fields for triggers
- * Creates query fields for listing and getting triggers per source
- */
-function buildQueryFields(sources: Map<string, SourceDefinition>): string {
-  const fields: string[] = [];
-  
-  for (const sourceName of sources.keys()) {
-    fields.push(`      ${sourceName}_triggers: [Trigger!]!`);
-    fields.push(`      ${sourceName}_trigger(name: ${GraphQLString.name}!): Trigger`);
-  }
-  
-  return fields.join('\n');
-}
-
-/**
- * Build mutation fields for triggers
- * Creates mutation fields for creating and deleting triggers per source
- */
-function buildMutationFields(sources: Map<string, SourceDefinition>): string {
-  const fields: string[] = [];
-  
-  for (const sourceName of sources.keys()) {
-    fields.push(`      create_${sourceName}_trigger(input: ${sourceName}TriggerInput!): Trigger!`);
-    fields.push(`      delete_${sourceName}_trigger(name: ${GraphQLString.name}!): Trigger!`);
-  }
-  
-  return fields.join('\n');
 }
 
 /**
  * Build subscription fields for all sources
  * Creates a subscription field for each source that returns its update type
  */
-function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string {
+function buildSubscriptionFields(
+  sources: Map<string, SourceDefinition>,
+): string {
   return Array.from(sources.keys())
-    .map(sourceName => `      ${sourceName}(where: ${sourceName}Expression): ${sourceName}Update!`)
+    .map(
+      (sourceName) =>
+        `      ${sourceName}(where: ${sourceName}Expression): ${sourceName}Update!`,
+    )
     .join('\n');
 }
 
 /**
  * Build expression input types for all sources
  * Creates expression input types for each source with field comparisons and logical operators
- * Used by both subscriptions (where) and triggers (fire/clear)
+ * Used by subscriptions (where)
  */
-function buildExpressionInputTypes(sources: Map<string, SourceDefinition>): string {
+function buildExpressionInputTypes(
+  sources: Map<string, SourceDefinition>,
+): string {
   const inputTypes: string[] = [];
-  
+
   for (const [sourceName, sourceDefinition] of sources) {
     const fieldComparisons = sourceDefinition.fields
-      .map(field => {
+      .map((field) => {
         const comparisonType = getComparisonType(field);
         return `      ${field.name}: ${comparisonType}`;
       })
       .join('\n');
-    
-    inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions and triggers)
+
+    inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions)
     input ${sourceName}Expression {
 ${fieldComparisons}
       _and: [${sourceName}Expression!]
@@ -272,27 +242,7 @@ ${fieldComparisons}
       _not: ${sourceName}Expression
     }`);
   }
-  
-  return inputTypes.join('\n\n');
-}
 
-/**
- * Build trigger input types for all sources
- * Creates input types for creating triggers for each source
- */
-function buildTriggerInputTypes(sources: Map<string, SourceDefinition>): string {
-  const inputTypes: string[] = [];
-  
-  for (const sourceName of sources.keys()) {
-    inputTypes.push(`    # ${sourceName} trigger input
-    input ${sourceName}TriggerInput {
-      name: ${GraphQLString.name}!
-      webhook: ${GraphQLString.name}!
-      fire: ${sourceName}Expression!
-      clear: ${sourceName}Expression
-    }`);
-  }
-  
   return inputTypes.join('\n\n');
 }
 
@@ -328,12 +278,13 @@ function getComparisonType(field: SourceField): string {
  */
 function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
   return sourceDefinition.fields
-    .map(field => {
+    .map((field) => {
       // Use enum type if this field has one, otherwise use scalar type
       const graphqlTypeName = field.enumType
         ? field.enumType.name
         : getGraphQLScalarType(field.dataType).name;
-      const nullable = field.name !== sourceDefinition.primaryKeyField ? '' : '!';
+      const nullable =
+        field.name !== sourceDefinition.primaryKeyField ? '' : '!';
       return `      ${field.name}: ${graphqlTypeName}${nullable}`;
     })
     .join('\n');
@@ -351,7 +302,7 @@ function getGraphQLScalarType(dataType: DataType): GraphQLScalarType {
     case DataType.Float:
       return GraphQLFloat;
     case DataType.BigInt:
-      return GraphQLString;  // BigInt as string to preserve precision
+      return GraphQLString; // BigInt as string to preserve precision
 
     // String types
     case DataType.String:
@@ -370,7 +321,7 @@ function getGraphQLScalarType(dataType: DataType): GraphQLScalarType {
       return GraphQLBoolean;
     case DataType.JSON:
     case DataType.Array:
-      return GraphQLString;  // JSON/Arrays as strings
+      return GraphQLString; // JSON/Arrays as strings
 
     default:
       // Fallback to string

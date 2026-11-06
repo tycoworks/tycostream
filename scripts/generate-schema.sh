@@ -6,10 +6,8 @@
 # Example:
 #   ./generate-schema.sh \
 #     -e side "buy,sell" \
-#     -e event_type "FIRE,CLEAR" \
 #     -s live_pnl -p instrument_id \
-#     -s trades -p id -c side:side \
-#     -s alerts -p id -c event_type:event_type > schema.yaml
+#     -s trades -p id -c side:side > schema.yaml
 
 set -e
 
@@ -207,8 +205,15 @@ IFS='|' read -ra PK_ARRAY <<< "$PRIMARY_KEYS"
 # Process each source
 index=0
 for source in "${SOURCE_ARRAY[@]}"; do
-    # Get columns using SHOW COLUMNS
-    COLUMNS=$($PSQL -c "SHOW COLUMNS FROM $source" 2>/dev/null)
+    # Get columns using SHOW COLUMNS, keeping psql's errors to show if it fails
+    err_file=$(mktemp)
+    if ! COLUMNS=$($PSQL -c "SHOW COLUMNS FROM $source" 2>"$err_file"); then
+        echo "Error: couldn't read the columns of '$source' from $DB_HOST:$DB_PORT" >&2
+        cat "$err_file" >&2
+        rm -f "$err_file"
+        exit 1
+    fi
+    rm -f "$err_file"
 
     if [ -z "$COLUMNS" ]; then
         echo "Error: Source '$source' not found" >&2

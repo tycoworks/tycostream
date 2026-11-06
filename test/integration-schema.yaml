@@ -20,14 +20,6 @@ sources:
       updated_at: Timestamp
       metadata: JSON
 
-  # Table for testing triggers with score threshold
-  user_scores:
-    primary_key: user_id
-    columns:
-      user_id: Integer
-      score: Integer
-      active: Boolean
-
   # Comprehensive test table with ALL PostgreSQL types
   all_types:
     primary_key: id

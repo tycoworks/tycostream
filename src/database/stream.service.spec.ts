@@ -2,30 +2,31 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseStreamService } from './stream.service';
 import { DatabaseStream } from './stream';
-import { Client } from 'pg';
 import type { ProtocolHandler } from './types';
 
 // Mock DatabaseStream
 jest.mock('./stream', () => {
   return {
-    DatabaseStream: jest.fn().mockImplementation((config, sourceName, protocolHandler) => ({
-      sourceName,
-      protocolHandler,
-      connect: jest.fn().mockResolvedValue(undefined),
-      disconnect: jest.fn(),
-      onModuleDestroy: jest.fn().mockResolvedValue(undefined)
-    }))
+    DatabaseStream: jest
+      .fn()
+      .mockImplementation((config, sourceName, protocolHandler) => ({
+        sourceName,
+        protocolHandler,
+        connect: jest.fn().mockResolvedValue(undefined),
+        disconnect: jest.fn(),
+        onModuleDestroy: jest.fn().mockResolvedValue(undefined),
+      })),
   };
 });
 
 // Mock pg module
 jest.mock('pg', () => {
-  return { 
+  return {
     Client: jest.fn().mockImplementation(() => ({
       connect: jest.fn(),
       end: jest.fn(),
       query: jest.fn(),
-    }))
+    })),
   };
 });
 
@@ -36,7 +37,7 @@ describe('DatabaseStreamService', () => {
   beforeEach(async () => {
     // Clear all mocks before each test
     jest.clearAllMocks();
-    
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DatabaseStreamService,
@@ -57,6 +58,9 @@ describe('DatabaseStreamService', () => {
 
     service = module.get<DatabaseStreamService>(DatabaseStreamService);
     configService = module.get<ConfigService>(ConfigService);
+
+    // Config is read in onModuleInit, which compile() doesn't run
+    await service.onModuleInit();
   });
 
   afterEach(() => {
@@ -67,10 +71,18 @@ describe('DatabaseStreamService', () => {
     expect(service).toBeDefined();
   });
 
+  it('should throw on init when database configuration is missing', async () => {
+    (configService.get as jest.Mock).mockReturnValue(undefined);
+
+    await expect(service.onModuleInit()).rejects.toThrow(
+      'Database configuration not found',
+    );
+  });
+
   describe('getStream', () => {
     const mockProtocolHandler: ProtocolHandler = {
       createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE TO test'),
-      parseLine: jest.fn()
+      parseLine: jest.fn(),
     };
 
     beforeEach(() => {
@@ -80,7 +92,7 @@ describe('DatabaseStreamService', () => {
 
     it('should create a new DatabaseStream for first request', () => {
       const stream = service.getStream('test_source', mockProtocolHandler);
-      
+
       expect(DatabaseStream).toHaveBeenCalledTimes(1);
       expect(DatabaseStream).toHaveBeenCalledWith(
         {
@@ -91,7 +103,7 @@ describe('DatabaseStreamService', () => {
           password: 'test',
         },
         'test_source',
-        mockProtocolHandler
+        mockProtocolHandler,
       );
       expect(stream).toBeDefined();
       // Stream is created with correct parameters (verified via mock call above)
@@ -101,18 +113,18 @@ describe('DatabaseStreamService', () => {
       // First call creates the stream
       const stream1 = service.getStream('test_source', mockProtocolHandler);
       expect(DatabaseStream).toHaveBeenCalledTimes(1);
-      
+
       // Second call should return the same stream
       const stream2 = service.getStream('test_source', mockProtocolHandler);
       expect(DatabaseStream).toHaveBeenCalledTimes(1); // Still only 1 call
-      
+
       expect(stream1).toBe(stream2);
     });
 
     it('should create separate streams for different sources', () => {
       const stream1 = service.getStream('source1', mockProtocolHandler);
       const stream2 = service.getStream('source2', mockProtocolHandler);
-      
+
       expect(DatabaseStream).toHaveBeenCalledTimes(2);
       expect(stream1).not.toBe(stream2);
       // Each stream is created with its respective source name (verified via mock calls)
@@ -121,16 +133,19 @@ describe('DatabaseStreamService', () => {
     it('should create fresh stream when existing one is disposed', () => {
       const firstStream = service.getStream('test_source', mockProtocolHandler);
       expect(firstStream).toBeDefined();
-      
+
       // Mock the stream as disposed
       Object.defineProperty(firstStream, 'isDisposed', {
         get: jest.fn().mockReturnValue(true),
-        configurable: true
+        configurable: true,
       });
-      
+
       // Get stream again - should create a new one
-      const secondStream = service.getStream('test_source', mockProtocolHandler);
-      
+      const secondStream = service.getStream(
+        'test_source',
+        mockProtocolHandler,
+      );
+
       // Should be a different instance
       expect(secondStream).not.toBe(firstStream);
       expect(DatabaseStream).toHaveBeenCalledTimes(2);
@@ -139,18 +154,18 @@ describe('DatabaseStreamService', () => {
     it('should handle multiple protocol handlers for same source', () => {
       const protocolHandler1: ProtocolHandler = {
         createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE 1'),
-        parseLine: jest.fn()
+        parseLine: jest.fn(),
       };
-      
+
       const protocolHandler2: ProtocolHandler = {
         createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE 2'),
-        parseLine: jest.fn()
+        parseLine: jest.fn(),
       };
-      
+
       // Same source name, but different protocol handlers
       const stream1 = service.getStream('test_source', protocolHandler1);
       const stream2 = service.getStream('test_source', protocolHandler2);
-      
+
       // Should return the same stream (source name is the key)
       expect(stream1).toBe(stream2);
       expect(DatabaseStream).toHaveBeenCalledTimes(1);
@@ -161,20 +176,20 @@ describe('DatabaseStreamService', () => {
   describe('removeStream', () => {
     const mockProtocolHandler: ProtocolHandler = {
       createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE TO test'),
-      parseLine: jest.fn()
+      parseLine: jest.fn(),
     };
 
     it('should remove stream and call disconnect', () => {
       // Create a stream
       const stream = service.getStream('test_source', mockProtocolHandler);
       const disconnectSpy = stream.disconnect as jest.Mock;
-      
+
       // Remove it
       service.removeStream('test_source');
-      
+
       // Should call disconnect
       expect(disconnectSpy).toHaveBeenCalled();
-      
+
       // Getting the stream again should create a new one
       const newStream = service.getStream('test_source', mockProtocolHandler);
       expect(newStream).not.toBe(stream);
@@ -190,7 +205,7 @@ describe('DatabaseStreamService', () => {
   describe('onModuleDestroy', () => {
     const mockProtocolHandler: ProtocolHandler = {
       createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE TO test'),
-      parseLine: jest.fn()
+      parseLine: jest.fn(),
     };
 
     it('should disconnect all active streams', async () => {
@@ -198,14 +213,14 @@ describe('DatabaseStreamService', () => {
       const stream1 = service.getStream('source1', mockProtocolHandler);
       const stream2 = service.getStream('source2', mockProtocolHandler);
       const stream3 = service.getStream('source3', mockProtocolHandler);
-      
+
       const disconnect1 = stream1.disconnect as jest.Mock;
       const disconnect2 = stream2.disconnect as jest.Mock;
       const disconnect3 = stream3.disconnect as jest.Mock;
-      
+
       // Call onModuleDestroy
       await service.onModuleDestroy();
-      
+
       // All streams should be disconnected
       expect(disconnect1).toHaveBeenCalled();
       expect(disconnect2).toHaveBeenCalled();

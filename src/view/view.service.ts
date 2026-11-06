@@ -14,22 +14,27 @@ import type { RowUpdateEvent } from './types';
 export class ViewService implements OnModuleDestroy {
   private readonly logger = new Logger(ViewService.name);
 
-  constructor(
-    private sourceService: SourceService
-  ) {}
+  constructor(private sourceService: SourceService) {}
 
   /**
    * Get updates for a specific source with optional filtering
    */
-  getUpdates(sourceName: string, filter?: Filter, deltaUpdates?: boolean, skipSnapshot?: boolean): Observable<RowUpdateEvent> {
+  getUpdates(
+    sourceName: string,
+    filter?: Filter,
+    deltaUpdates?: boolean,
+    skipSnapshot?: boolean,
+  ): Observable<RowUpdateEvent> {
     // Get the source for this data source
     const source = this.sourceService.getSource(sourceName);
-    
+
     // Create a new view for each subscriber (no caching)
     const view = new View(source, filter, deltaUpdates, skipSnapshot);
-    
-    this.logger.debug(`Created new view for source: ${sourceName}, match: ${filter?.match.expression || '(unfiltered)'}${filter?.unmatch ? `, unmatch: ${filter.unmatch.expression}` : ''}${deltaUpdates ? ', deltaUpdates: true' : ''}${skipSnapshot ? ', skipSnapshot: true' : ''}`);
-    
+
+    this.logger.debug(
+      `Created new view for source: ${sourceName}, match: ${filter?.match.expression || '(unfiltered)'}${filter?.unmatch ? `, unmatch: ${filter.unmatch.expression}` : ''}${deltaUpdates ? ', deltaUpdates: true' : ''}${skipSnapshot ? ', skipSnapshot: true' : ''}`,
+    );
+
     // Return the view's filtered updates with cleanup
     return this.createViewStream(view);
   }
@@ -38,10 +43,10 @@ export class ViewService implements OnModuleDestroy {
    * Create a stream that disposes view on disconnect
    */
   private createViewStream(view: View): Observable<RowUpdateEvent> {
-    return new Observable<RowUpdateEvent>(subscriber => {
+    return new Observable<RowUpdateEvent>((subscriber) => {
       // Subscribe to the view's updates
       const subscription = view.getUpdates().subscribe(subscriber);
-      
+
       // Return cleanup function
       return () => {
         subscription.unsubscribe();

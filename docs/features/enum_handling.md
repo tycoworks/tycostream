@@ -231,10 +231,8 @@ Example:
 ```bash
 ./generate-schema.sh \
   -e side "buy,sell" \
-  -e event_type "FIRE,CLEAR" \
   -s live_pnl -p instrument_id \
-  -s trades -p id -c side:side \
-  -s alerts -p id -c event_type:event_type
+  -s trades -p id -c side:side
 ```
 
 Note: Manual specification required since Materialize doesn't support native PostgreSQL enum types.

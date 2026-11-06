@@ -15,31 +15,31 @@ export class View {
   private readonly stream$: Observable<RowUpdateEvent>;
   private readonly primaryKeyField: string;
   private readonly filter?: Filter;
-  
+
   constructor(
     private readonly source: Source,
     viewFilter?: Filter,
     private readonly deltaUpdates = false,
-    private readonly skipSnapshot?: boolean
+    private readonly skipSnapshot?: boolean,
   ) {
     this.primaryKeyField = source.getPrimaryKeyField();
     this.filter = viewFilter;
-    
+
     // Create the filtered stream from the unified stream (snapshot + live)
-    
+
     this.stream$ = source.getUpdates(skipSnapshot).pipe(
-      map(event => this.processEvent(event)),
-      filter((event): event is RowUpdateEvent => event !== null)
+      map((event) => this.processEvent(event)),
+      filter((event): event is RowUpdateEvent => event !== null),
     );
   }
-  
+
   /**
    * Check if this view has a filter
    */
   private hasFilter(): boolean {
     return this.filter !== undefined;
   }
-  
+
   /**
    * Process an event through this view, updating visibility state
    * Returns transformed event or null if filtered out
@@ -48,25 +48,25 @@ export class View {
     const key = event.row[this.primaryKeyField];
 
     const outputType = this.getEventType(event);
-    
+
     // Update visible keys based on output type
     if (outputType === RowUpdateType.Insert) {
       this.visibleKeys.add(key);
     } else if (outputType === RowUpdateType.Delete) {
       this.visibleKeys.delete(key);
     }
-    
+
     // Build output event if needed
     return outputType === null ? null : this.formatEvent(event, outputType);
   }
-  
+
   /**
    * Get the output event type based on filter and visibility
    */
   private getEventType(event: RowUpdateEvent): RowUpdateType | null {
     const key = event.row[this.primaryKeyField];
     const wasInView = this.visibleKeys.has(key);
-    
+
     if (!this.hasFilter()) {
       // No filter - pass through everything
       return event.type;
@@ -75,7 +75,7 @@ export class View {
     } else {
       // INSERT/UPDATE events with filter
       const isInView = this.shouldBeInView(event, wasInView);
-      
+
       if (!wasInView && isInView) {
         // Row entering view - transform to INSERT
         return RowUpdateType.Insert;
@@ -91,45 +91,53 @@ export class View {
       }
     }
   }
-  
+
   /**
    * Determine if a row should be in the view
    */
   private shouldBeInView(event: RowUpdateEvent, wasInView: boolean): boolean {
     const fullRow = event.row;
-    
+
     // Optimization: For UPDATE events where filter fields haven't changed
     if (event.type === RowUpdateType.Update && wasInView) {
-      const hasRelevantChanges = Array.from(event.fields).some(field => this.filter!.fields.has(field));
-      
+      const hasRelevantChanges = Array.from(event.fields).some((field) =>
+        this.filter!.fields.has(field),
+      );
+
       if (!hasRelevantChanges) {
         return wasInView; // Filter result can't have changed
       }
     }
-    
+
     try {
       const matchResult = this.filter!.match.evaluate(fullRow);
-      
+
       // Give precedence to match to avoid oscillation
-      const shouldStay = wasInView 
-        ? (matchResult || !this.filter!.unmatch.evaluate(fullRow))  // Stay if match is true OR unmatch is false
-        : matchResult;  // Enter if match is true
-      
+      const shouldStay = wasInView
+        ? matchResult || !this.filter!.unmatch.evaluate(fullRow) // Stay if match is true OR unmatch is false
+        : matchResult; // Enter if match is true
+
       return shouldStay;
     } catch (error) {
-      this.logger.error(`Filter evaluation error: ${error.message}`, error.stack);
+      this.logger.error(
+        `Filter evaluation error: ${error.message}`,
+        error.stack,
+      );
       // On error, exclude the row from view
       return false;
     }
   }
-   
+
   /**
    * Format event with appropriate row data based on deltaUpdates setting
    */
-  private formatEvent(event: RowUpdateEvent, outputType: RowUpdateType): RowUpdateEvent {
+  private formatEvent(
+    event: RowUpdateEvent,
+    outputType: RowUpdateType,
+  ): RowUpdateEvent {
     // Determine what row data to include
     let row: Record<string, any>;
-    
+
     if (!this.deltaUpdates) {
       // Full updates: use complete row
       row = event.row;
@@ -146,17 +154,17 @@ export class View {
       // Delta updates INSERT: keep full row
       row = event.row;
     }
-    
+
     return { type: outputType, fields: event.fields, row };
   }
-  
+
   /**
    * Get filtered updates from this view
    */
   getUpdates(): Observable<RowUpdateEvent> {
     return this.stream$;
   }
-  
+
   /**
    * Clean up resources
    */

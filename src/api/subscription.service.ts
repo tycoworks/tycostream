@@ -15,7 +15,7 @@ import type { SourceDefinition } from '../config/source.types';
 export enum GraphQLRowOperation {
   Insert = 'INSERT',
   Update = 'UPDATE',
-  Delete = 'DELETE'
+  Delete = 'DELETE',
 }
 
 /**
@@ -40,9 +40,7 @@ const ROW_UPDATE_TYPE_MAP = {
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
 
-  constructor(
-    private readonly viewService: ViewService
-  ) {}
+  constructor(private readonly viewService: ViewService) {}
 
   /**
    * Creates a subscription stream for a data source
@@ -50,27 +48,31 @@ export class SubscriptionService {
    */
   createSubscription(
     sourceDefinition: SourceDefinition,
-    where?: ExpressionTree
+    where?: ExpressionTree,
   ): Observable<GraphQLUpdate> {
     // Parse and compile filter if provided, using ExpressionBuilder for enum optimization
     const filter = where
-      ? new Filter(new ExpressionBuilder(sourceDefinition).buildExpression(where))
+      ? new Filter(
+          new ExpressionBuilder(sourceDefinition).buildExpression(where),
+        )
       : undefined;
 
     this.logger.log(
-      `Subscription for ${sourceDefinition.name}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`
+      `Subscription for ${sourceDefinition.name}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`,
     );
 
     // Get updates from view service with deltaUpdates enabled for efficiency
-    return this.viewService.getUpdates(sourceDefinition.name, filter, true).pipe(
-      map((event: RowUpdateEvent) => this.transformToGraphQLUpdate(event)),
-      tap((update) => {
-        this.logger.debug(
-          `Sending GraphQL update - source: ${sourceDefinition.name}, operation: ${update.operation}, ` +
-          `data: ${truncateForLog(update.data)}, fields: [${update.fields.join(', ')}]`
-        );
-      })
-    );
+    return this.viewService
+      .getUpdates(sourceDefinition.name, filter, true)
+      .pipe(
+        map((event: RowUpdateEvent) => this.transformToGraphQLUpdate(event)),
+        tap((update) => {
+          this.logger.debug(
+            `Sending GraphQL update - source: ${sourceDefinition.name}, operation: ${update.operation}, ` +
+              `data: ${truncateForLog(update.data)}, fields: [${update.fields.join(', ')}]`,
+          );
+        }),
+      );
   }
 
   /**
@@ -78,14 +80,14 @@ export class SubscriptionService {
    */
   private transformToGraphQLUpdate(event: RowUpdateEvent): GraphQLUpdate {
     const operation = ROW_UPDATE_TYPE_MAP[event.type];
-    
+
     // Convert Set to array for GraphQL
     const fields = Array.from(event.fields);
 
     return {
       operation,
       data: event.row,
-      fields
+      fields,
     };
   }
 }

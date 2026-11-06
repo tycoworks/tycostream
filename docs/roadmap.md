@@ -9,7 +9,7 @@
 
 ## 📊 GraphQL Subscriptions
 
-- ✅ WebSocket-based GraphQL Subscriptions using @nestjs/graphql
+- ✅ GraphQL Subscriptions over SSE using @nestjs/graphql and GraphQL Yoga
 - ✅ Compatible with Apollo Client and other standard GraphQL clients
 - ✅ Simple YAML config defining sources and schema
 - ✅ GraphQL schema auto-generated from YAML
@@ -17,13 +17,6 @@
 - ✅ Hasura-style filters
 - ✅ Multiple sources per database
 - ✅ Multiple concurrent clients supported
-
-## 🔔 Event Triggers
-
-- ✅ Webhook delivery on data conditions
-- ✅ Different fire/clear thresholds (hysteresis support)
-- ✅ GraphQL mutations for trigger management
-- ✅ In-memory trigger storage (ephemeral)
 
 ## 🚀 Developer Experience
 

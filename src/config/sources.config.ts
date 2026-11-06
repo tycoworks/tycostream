@@ -2,7 +2,13 @@ import { registerAs } from '@nestjs/config';
 import { readFileSync } from 'fs';
 import { load } from 'js-yaml';
 import { Logger } from '@nestjs/common';
-import type { YamlSourcesFile, SourceDefinition, SourceField, EnumType, SourceConfiguration } from './source.types';
+import type {
+  YamlSourcesFile,
+  SourceDefinition,
+  SourceField,
+  EnumType,
+  SourceConfiguration,
+} from './source.types';
 import { DataType } from '../common/types';
 
 const logger = new Logger('SourcesConfig');
@@ -37,7 +43,7 @@ export default registerAs('sources', (): SourceConfiguration => {
         }
         enumDefinitions.set(enumName, {
           name: enumName,
-          values
+          values,
         });
       }
     }
@@ -45,66 +51,86 @@ export default registerAs('sources', (): SourceConfiguration => {
     // Parse each source
     for (const [sourceName, sourceConfig] of Object.entries(yamlData.sources)) {
       if (!sourceConfig.primary_key) {
-        throw new Error(`Source '${sourceName}' missing required 'primary_key' field`);
+        throw new Error(
+          `Source '${sourceName}' missing required 'primary_key' field`,
+        );
       }
-      
-      if (!sourceConfig.columns || Object.keys(sourceConfig.columns).length === 0) {
-        throw new Error(`Source '${sourceName}' must have at least one column defined`);
+
+      if (
+        !sourceConfig.columns ||
+        Object.keys(sourceConfig.columns).length === 0
+      ) {
+        throw new Error(
+          `Source '${sourceName}' must have at least one column defined`,
+        );
       }
-      
+
       // Verify primary key exists in columns
       if (!sourceConfig.columns[sourceConfig.primary_key]) {
-        throw new Error(`Primary key '${sourceConfig.primary_key}' not found in columns for source '${sourceName}'`);
+        throw new Error(
+          `Primary key '${sourceConfig.primary_key}' not found in columns for source '${sourceName}'`,
+        );
       }
-      
-      // Build field list with type resolution
-      const fields: SourceField[] = Object.entries(sourceConfig.columns).map(([name, typeString]) => {
-        let field: SourceField;
 
-        // First check if this references an enum
-        const enumDef = enumDefinitions.get(typeString);
-        if (enumDef) {
-          // This is an enum field
-          field = {
-            name,
-            dataType: DataType.String,  // Enums are strings at runtime
-            enumType: enumDef,
-          };
-        } else {
-          // Not an enum, try to parse as a DataType
-          try {
-            const dataType = getDataType(typeString);
+      // Build field list with type resolution
+      const fields: SourceField[] = Object.entries(sourceConfig.columns).map(
+        ([name, typeString]) => {
+          let field: SourceField;
+
+          // First check if this references an enum
+          const enumDef = enumDefinitions.get(typeString);
+          if (enumDef) {
+            // This is an enum field
             field = {
               name,
-              dataType,
+              dataType: DataType.String, // Enums are strings at runtime
+              enumType: enumDef,
             };
-          } catch (error) {
-            // Provide better error context
-            throw new Error(`Invalid type '${typeString}' for column '${name}' in source '${sourceName}': ${error.message}`);
+          } else {
+            // Not an enum, try to parse as a DataType
+            try {
+              const dataType = getDataType(typeString);
+              field = {
+                name,
+                dataType,
+              };
+            } catch (error) {
+              // Provide better error context
+              throw new Error(
+                `Invalid type '${typeString}' for column '${name}' in source '${sourceName}': ${error.message}`,
+                { cause: error },
+              );
+            }
           }
-        }
 
-        return field;
-      });
-      
+          return field;
+        },
+      );
+
       sources.set(sourceName, {
         name: sourceName,
         primaryKeyField: sourceConfig.primary_key,
-        fields
+        fields,
       });
     }
-    
-    logger.log(`Loaded ${sources.size} source definitions: ${Array.from(sources.keys()).join(', ')}`);
+
+    logger.log(
+      `Loaded ${sources.size} source definitions: ${Array.from(sources.keys()).join(', ')}`,
+    );
 
     // Fail if no sources were loaded
     if (sources.size === 0) {
-      throw new Error('No source definitions found in schema file. At least one source must be defined.');
+      throw new Error(
+        'No source definitions found in schema file. At least one source must be defined.',
+      );
     }
-
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       logger.error(`Schema file not found at ${schemaPath}`);
-      throw new Error(`Schema file not found: ${schemaPath}. Please ensure the file exists or set SCHEMA_PATH environment variable.`);
+      throw new Error(
+        `Schema file not found: ${schemaPath}. Please ensure the file exists or set SCHEMA_PATH environment variable.`,
+        { cause: error },
+      );
     } else {
       logger.error('Failed to load source definitions');
       throw error;
@@ -113,7 +139,7 @@ export default registerAs('sources', (): SourceConfiguration => {
 
   return {
     sources,
-    enums: enumDefinitions
+    enums: enumDefinitions,
   };
 });
 
@@ -146,6 +172,8 @@ function getDataType(typeName: string): DataType {
     case 'Array':
       return DataType.Array;
     default:
-      throw new Error(`Unknown type in configuration: ${typeName}. Valid types are: Integer, Float, BigInt, String, UUID, Timestamp, Date, Time, Boolean, JSON, Array`);
+      throw new Error(
+        `Unknown type in configuration: ${typeName}. Valid types are: Integer, Float, BigInt, String, UUID, Timestamp, Date, Time, Boolean, JSON, Array`,
+      );
   }
 }

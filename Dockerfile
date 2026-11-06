@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
@@ -21,7 +21,7 @@ COPY *.yaml ./
 RUN npm run build
 
 # Remove dev dependencies and clean cache
-RUN npm ci --only=production && \
+RUN npm ci --omit=dev --ignore-scripts && \
     npm cache clean --force
 
 # Expose GraphQL port

@@ -22,12 +22,12 @@ describe('logging.utils', () => {
     });
 
     it('should handle complex objects', () => {
-      const data = { 
-        id: 1, 
-        nested: { 
-          array: [1, 2, 3], 
-          bool: true 
-        } 
+      const data = {
+        id: 1,
+        nested: {
+          array: [1, 2, 3],
+          bool: true,
+        },
       };
       const result = truncateForLog(data);
       expect(result).toContain('id');
@@ -46,9 +46,19 @@ describe('logging.utils', () => {
       expect(levels).toEqual(['error', 'warn', 'log']);
     });
 
-    it('should return all levels for verbose', () => {
-      const levels = getLogLevels('verbose');
+    it('should return up to log for info level', () => {
+      const levels = getLogLevels('info');
+      expect(levels).toEqual(['error', 'warn', 'log']);
+    });
+
+    it('should return all levels for trace', () => {
+      const levels = getLogLevels('trace');
       expect(levels).toEqual(['error', 'warn', 'log', 'debug', 'verbose']);
+    });
+
+    it('should not accept NestJS-only names, which Yoga rejects', () => {
+      expect(getLogLevels('verbose')).toEqual(['error', 'warn', 'log']); // default
+      expect(getLogLevels('log')).toEqual(['error', 'warn', 'log']); // default
     });
 
     it('should return only error for error level', () => {

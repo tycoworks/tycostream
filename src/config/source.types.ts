@@ -20,8 +20,8 @@ export interface EnumType {
  */
 export interface SourceField {
   name: string;
-  dataType: DataType;       // Our internal type representation
-  enumType?: EnumType;      // Present when this field is an enum
+  dataType: DataType; // Our internal type representation
+  enumType?: EnumType; // Present when this field is an enum
 }
 
 /**
@@ -36,9 +36,9 @@ export function isEnumField(field: SourceField): boolean {
  * Maps to a database view that we subscribe to and expose via GraphQL
  */
 export interface SourceDefinition {
-  name: string;              // Source name (e.g., 'trades', 'live_pnl')
-  primaryKeyField: string;   // Which field is the primary key
-  fields: SourceField[];     // All fields in this source
+  name: string; // Source name (e.g., 'trades', 'live_pnl')
+  primaryKeyField: string; // Which field is the primary key
+  fields: SourceField[]; // All fields in this source
 }
 
 /**
@@ -64,6 +64,6 @@ export interface YamlSourceConfig {
  * Each source key becomes a GraphQL subscription field
  */
 export interface YamlSourcesFile {
-  enums?: Record<string, string[]>;  // Optional enum definitions
+  enums?: Record<string, string[]>; // Optional enum definitions
   sources: Record<string, YamlSourceConfig>;
 }

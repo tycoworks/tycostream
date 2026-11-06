@@ -1,10 +1,6 @@
 # tycostream
 
-tycostream turns [Materialize](https://materialize.com/) views into GraphQL APIs, so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
-
-**Key features:**
-- **Subscriptions** — Subscribe to any view and get updates over WebSockets
-- **Triggers** — Fire webhooks when data meets specific conditions
+tycostream turns [Materialize](https://materialize.com/) views into GraphQL subscriptions over server-sent events (SSE), so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
 
 [Learn more about why I built this →](https://tycoworks.substack.com/p/tycostream-turn-materialize-views)
 
@@ -26,9 +22,7 @@ GRAPHQL_UI=true
 SCHEMA_PATH=./schema.yaml
 LOG_LEVEL=debug" > .env
 
-# If Materialize runs on your host machine and you're using Docker:
-# macOS/Windows: Change DATABASE_HOST to host.docker.internal
-# Linux: Change DATABASE_HOST to 172.17.0.1
+# LOG_LEVEL can be trace, debug, info, warn or error
 ```
 
 ### 2. Create a schema file
@@ -76,7 +70,9 @@ curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/gen
 ### 3. Start tycostream
 
 ```bash
+# host.docker.internal reaches Materialize on your machine (172.17.0.1 on Linux)
 docker run -p 4000:4000 --env-file .env \
+  -e DATABASE_HOST=host.docker.internal \
   -v $(pwd)/schema.yaml:/app/schema.yaml \
   ghcr.io/tycoworks/tycostream:v0.1.0-preview
 ```
@@ -109,10 +105,12 @@ Once you've cloned and installed:
 npm run demo
 ```
 
+The demo starts its own Materialize through [Testcontainers](https://node.testcontainers.org/supported-container-runtimes/), so it needs Docker running.
+
 This starts a complete example with:
 - Live market data streaming
 - Real-time position tracking
-- AG-Grid frontend with WebSocket subscriptions
+- AG-Grid frontend with SSE subscriptions
 
 Visit http://localhost:5173 to see the demo UI.
 

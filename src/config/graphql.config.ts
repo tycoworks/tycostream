@@ -27,6 +27,6 @@ export default registerAs('graphql', (): GraphQLConfig => {
     port: parseInt(process.env.GRAPHQL_PORT || '4000', 10),
     playground: process.env.GRAPHQL_UI === 'true',
   };
-  
+
   return validateConfig(rawConfig, 'graphql', GraphQLConfig);
 });

@@ -9,11 +9,11 @@ describe('DatabaseModule', () => {
   it('should provide the correct services', () => {
     const providers = Reflect.getMetadata('providers', DatabaseModule);
     const exports = Reflect.getMetadata('exports', DatabaseModule);
-    
+
     // Check providers includes the services
     const providerTokens = providers.map((p: any) => p.provide || p);
     expect(providerTokens).toContain(DatabaseStreamService);
-    
+
     // Check exports includes DatabaseStreamService
     expect(exports).toContain(DatabaseStreamService);
   });

@@ -1,15 +1,13 @@
 import { DatabaseStream } from './stream';
 import type { DatabaseConfig } from '../config/database.config';
-import type { SourceDefinition } from '../config/source.types';
-import { DataType } from '../config/source.types';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
 import { Client } from 'pg';
 
 // Mock pg module
 jest.mock('pg', () => {
-  return { 
-    Client: jest.fn()
+  return {
+    Client: jest.fn(),
   };
 });
 
@@ -18,20 +16,10 @@ describe('DatabaseStream', () => {
   let mockConfig: DatabaseConfig;
   let mockProtocolHandler: jest.Mocked<ProtocolHandler>;
 
-  const mockSourceDef: SourceDefinition = {
-    name: 'test_source',
-    primaryKeyField: 'id',
-    fields: [
-      { name: 'id', dataType: DataType.String },
-      { name: 'name', dataType: DataType.String },
-      { name: 'value', dataType: DataType.Integer }
-    ]
-  };
-
   const mockClient = {
     connect: jest.fn().mockResolvedValue(undefined),
     query: jest.fn(),
-    end: jest.fn().mockResolvedValue(undefined)
+    end: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(() => {
@@ -40,10 +28,10 @@ describe('DatabaseStream', () => {
     mockClient.connect.mockResolvedValue(undefined);
     mockClient.end.mockResolvedValue(undefined);
     mockClient.query.mockClear();
-    
+
     // Reset pg Client mock
     (Client as unknown as jest.Mock).mockImplementation(() => mockClient);
-    
+
     mockConfig = {
       host: 'localhost',
       port: 6875,
@@ -53,15 +41,13 @@ describe('DatabaseStream', () => {
     };
 
     mockProtocolHandler = {
-      createSubscribeQuery: jest.fn().mockReturnValue('SUBSCRIBE TO test_source'),
-      parseLine: jest.fn()
+      createSubscribeQuery: jest
+        .fn()
+        .mockReturnValue('SUBSCRIBE TO test_source'),
+      parseLine: jest.fn(),
     };
 
-    stream = new DatabaseStream(
-      mockConfig,
-      'test_source',
-      mockProtocolHandler
-    );
+    stream = new DatabaseStream(mockConfig, 'test_source', mockProtocolHandler);
   });
 
   afterEach(() => {
@@ -85,7 +71,7 @@ describe('DatabaseStream', () => {
 
       // Mock successful connection and query
       const mockStream = {
-        on: jest.fn()
+        on: jest.fn(),
       };
       mockClient.query.mockReturnValue(mockStream);
 
@@ -95,14 +81,14 @@ describe('DatabaseStream', () => {
       expect(mockClient.connect).toHaveBeenCalled();
       expect(mockProtocolHandler.createSubscribeQuery).toHaveBeenCalled();
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.objectContaining({}) // pg-copy-streams object
+        expect.objectContaining({}), // pg-copy-streams object
       );
       expect(stream.streaming).toBe(true);
     });
 
     it('should not start streaming if already active', async () => {
       const mockUpdateCallback = jest.fn();
-      
+
       // First call
       const mockStream = { on: jest.fn() };
       mockClient.query.mockReturnValue(mockStream);
@@ -118,10 +104,12 @@ describe('DatabaseStream', () => {
     it('should handle connection errors', async () => {
       const mockUpdateCallback = jest.fn();
       const connectionError = new Error('Connection failed');
-      
+
       mockClient.connect.mockRejectedValue(connectionError);
 
-      await expect(stream.connect(mockUpdateCallback)).rejects.toThrow('Database connection failed: Connection failed');
+      await expect(stream.connect(mockUpdateCallback)).rejects.toThrow(
+        'Database connection failed: Connection failed',
+      );
       // Note: streaming might be briefly true before error occurs, depending on timing
     });
   });
@@ -129,7 +117,7 @@ describe('DatabaseStream', () => {
   describe('onModuleDestroy', () => {
     it('should disconnect client when streaming', async () => {
       const mockUpdateCallback = jest.fn();
-      
+
       // Start streaming
       const mockStream = { on: jest.fn() };
       mockClient.query.mockReturnValue(mockStream);
@@ -143,7 +131,7 @@ describe('DatabaseStream', () => {
 
     it('should handle disconnect errors gracefully', async () => {
       const mockUpdateCallback = jest.fn();
-      
+
       // Start streaming
       const mockStream = { on: jest.fn() };
       mockClient.query.mockReturnValue(mockStream);
@@ -161,14 +149,14 @@ describe('DatabaseStream', () => {
     it('should call update callback when line is parsed successfully', async () => {
       const mockUpdateCallback = jest.fn();
       let dataCallback: (chunk: Buffer) => void;
-      
+
       // Mock stream setup
       const mockStream = {
         on: jest.fn((event, callback) => {
           if (event === 'data') {
             dataCallback = callback;
           }
-        })
+        }),
       };
       mockClient.query.mockReturnValue(mockStream);
 
@@ -176,7 +164,7 @@ describe('DatabaseStream', () => {
       mockProtocolHandler.parseLine.mockReturnValue({
         row: { id: '1', name: 'test' },
         timestamp: BigInt(1000),
-        updateType: DatabaseRowUpdateType.Upsert
+        updateType: DatabaseRowUpdateType.Upsert,
       });
 
       await stream.connect(mockUpdateCallback);
@@ -188,20 +176,20 @@ describe('DatabaseStream', () => {
       expect(mockUpdateCallback).toHaveBeenCalledWith(
         { id: '1', name: 'test' },
         BigInt(1000),
-        DatabaseRowUpdateType.Upsert
+        DatabaseRowUpdateType.Upsert,
       );
     });
 
     it('should call update callback with delete type when appropriate', async () => {
       const mockUpdateCallback = jest.fn();
       let dataCallback: (chunk: Buffer) => void;
-      
+
       const mockStream = {
         on: jest.fn((event, callback) => {
           if (event === 'data') {
             dataCallback = callback;
           }
-        })
+        }),
       };
       mockClient.query.mockReturnValue(mockStream);
 
@@ -209,7 +197,7 @@ describe('DatabaseStream', () => {
       mockProtocolHandler.parseLine.mockReturnValue({
         row: { id: '1', name: 'test' },
         timestamp: BigInt(1000),
-        updateType: DatabaseRowUpdateType.Delete
+        updateType: DatabaseRowUpdateType.Delete,
       });
 
       await stream.connect(mockUpdateCallback);
@@ -220,20 +208,20 @@ describe('DatabaseStream', () => {
       expect(mockUpdateCallback).toHaveBeenCalledWith(
         { id: '1', name: 'test' },
         BigInt(1000),
-        DatabaseRowUpdateType.Delete
+        DatabaseRowUpdateType.Delete,
       );
     });
 
     it('should not call callback if line parsing fails', async () => {
       const mockUpdateCallback = jest.fn();
       let dataCallback: (chunk: Buffer) => void;
-      
+
       const mockStream = {
         on: jest.fn((event, callback) => {
           if (event === 'data') {
             dataCallback = callback;
           }
-        })
+        }),
       };
       mockClient.query.mockReturnValue(mockStream);
 
@@ -253,26 +241,26 @@ describe('DatabaseStream', () => {
     it('should suppress errors during shutdown', async () => {
       const mockUpdateCallback = jest.fn();
       const mockErrorCallback = jest.fn();
-      
+
       let errorCallback: (error: Error) => void;
       const mockStream = {
         on: jest.fn((event, callback) => {
           if (event === 'error') {
             errorCallback = callback;
           }
-        })
+        }),
       };
       mockClient.query.mockReturnValue(mockStream);
 
       await stream.connect(mockUpdateCallback, mockErrorCallback);
-      
+
       // Start shutdown
       stream.disconnect();
-      
+
       // Simulate error during shutdown - should be suppressed
       const error = new Error('Connection lost during shutdown');
       errorCallback!(error);
-      
+
       // Error callback should NOT be called during shutdown
       expect(mockErrorCallback).not.toHaveBeenCalled();
     });
@@ -280,14 +268,14 @@ describe('DatabaseStream', () => {
     it('should call error callback on stream error', async () => {
       const mockUpdateCallback = jest.fn();
       const mockErrorCallback = jest.fn();
-      
+
       let errorCallback: (error: Error) => void;
       const mockStream = {
         on: jest.fn((event, callback) => {
           if (event === 'error') {
             errorCallback = callback;
           }
-        })
+        }),
       };
       mockClient.query.mockReturnValue(mockStream);
 
@@ -296,7 +284,7 @@ describe('DatabaseStream', () => {
       // Simulate stream error
       const error = new Error('Database connection lost');
       errorCallback!(error);
-      
+
       expect(mockErrorCallback).toHaveBeenCalledWith(error);
       expect(stream.streaming).toBe(false);
     });
@@ -304,14 +292,14 @@ describe('DatabaseStream', () => {
     it('should call error callback on unexpected stream end', async () => {
       const mockUpdateCallback = jest.fn();
       const mockErrorCallback = jest.fn();
-      
+
       let endCallback: () => void;
       const mockStream = {
         on: jest.fn((event, callback) => {
           if (event === 'end') {
             endCallback = callback;
           }
-        })
+        }),
       };
       mockClient.query.mockReturnValue(mockStream);
 
@@ -319,11 +307,13 @@ describe('DatabaseStream', () => {
 
       // Simulate unexpected stream end
       endCallback!();
-      
+
       expect(mockErrorCallback).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('Database stream ended unexpectedly')
-        })
+          message: expect.stringContaining(
+            'Database stream ended unexpectedly',
+          ),
+        }),
       );
       expect(stream.streaming).toBe(false);
     });
