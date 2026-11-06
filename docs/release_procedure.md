@@ -17,7 +17,6 @@
 
 ### 2. Pre-Release Checks
 - [ ] Tests passing: `npm test` and `npm run e2e`
-- [ ] Demo working: `npm run demo`
 - [ ] Update version in package.json to `0.1.0-preview`
 - [ ] Update README.md with link to guide and Docker instructions
 
