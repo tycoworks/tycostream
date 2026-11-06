@@ -108,7 +108,7 @@ Found by reading the code on 5 Nov; only the first gets its own test (step 1).
 
 - **The custom end-to-end harness stays for post 2,** because it tests through GraphQL clients against a real Materialize, which is what shows the change is invisible to clients. It goes in post 4.
 - **Queries per view (step 7)** share their subscription's name, as Hasura's do; GraphQL allows a query and a subscription with the same name.
-- **`docs/features/calculated_states.md` and `timestamp_propagation.md`** mention triggers; Chris keeps them until the Restate work is done.
+- **`docs/design/calculated_states.md` and `timestamp_propagation.md`** mention triggers; Chris keeps them until the Restate work is done.
 
 ## Architecture after the change
 
@@ -142,7 +142,7 @@ One commit per step, merged without squashing. Tests for each step are agreed wi
 6. **Switch over.** Pushdown becomes the only path. Delete `src/view/`, the JavaScript compiler, the COPY parser, the setting, `pg-copy-streams` and `rxjs-for-await`. The late-joiner test now passes, so it becomes a normal `it`.
 7. **Queries per view:** `trades(where: …)` returns the current rows through the pool, as a plain `SELECT`. Then remove the placeholder `ping` query.
 8. **Lint:** type the remaining `any` boundaries and make the `no-unsafe-*` rules errors again.
-9. **Docs and release.** README, `architecture.md`, `roadmap.md`, a pass over `docs/features/`, then release `v0.3.0`.
+9. **Docs and release.** README, `architecture.md`, `roadmap.md`, a pass over `docs/design/`, then release `v0.3.0`.
 
 ## Enums
 

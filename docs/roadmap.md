@@ -28,8 +28,8 @@
 
 ## Backlog
 
-- [Calculated states](./features/calculated_states.md)
+- [Calculated states](./design/calculated_states.md)
 - Row-level security
-- [Observability](./features/observability.md)
-- [Database reconnection](./features/database_reconnection.md)
-- [Client reconnection](./features/client_reconnection.md)
+- [Observability](./design/observability.md)
+- [Database reconnection](./design/database_reconnection.md)
+- [Client reconnection](./design/client_reconnection.md)
