@@ -88,6 +88,28 @@ Applied to each complete timestamp, once a progress row passes it:
 3. **Rows entering or leaving a client's `where`** arrive as a lone `+1` or `−1`, so they become inserts and deletes with no extra logic.
 4. **The snapshot** is the first timestamp, all `+1`, so it's a batch of inserts.
 
+### Why raw diffs, not `ENVELOPE UPSERT`
+
+- With one `SUBSCRIBE` per client, the upsert envelope sends only each key's new row. tycostream would then have to hold every row each client has, to tell inserts from updates and to find the changed fields: one copy of the data per client, more than the old shared cache held.
+- Raw diffs carry the old row in the `−1`, so tycostream only ever holds the current timestamp's changes.
+- Both rows matter. Deletes, and rows leaving a filter, show only as a `−1`. The `−1` carries the old values. Without a key, the `−1` is the only way to say which copy went. And because order within a timestamp isn't fixed, applying rows as they arrive could let an old row's `−1` delete the row that replaced it; buffering to progress fixes that.
+- `ENVELOPE DEBEZIUM` would pair the rows for us, but it's private preview.
+
+### Bugs in today's code that this fixes
+
+Found by reading the code on 5 Nov; only the first gets its own test (step 1).
+
+- **Late joiners can miss part of a timestamp** (`src/view/source.ts`). A new client's snapshot is the cache at the moment it joins, and its live buffer keeps only rows with a later timestamp. If a timestamp's rows arrive in chunks and the client joins between them, it never gets the rest. The likeliest case is a second client joining while the first is still loading the initial snapshot, which is all one timestamp. The tests miss it because they write one row per statement and join after a small snapshot. Pushdown removes the shared snapshot. (A good opening example for post 4's model checker.)
+- **`key_violation` is treated as an upsert** (`src/database/materialize.ts`). Dropping the envelope, and ending the subscription when a key isn't unique, fixes it.
+- **`COPY` text isn't unescaped,** so backslashes, tabs and newlines in strings arrive as escape sequences. `FETCH` returns typed rows, so the parser goes.
+- **Not a bug, but a gap:** clients get each row as it arrives, so they can see half of a timestamp. Buffering to progress closes it.
+
+### Also carried over
+
+- **The custom end-to-end harness stays for post 2,** because it tests through GraphQL clients against a real Materialize, which is what shows the change is invisible to clients. It goes in post 4.
+- **Queries per view (step 7)** share their subscription's name, as Hasura's do; GraphQL allows a query and a subscription with the same name.
+- **`docs/features/calculated_states.md` and `timestamp_propagation.md`** mention triggers; Chris keeps them until the Restate work is done.
+
 ## Architecture after the change
 
 ```
