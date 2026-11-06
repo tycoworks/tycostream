@@ -8,7 +8,7 @@ tycostream is a real-time data streaming component that bridges database sources
 
 - **Runtime**: Node.js with TypeScript
 - **Framework**: NestJS for modular architecture and dependency injection
-- **GraphQL Server**: @nestjs/graphql with Apollo Server (WebSocket subscriptions)
+- **GraphQL Server**: @nestjs/graphql with GraphQL Yoga (subscriptions over SSE)
 - **Database Client**: node-postgres (Materialize uses Postgres wire protocol)
 - **Streaming**: RxJS for reactive stream processing (native to NestJS)
 - **Schema**: Dynamic GraphQL schema generation from YAML configuration
@@ -57,7 +57,7 @@ Core streaming logic that bridges database and API layers:
 Unified GraphQL API for all operations:
 - Dynamic GraphQL schema generation from YAML configuration
 - Subscription endpoints with filtered streaming support
-- WebSocket handling via NestJS GraphQL module
+- SSE handling via the NestJS GraphQL module's Yoga driver
 - Automatic client connection lifecycle management
 - Filter expression parsing and validation
 
@@ -72,7 +72,7 @@ Shared infrastructure:
 ## Data Flow
 
 1. **Initial Connection**
-   - Client connects via GraphQL WebSocket subscription
+   - Client opens a GraphQL subscription over SSE
    - ViewService creates a View instance for the source + filter combination
    - Source connects to database if not already connected
 

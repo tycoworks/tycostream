@@ -9,7 +9,7 @@
 
 ## 📊 GraphQL Subscriptions
 
-- ✅ WebSocket-based GraphQL Subscriptions using @nestjs/graphql
+- ✅ GraphQL Subscriptions over SSE using @nestjs/graphql and GraphQL Yoga
 - ✅ Compatible with Apollo Client and other standard GraphQL clients
 - ✅ Simple YAML config defining sources and schema
 - ✅ GraphQL schema auto-generated from YAML

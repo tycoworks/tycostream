@@ -16,7 +16,7 @@ Our E2E test suite is organized into different test categories, each serving a s
 - **Purpose**: Functional testing of the complete system
 - **Coverage**:
   - All CRUD operations (INSERT, UPDATE, DELETE)
-  - Multiple concurrent WebSocket connections
+  - Multiple concurrent SSE connections
   - Late joiners receiving proper snapshots
   - Complex operation sequences
   - All supported data types
@@ -29,7 +29,7 @@ Our E2E test suite is organized into different test categories, each serving a s
 - **Purpose**: Validate system behavior under load
 - **Coverage**:
   - High throughput (e.g. 10,000+ operations with mixed INSERT/UPDATE/DELETE)
-  - Many concurrent connections (30 WebSocket clients by default)
+  - Many concurrent connections (30 SSE clients by default)
   - Large snapshots (9,000+ rows)
   - Late joining clients during heavy load
   - Staggered client connections
@@ -98,8 +98,8 @@ The test schema includes two tables to ensure comprehensive type coverage:
 
 The test suite uses a custom test infrastructure with:
 - **TestEnvironment**: Manages test infrastructure (database container, NestJS app, SQL execution)
-- **TestClient**: Manages individual WebSocket subscriptions with state tracking
-- **TestClientManager**: Manages multiple WebSocket test clients concurrently
+- **TestClient**: Manages individual SSE subscriptions with state tracking
+- **TestClientManager**: Manages multiple SSE test clients concurrently
 - **TestScenario**: Generates test operations and expected states for multiple iterations
 
 ## Requirements

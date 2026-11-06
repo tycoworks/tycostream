@@ -1,6 +1,6 @@
 # tycostream
 
-tycostream turns [Materialize](https://materialize.com/) views into GraphQL subscriptions over WebSockets, so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
+tycostream turns [Materialize](https://materialize.com/) views into GraphQL subscriptions over server-sent events (SSE), so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
 
 [Learn more about why I built this →](https://tycoworks.substack.com/p/tycostream-turn-materialize-views)
 
@@ -108,7 +108,7 @@ npm run demo
 This starts a complete example with:
 - Live market data streaming
 - Real-time position tracking
-- AG-Grid frontend with WebSocket subscriptions
+- AG-Grid frontend with SSE subscriptions
 
 Visit http://localhost:5173 to see the demo UI.
 
