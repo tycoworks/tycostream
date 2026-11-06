@@ -1,14 +1,10 @@
 {
   "name": "tycostream-core",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "description": "",
   "author": "",
   "private": true,
   "license": "MIT",
-  "workspaces": [
-    ".",
-    "demo"
-  ],
   "scripts": {
     "build": "nest build",
     "start": "node dist/main",
@@ -17,7 +13,6 @@
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
     "test:utils": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-utils.json",
     "e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json --runInBand",
-    "demo": "(cd demo && ts-node environment.ts &) && cd demo && vite",
     "prepare": "husky"
   },
   "dependencies": {
@@ -69,7 +64,6 @@
     "testcontainers": "^12.2.1",
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
-    "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.20.0"

@@ -74,7 +74,7 @@ curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/gen
 docker run -p 4000:4000 --env-file .env \
   -e DATABASE_HOST=host.docker.internal \
   -v $(pwd)/schema.yaml:/app/schema.yaml \
-  ghcr.io/tycoworks/tycostream:v0.1.0-preview
+  ghcr.io/tycoworks/tycostream:v0.2.0
 ```
 
 ### 4. Test your API
@@ -87,7 +87,7 @@ Visit http://localhost:4000/graphql to explore your GraphQL API with the built-i
 
 ### Getting Started
 
-For development, customization, or running the demo:
+For development or customization:
 
 ```bash
 git clone https://github.com/tycoworks/tycostream.git
@@ -96,25 +96,6 @@ npm install
 npm run build
 npm start
 ```
-
-### Running the Demo
-
-Once you've cloned and installed:
-
-```bash
-npm run demo
-```
-
-The demo starts its own Materialize through [Testcontainers](https://node.testcontainers.org/supported-container-runtimes/), so it needs Docker running.
-
-This starts a complete example with:
-- Live market data streaming
-- Real-time position tracking
-- AG-Grid frontend with SSE subscriptions
-
-Visit http://localhost:5173 to see the demo UI.
-
-https://github.com/user-attachments/assets/c5406eb6-0f1e-48ae-ae78-0cadb874b443
 
 ---
 
