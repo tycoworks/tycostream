@@ -56,7 +56,7 @@ export class TestEnvironment {
   private config: TestEnvironmentConfig;
   private clientManager: TestClientManager;
 
-  private static readonly DATABASE_VERSION = 'materialize/materialized:v0.124.0';
+  private static readonly DATABASE_VERSION = 'materialize/materialized:v26.49.1';
 
   constructor(config: TestEnvironmentConfig) {
     this.config = config;

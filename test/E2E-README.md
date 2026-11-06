@@ -107,4 +107,4 @@ The test suite uses a custom test infrastructure with:
 - Docker must be running
 - Port 4001 must be available for the test GraphQL server  
 - Port 4100 must be available for the stress test GraphQL server
-- The Materialize image (`materialize/materialized:v0.124.0`) will be automatically pulled if not present
+- The Materialize image (`materialize/materialized:v26.49.1`) will be automatically pulled if not present
