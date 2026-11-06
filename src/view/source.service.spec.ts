@@ -31,6 +31,9 @@ describe('SourceService', () => {
     }]
   ]);
 
+  // ConfigService returns the whole source configuration, not just the map
+  const mockSourceConfig = { sources: mockSourceDefs };
+
   beforeEach(async () => {
     mockClient = {
       query: jest.fn(),
@@ -66,31 +69,29 @@ describe('SourceService', () => {
 
   describe('initialization', () => {
     it('should load source definitions on module init', async () => {
-      mockConfigService.get.mockReturnValue(mockSourceDefs);
-      
+      mockConfigService.get.mockReturnValue(mockSourceConfig);
+
       await sourceService.onModuleInit();
-      
+
       expect(mockConfigService.get).toHaveBeenCalledWith('sources');
     });
 
-    it('should handle missing source definitions gracefully', async () => {
+    it('should throw when source definitions are missing', async () => {
       mockConfigService.get.mockReturnValue(undefined);
-      
-      // Should not throw
-      await expect(sourceService.onModuleInit()).resolves.toBeUndefined();
+
+      await expect(sourceService.onModuleInit()).rejects.toThrow('No source definitions found.');
     });
 
-    it('should handle empty source definitions', async () => {
-      mockConfigService.get.mockReturnValue(new Map());
-      
-      // Should not throw
-      await expect(sourceService.onModuleInit()).resolves.toBeUndefined();
+    it('should throw when source definitions are empty', async () => {
+      mockConfigService.get.mockReturnValue({ sources: new Map() });
+
+      await expect(sourceService.onModuleInit()).rejects.toThrow('No source definitions found.');
     });
   });
 
   describe('getSource', () => {
     beforeEach(async () => {
-      mockConfigService.get.mockReturnValue(mockSourceDefs);
+      mockConfigService.get.mockReturnValue(mockSourceConfig);
       await sourceService.onModuleInit();
     });
 
@@ -144,7 +145,7 @@ describe('SourceService', () => {
 
   describe('removeSource', () => {
     beforeEach(async () => {
-      mockConfigService.get.mockReturnValue(mockSourceDefs);
+      mockConfigService.get.mockReturnValue(mockSourceConfig);
       await sourceService.onModuleInit();
     });
 
@@ -175,7 +176,7 @@ describe('SourceService', () => {
 
   describe('lifecycle management', () => {
     beforeEach(async () => {
-      mockConfigService.get.mockReturnValue(mockSourceDefs);
+      mockConfigService.get.mockReturnValue(mockSourceConfig);
       await sourceService.onModuleInit();
     });
 

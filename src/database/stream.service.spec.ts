@@ -57,6 +57,9 @@ describe('DatabaseStreamService', () => {
 
     service = module.get<DatabaseStreamService>(DatabaseStreamService);
     configService = module.get<ConfigService>(ConfigService);
+
+    // Config is read in onModuleInit, which compile() doesn't run
+    await service.onModuleInit();
   });
 
   afterEach(() => {
@@ -65,6 +68,12 @@ describe('DatabaseStreamService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('should throw on init when database configuration is missing', async () => {
+    (configService.get as jest.Mock).mockReturnValue(undefined);
+
+    await expect(service.onModuleInit()).rejects.toThrow('Database configuration not found');
   });
 
   describe('getStream', () => {
