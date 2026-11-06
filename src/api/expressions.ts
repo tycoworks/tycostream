@@ -46,6 +46,8 @@ export class ExpressionBuilder {
     const expression = this.buildExpressionString(tree, 'datum', fields);
 
     try {
+      // Compiling the filter to a function is deliberate; the redo replaces it with SQL
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
       const evaluate = new Function('datum', `return ${expression}`) as (
         row: any,
       ) => boolean;
@@ -56,7 +58,9 @@ export class ExpressionBuilder {
         expression,
       };
     } catch (error) {
-      throw new Error(`Failed to compile filter expression: ${error.message}`);
+      throw new Error(`Failed to compile filter expression: ${error.message}`, {
+        cause: error,
+      });
     }
   }
 

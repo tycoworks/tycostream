@@ -1,6 +1,6 @@
 import { registerAs } from '@nestjs/config';
 import { IsInt, IsNotEmpty, IsString, Max, Min } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import { validateConfig } from './validation';
 
 /**

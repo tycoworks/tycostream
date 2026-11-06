@@ -98,6 +98,7 @@ export default registerAs('sources', (): SourceConfiguration => {
               // Provide better error context
               throw new Error(
                 `Invalid type '${typeString}' for column '${name}' in source '${sourceName}': ${error.message}`,
+                { cause: error },
               );
             }
           }
@@ -128,6 +129,7 @@ export default registerAs('sources', (): SourceConfiguration => {
       logger.error(`Schema file not found at ${schemaPath}`);
       throw new Error(
         `Schema file not found: ${schemaPath}. Please ensure the file exists or set SCHEMA_PATH environment variable.`,
+        { cause: error },
       );
     } else {
       logger.error('Failed to load source definitions');

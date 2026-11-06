@@ -38,34 +38,34 @@ describe('GraphQL Expressions', () => {
       it('should handle _eq operator', () => {
         const where = { status: { _eq: 'active' } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.status === "active"');
+        expect(filter.expression).toBe('datum.status === "active"');
       });
 
       it('should handle _neq operator', () => {
         const where = { status: { _neq: 'inactive' } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.status !== "inactive"');
+        expect(filter.expression).toBe('datum.status !== "inactive"');
       });
 
       it('should handle numeric comparisons', () => {
-        expect(builder.buildExpression({ age: { _gt: 21 } })!.expression).toBe(
+        expect(builder.buildExpression({ age: { _gt: 21 } }).expression).toBe(
           'datum.age > 21',
         );
-        expect(builder.buildExpression({ age: { _lt: 65 } })!.expression).toBe(
+        expect(builder.buildExpression({ age: { _lt: 65 } }).expression).toBe(
           'datum.age < 65',
         );
-        expect(builder.buildExpression({ age: { _gte: 18 } })!.expression).toBe(
+        expect(builder.buildExpression({ age: { _gte: 18 } }).expression).toBe(
           'datum.age >= 18',
         );
-        expect(
-          builder.buildExpression({ age: { _lte: 100 } })!.expression,
-        ).toBe('datum.age <= 100');
+        expect(builder.buildExpression({ age: { _lte: 100 } }).expression).toBe(
+          'datum.age <= 100',
+        );
       });
 
       it('should handle _in operator', () => {
         const where = { status: { _in: ['active', 'pending'] } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '["active", "pending"].indexOf(datum.status) !== -1',
         );
       });
@@ -73,17 +73,17 @@ describe('GraphQL Expressions', () => {
       it('should handle _nin operator', () => {
         const where = { status: { _nin: ['deleted', 'archived'] } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '["deleted", "archived"].indexOf(datum.status) === -1',
         );
       });
 
       it('should handle _is_null operator', () => {
         expect(
-          builder.buildExpression({ email: { _is_null: true } })!.expression,
+          builder.buildExpression({ email: { _is_null: true } }).expression,
         ).toBe('datum.email == null');
         expect(
-          builder.buildExpression({ email: { _is_null: false } })!.expression,
+          builder.buildExpression({ email: { _is_null: false } }).expression,
         ).toBe('datum.email != null');
       });
     });
@@ -94,7 +94,7 @@ describe('GraphQL Expressions', () => {
           _and: [{ status: { _eq: 'active' } }, { age: { _gt: 21 } }],
         };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.status === "active" && datum.age > 21)',
         );
       });
@@ -104,7 +104,7 @@ describe('GraphQL Expressions', () => {
           _or: [{ status: { _eq: 'active' } }, { status: { _eq: 'pending' } }],
         };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.status === "active" || datum.status === "pending")',
         );
       });
@@ -114,7 +114,7 @@ describe('GraphQL Expressions', () => {
           _not: { status: { _eq: 'deleted' } },
         };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('!(datum.status === "deleted")');
+        expect(filter.expression).toBe('!(datum.status === "deleted")');
       });
 
       it('should handle nested logical operators', () => {
@@ -130,7 +130,7 @@ describe('GraphQL Expressions', () => {
           ],
         };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '((datum.status === "active" || datum.status === "pending") && datum.age >= 18)',
         );
       });
@@ -148,7 +148,7 @@ describe('GraphQL Expressions', () => {
         };
         // Multiple field conditions at same level are now wrapped in parentheses for clarity
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.status === "active" || (datum.age >= 18 && datum.role === "admin"))',
         );
       });
@@ -167,7 +167,7 @@ describe('GraphQL Expressions', () => {
           ],
         };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '((datum.a === 1 || datum.b === 2) && (datum.c === 3 || (datum.d === 4 && datum.e === 5)))',
         );
       });
@@ -180,7 +180,7 @@ describe('GraphQL Expressions', () => {
           age: { _gt: 21 },
         };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.status === "active" && datum.age > 21)',
         );
       });
@@ -190,7 +190,7 @@ describe('GraphQL Expressions', () => {
           age: { _gte: 18, _lt: 65 },
         };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('(datum.age >= 18 && datum.age < 65)');
+        expect(filter.expression).toBe('(datum.age >= 18 && datum.age < 65)');
       });
     });
 
@@ -221,25 +221,25 @@ describe('GraphQL Expressions', () => {
       it('should handle special characters in string values', () => {
         const where = { name: { _eq: "O'Brien" } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.name === "O\'Brien"');
+        expect(filter.expression).toBe('datum.name === "O\'Brien"');
       });
 
       it('should handle boolean values', () => {
         const where = { is_active: { _eq: true } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.is_active === true');
+        expect(filter.expression).toBe('datum.is_active === true');
       });
 
       it('should handle null values', () => {
         const where = { status: { _eq: null } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.status === null');
+        expect(filter.expression).toBe('datum.status === null');
       });
 
       it('should handle numeric values', () => {
         const where = { count: { _eq: 0 } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.count === 0');
+        expect(filter.expression).toBe('datum.count === 0');
       });
     });
   });
@@ -256,16 +256,16 @@ describe('GraphQL Expressions', () => {
       const filter = builder.buildExpression(where);
 
       expect(filter).not.toBeNull();
-      expect(Array.from(filter!.fields)).toEqual(['status', 'age']);
-      expect(typeof filter!.evaluate).toBe('function');
-      expect(filter!.expression).toBe(
+      expect(Array.from(filter.fields)).toEqual(['status', 'age']);
+      expect(typeof filter.evaluate).toBe('function');
+      expect(filter.expression).toBe(
         '(datum.status === "active" && datum.age > 18)',
       );
 
       // Test the evaluate function
-      expect(filter!.evaluate({ status: 'active', age: 20 })).toBe(true);
-      expect(filter!.evaluate({ status: 'inactive', age: 20 })).toBe(false);
-      expect(filter!.evaluate({ status: 'active', age: 15 })).toBe(false);
+      expect(filter.evaluate({ status: 'active', age: 20 })).toBe(true);
+      expect(filter.evaluate({ status: 'inactive', age: 20 })).toBe(false);
+      expect(filter.evaluate({ status: 'active', age: 15 })).toBe(false);
     });
 
     it('should collect fields from nested logical operators', () => {
@@ -279,7 +279,7 @@ describe('GraphQL Expressions', () => {
       };
       const filter = builder.buildExpression(where);
 
-      expect(Array.from(filter!.fields).sort()).toEqual([
+      expect(Array.from(filter.fields).sort()).toEqual([
         'age',
         'priority',
         'status',
@@ -290,9 +290,9 @@ describe('GraphQL Expressions', () => {
       const where = { _not: { status: { _eq: 'deleted' } } };
       const filter = builder.buildExpression(where);
 
-      expect(Array.from(filter!.fields)).toEqual(['status']);
-      expect(filter!.evaluate({ status: 'active' })).toBe(true);
-      expect(filter!.evaluate({ status: 'deleted' })).toBe(false);
+      expect(Array.from(filter.fields)).toEqual(['status']);
+      expect(filter.evaluate({ status: 'active' })).toBe(true);
+      expect(filter.evaluate({ status: 'deleted' })).toBe(false);
     });
 
     it('should throw error for invalid expressions', () => {
@@ -341,7 +341,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _gt with small enum', () => {
         const where = { priority: { _gt: 'low' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) > 0',
         );
       });
@@ -349,7 +349,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _gt with second-to-last value', () => {
         const where = { priority: { _gt: 'medium' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) > 1',
         );
       });
@@ -357,7 +357,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _gt with last value', () => {
         const where = { priority: { _gt: 'high' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) > 2',
         );
       });
@@ -365,7 +365,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _gte', () => {
         const where = { priority: { _gte: 'medium' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) >= 1',
         );
       });
@@ -373,7 +373,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _lt', () => {
         const where = { priority: { _lt: 'high' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) < 2',
         );
       });
@@ -381,7 +381,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _lt with second value', () => {
         const where = { priority: { _lt: 'medium' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) < 1',
         );
       });
@@ -389,7 +389,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _lt with first value', () => {
         const where = { priority: { _lt: 'low' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) < 0',
         );
       });
@@ -397,7 +397,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _lte', () => {
         const where = { priority: { _lte: 'medium' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) <= 1',
         );
       });
@@ -407,7 +407,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _gt with 5-value enum', () => {
         const where = { status: { _gt: 'processing' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) > 1',
         );
       });
@@ -415,7 +415,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _gte', () => {
         const where = { status: { _gte: 'shipped' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) >= 2',
         );
       });
@@ -423,7 +423,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _lt', () => {
         const where = { status: { _lt: 'shipped' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) < 2',
         );
       });
@@ -431,7 +431,7 @@ describe('GraphQL Expressions', () => {
       it('should generate ternary chain for _lte', () => {
         const where = { status: { _lte: 'processing' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '(datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) <= 1',
         );
       });
@@ -469,9 +469,9 @@ describe('GraphQL Expressions', () => {
         const where = { status: { _gt: 'pending' } };
         const filter = largeEnumBuilder.buildExpression(where);
         // Should generate ternary chain instead of boolean OR
-        expect(filter!.expression).toContain('datum.status === "new" ? 0');
-        expect(filter!.expression).toContain('datum.status === "open" ? 1');
-        expect(filter!.expression).toContain('> 2'); // pending is at index 2
+        expect(filter.expression).toContain('datum.status === "new" ? 0');
+        expect(filter.expression).toContain('datum.status === "open" ? 1');
+        expect(filter.expression).toContain('> 2'); // pending is at index 2
       });
     });
 
@@ -479,13 +479,13 @@ describe('GraphQL Expressions', () => {
       it('should use standard comparison for non-enum fields', () => {
         const where = { id: { _gt: 100 } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.id > 100');
+        expect(filter.expression).toBe('datum.id > 100');
       });
 
       it('should use standard comparison when no source definition provided', () => {
         const where = { status: { _gt: 'pending' } };
         const filter = builder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.status > "pending"');
+        expect(filter.expression).toBe('datum.status > "pending"');
       });
     });
 
@@ -493,7 +493,7 @@ describe('GraphQL Expressions', () => {
       it('should generate false for invalid enum value in comparison', () => {
         const where = { priority: { _gt: 'invalid_value' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe('false');
+        expect(filter.expression).toBe('false');
       });
     });
 
@@ -501,13 +501,13 @@ describe('GraphQL Expressions', () => {
       it('should use direct equality for _eq with enums', () => {
         const where = { status: { _eq: 'shipped' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.status === "shipped"');
+        expect(filter.expression).toBe('datum.status === "shipped"');
       });
 
       it('should use direct inequality for _neq with enums', () => {
         const where = { status: { _neq: 'cancelled' } };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe('datum.status !== "cancelled"');
+        expect(filter.expression).toBe('datum.status !== "cancelled"');
       });
     });
 
@@ -520,7 +520,7 @@ describe('GraphQL Expressions', () => {
           ],
         };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '((datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) >= 1 && (datum.status === "pending" ? 0 : datum.status === "processing" ? 1 : datum.status === "shipped" ? 2 : datum.status === "delivered" ? 3 : datum.status === "cancelled" ? 4 : -1) < 3)',
         );
       });
@@ -533,7 +533,7 @@ describe('GraphQL Expressions', () => {
           ],
         };
         const filter = enumBuilder.buildExpression(where);
-        expect(filter!.expression).toBe(
+        expect(filter.expression).toBe(
           '((datum.priority === "low" ? 0 : datum.priority === "medium" ? 1 : datum.priority === "high" ? 2 : -1) > 1 || datum.status === "pending")',
         );
       });

@@ -1,7 +1,5 @@
 import { DatabaseStream } from './stream';
 import type { DatabaseConfig } from '../config/database.config';
-import type { SourceDefinition } from '../config/source.types';
-import { DataType } from '../config/source.types';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
 import { Client } from 'pg';
@@ -17,16 +15,6 @@ describe('DatabaseStream', () => {
   let stream: DatabaseStream;
   let mockConfig: DatabaseConfig;
   let mockProtocolHandler: jest.Mocked<ProtocolHandler>;
-
-  const mockSourceDef: SourceDefinition = {
-    name: 'test_source',
-    primaryKeyField: 'id',
-    fields: [
-      { name: 'id', dataType: DataType.String },
-      { name: 'name', dataType: DataType.String },
-      { name: 'value', dataType: DataType.Integer },
-    ],
-  };
 
   const mockClient = {
     connect: jest.fn().mockResolvedValue(undefined),

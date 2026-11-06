@@ -1,10 +1,10 @@
-import { ApolloClient, InMemoryCache, gql } from '@apollo/client';
+import { ApolloClient, InMemoryCache } from '@apollo/client';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import WebSocket from 'ws';
 import { createSubscriptionHandler } from './subscription';
-import { EventHandler, Stats, State } from './events';
-import { StateManager, StatefulItem } from './state';
+import { EventHandler, Stats } from './events';
+import { StateManager, StatefulItem, State } from './state';
 import { GraphQLEndpoint } from './environment';
 
 // Constructor options - just configuration

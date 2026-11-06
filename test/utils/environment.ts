@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import { ConfigModule, registerAs } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { Client } from 'pg';
 import { AppModule } from '../../src/app.module';

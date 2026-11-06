@@ -40,7 +40,7 @@ export function generateSchema(config: SourceConfiguration): string {
   const sourceTypes = buildSourceTypes(sources);
   const subscriptionFields = buildSubscriptionFields(sources);
 
-  let schema = `
+  const schema = `
     # ================== ENUMS & BASE TYPES ==================
 
     # Row operation types for subscriptions

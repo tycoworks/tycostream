@@ -39,7 +39,7 @@ export class TestScenario {
             ];
             break;
 
-          case OperationType.UPDATE:
+          case OperationType.UPDATE: {
             const updates: string[] = [];
             params = [];
 
@@ -51,6 +51,7 @@ export class TestScenario {
             sql = `UPDATE stress_test SET ${updates.join(', ')} WHERE id = $${params.length + 1}`;
             params.push(adjustedId);
             break;
+          }
 
           case OperationType.DELETE:
             sql = 'DELETE FROM stress_test WHERE id = $1';
@@ -58,7 +59,7 @@ export class TestScenario {
             break;
 
           default:
-            throw new Error(`Unknown operation type: ${op.type}`);
+            throw new Error(`Unknown operation type: ${String(op.type)}`);
         }
 
         this.operations.push({ sql, params });

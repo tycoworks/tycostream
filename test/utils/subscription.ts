@@ -5,7 +5,6 @@ import {
   EventHandler,
   EventHandlerConfig,
   Stats,
-  State,
 } from './events';
 
 /**
@@ -131,7 +130,7 @@ export class SubscriptionProcessor<
         this.currentState.set(id, cleanData);
         break;
 
-      case 'UPDATE':
+      case 'UPDATE': {
         const existing = this.currentState.get(id);
         if (!existing) {
           throw new Error(
@@ -145,6 +144,7 @@ export class SubscriptionProcessor<
         }
         this.currentState.set(id, updated);
         break;
+      }
 
       default:
         console.error(`Unknown operation: ${operation}`);

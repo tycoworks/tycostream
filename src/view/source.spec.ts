@@ -32,11 +32,6 @@ describe('Source', () => {
     ],
   };
 
-  const mockClient = {
-    query: jest.fn(),
-    end: jest.fn(),
-  };
-
   beforeEach(() => {
     // Reset mock database stream
     mockDatabaseStream.connect.mockClear();

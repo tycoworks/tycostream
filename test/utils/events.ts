@@ -33,7 +33,7 @@ export interface EventProcessor<TData = any> {
   /**
    * Process an incoming event
    */
-  processEvent(data: any): void;
+  processEvent(data: TData): void;
 
   /**
    * Check if we've reached the expected completion state
@@ -111,15 +111,19 @@ export class EventHandler<TData = any> implements StatefulItem {
     await this.stream.subscribe(
       (data) => {
         // Process the event data
-        this.processEvent(data);
+        void this.processEvent(data);
       },
-      async (error) => {
+      () => {
         // Stream error - mark as failed
-        this.markFailed();
-        await this.cleanup();
-        this.config.onStateChange?.();
+        void this.handleStreamError();
       },
     );
+  }
+
+  private async handleStreamError(): Promise<void> {
+    this.markFailed();
+    await this.cleanup();
+    this.config.onStateChange?.();
   }
 
   private async processEvent(data: any): Promise<void> {
@@ -136,7 +140,7 @@ export class EventHandler<TData = any> implements StatefulItem {
         await this.cleanup();
         this.config.onStateChange?.();
       }
-    } catch (error) {
+    } catch {
       // If processing fails, mark as failed
       this.markFailed();
       await this.cleanup();

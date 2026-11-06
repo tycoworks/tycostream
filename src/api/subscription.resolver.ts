@@ -33,12 +33,7 @@ function createSourceSubscriptionResolver(
   subscriptionService: SubscriptionService,
 ): SubscriptionResolver {
   return {
-    subscribe: async function* (
-      parent: any,
-      args: any,
-      context: any,
-      info: any,
-    ) {
+    subscribe: async function* (parent: any, args: any) {
       // Create subscription through service
       // GraphQL automatically handles field selection
       const updates$ = subscriptionService

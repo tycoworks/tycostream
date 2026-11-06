@@ -75,7 +75,7 @@ export class Source {
     const buffer$ = new ReplaySubject<RowUpdateEvent>();
     const subscription = this.internalUpdates$
       .pipe(
-        filter(([event, timestamp]) => timestamp > snapshotTimestamp),
+        filter(([, timestamp]) => timestamp > snapshotTimestamp),
         map(([event]) => event),
       )
       .subscribe(buffer$);
@@ -225,7 +225,7 @@ export class Source {
     } else {
       // Future-proofing for new enum values
       throw new Error(
-        `Unexpected update type: ${updateType} for row: ${truncateForLog(row)}`,
+        `Unexpected update type: ${String(updateType)} for row: ${truncateForLog(row)}`,
       );
     }
 

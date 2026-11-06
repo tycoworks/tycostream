@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import type { SourceDefinition, EnumType } from '../config/source.types';
+import type { SourceDefinition } from '../config/source.types';
 import { DataType } from '../common/types';
 import type { ProtocolHandler } from './types';
 import { DatabaseRowUpdateType } from './types';
@@ -12,7 +12,6 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
   private readonly logger = new Logger(MaterializeProtocolHandler.name);
   private columnNames: string[];
   private columnTypes: Map<string, DataType>;
-  private enumTypes: Map<string, EnumType>;
 
   constructor(
     private sourceDefinition: SourceDefinition,
@@ -33,14 +32,10 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
       ...nonKeyFields.map((f) => f.name),
     ];
 
-    // Build column type map and enum map
+    // Build column type map
     this.columnTypes = new Map();
-    this.enumTypes = new Map();
     sourceDefinition.fields.forEach((field) => {
       this.columnTypes.set(field.name, field.dataType);
-      if (field.enumType) {
-        this.enumTypes.set(field.name, field.enumType);
-      }
     });
 
     this.logger.debug(
@@ -102,10 +97,9 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
       const field = fields[i];
       if (columnName && field !== undefined) {
         const dataType = this.columnTypes.get(columnName);
-        const enumType = this.enumTypes.get(columnName);
         row[columnName] =
           dataType !== undefined
-            ? parseValueFromDataType(field, dataType, enumType)
+            ? parseValueFromDataType(field, dataType)
             : field;
       }
     }
@@ -123,11 +117,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
  * Parse a COPY text format value based on DataType
  * Handles PostgreSQL COPY format including \\N for NULL
  */
-function parseValueFromDataType(
-  value: string,
-  dataType: DataType,
-  enumType?: EnumType,
-): any {
+function parseValueFromDataType(value: string, dataType: DataType): any {
   // Handle COPY format NULL
   if (value === '\\N') return null;
 

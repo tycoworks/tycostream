@@ -25,10 +25,7 @@ import { SubscriptionService } from './subscription.service';
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
        */
-      useFactory: async (
-        configService: ConfigService,
-        viewService: ViewService,
-      ) => {
+      useFactory: (configService: ConfigService, viewService: ViewService) => {
         const logger = new Logger('GraphQLModule');
 
         // Get source configuration from config

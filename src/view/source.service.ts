@@ -59,11 +59,10 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Shutting down source service...');
 
     // Clean up all sources
-    const cleanupPromises = Array.from(this.sources.values()).map((source) =>
-      source.dispose(),
-    );
-
-    await Promise.all(cleanupPromises);
+    // Snapshot first: disposing a source removes it from this.sources
+    for (const source of Array.from(this.sources.values())) {
+      source.dispose();
+    }
     this.sources.clear();
     this.logger.log('Source service shutdown complete');
   }

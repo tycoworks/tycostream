@@ -1,4 +1,4 @@
-import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { to as copyTo } from 'pg-copy-streams';
 import { Client } from 'pg';
 import { StreamBuffer } from './buffer';
@@ -183,7 +183,9 @@ export class DatabaseStream {
       this.logger.error('Failed to connect to streaming database');
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      throw new Error(`Database connection failed: ${errorMessage}`);
+      throw new Error(`Database connection failed: ${errorMessage}`, {
+        cause: error,
+      });
     }
   }
 

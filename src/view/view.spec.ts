@@ -1,7 +1,7 @@
 import { View } from './view';
 import { Filter } from './filter';
 import { RowUpdateEvent, RowUpdateType } from './types';
-import { Subject, Observable } from 'rxjs';
+import { Subject } from 'rxjs';
 import type { Source } from './source';
 
 describe('View', () => {

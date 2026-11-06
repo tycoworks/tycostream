@@ -106,7 +106,7 @@ describe('StateManager', () => {
 
       // Should still be pending
       let resolved = false;
-      promise.then(() => {
+      void promise.then(() => {
         resolved = true;
       });
       await new Promise((resolve) => setTimeout(resolve, 0));

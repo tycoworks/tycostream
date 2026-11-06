@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseStreamService } from './stream.service';
 import { DatabaseStream } from './stream';
-import { Client } from 'pg';
 import type { ProtocolHandler } from './types';
 
 // Mock DatabaseStream

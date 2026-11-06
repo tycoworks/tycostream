@@ -9,7 +9,6 @@ describe('SourceService', () => {
   let sourceService: SourceService;
   let mockConfigService: jest.Mocked<ConfigService>;
   let mockConnectionService: jest.Mocked<DatabaseStreamService>;
-  let mockClient: any;
 
   const mockSourceDefs = new Map<string, SourceDefinition>([
     [
@@ -41,14 +40,6 @@ describe('SourceService', () => {
   const mockSourceConfig = { sources: mockSourceDefs };
 
   beforeEach(async () => {
-    mockClient = {
-      query: jest.fn(),
-      release: jest.fn(),
-      on: jest.fn(),
-      removeAllListeners: jest.fn(),
-      end: jest.fn(),
-    };
-
     mockConfigService = {
       get: jest.fn(),
     } as any;
