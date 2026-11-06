@@ -23,10 +23,6 @@ SCHEMA_PATH=./schema.yaml
 LOG_LEVEL=debug" > .env
 
 # LOG_LEVEL can be trace, debug, info, warn or error
-
-# If Materialize runs on your host machine and you're using Docker:
-# macOS/Windows: Change DATABASE_HOST to host.docker.internal
-# Linux: Change DATABASE_HOST to 172.17.0.1
 ```
 
 ### 2. Create a schema file
@@ -74,7 +70,9 @@ curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/gen
 ### 3. Start tycostream
 
 ```bash
+# host.docker.internal reaches Materialize on your machine (172.17.0.1 on Linux)
 docker run -p 4000:4000 --env-file .env \
+  -e DATABASE_HOST=host.docker.internal \
   -v $(pwd)/schema.yaml:/app/schema.yaml \
   ghcr.io/tycoworks/tycostream:v0.1.0-preview
 ```
@@ -106,6 +104,8 @@ Once you've cloned and installed:
 ```bash
 npm run demo
 ```
+
+The demo starts its own Materialize through [Testcontainers](https://node.testcontainers.org/supported-container-runtimes/), so it needs Docker running.
 
 This starts a complete example with:
 - Live market data streaming
