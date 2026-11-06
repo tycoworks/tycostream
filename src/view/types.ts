@@ -5,7 +5,7 @@
 export enum RowUpdateType {
   Insert,
   Update,
-  Delete
+  Delete,
 }
 
 /**
@@ -18,8 +18,8 @@ export enum RowUpdateType {
  */
 export interface RowUpdateEvent {
   type: RowUpdateType;
-  fields: Set<string>;  // Field names relevant to this event
-  row: Record<string, any>;  // Complete row data
+  fields: Set<string>; // Field names relevant to this event
+  row: Record<string, any>; // Complete row data
 }
 
 /**
@@ -28,7 +28,6 @@ export interface RowUpdateEvent {
  */
 export interface Expression {
   evaluate: (row: any) => boolean;
-  fields: Set<string>;  // Fields used in the expression for optimization
-  expression: string;   // The expression string for debugging/logging
+  fields: Set<string>; // Fields used in the expression for optimization
+  expression: string; // The expression string for debugging/logging
 }
-

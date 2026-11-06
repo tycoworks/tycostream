@@ -5,7 +5,7 @@ export enum State {
   Active = 'active',
   Stalled = 'stalled',
   Completed = 'completed',
-  Failed = 'failed'
+  Failed = 'failed',
 }
 
 /**
@@ -14,7 +14,7 @@ export enum State {
 export enum GraphQLRowOperation {
   Insert = 'INSERT',
   Update = 'UPDATE',
-  Delete = 'DELETE'
+  Delete = 'DELETE',
 }
 
 /**
@@ -34,12 +34,12 @@ export interface EventProcessor<TData = any> {
    * Process an incoming event
    */
   processEvent(data: any): void;
-  
+
   /**
    * Check if we've reached the expected completion state
    */
   isComplete(): boolean;
-  
+
   /**
    * Get statistics about processed events
    */
@@ -58,9 +58,9 @@ export interface EventStream<TData = any> {
    */
   subscribe(
     onData: (data: TData) => void,
-    onError?: (error: Error) => void
+    onError?: (error: Error) => void,
   ): Promise<void>;
-  
+
   /**
    * Unsubscribe from the stream and clean up resources
    */
@@ -71,10 +71,10 @@ export interface EventStream<TData = any> {
  * Configuration for EventHandler
  */
 export interface EventHandlerConfig {
-  id: string;                         // Handler ID for logging
-  clientId: string;                   // Client ID for logging
-  onStateChange?: () => void;          // Optional callback for state changes
-  livenessTimeoutMs: number;          // Timeout for liveness checking
+  id: string; // Handler ID for logging
+  clientId: string; // Client ID for logging
+  onStateChange?: () => void; // Optional callback for state changes
+  livenessTimeoutMs: number; // Timeout for liveness checking
 }
 
 import { StatefulItem } from './state';
@@ -85,27 +85,27 @@ import { StatefulItem } from './state';
  */
 export class EventHandler<TData = any> implements StatefulItem {
   private startPromise?: Promise<void>;
-  
+
   // State tracking fields
   private state: State = State.Active;
   private livenessTimer?: NodeJS.Timeout;
-  
+
   constructor(
     private stream: EventStream<any>,
     private processor: EventProcessor<TData>,
-    private config: EventHandlerConfig
+    private config: EventHandlerConfig,
   ) {
     // Start the liveness timer immediately
     this.resetLivenessTimer();
   }
-  
+
   async start(): Promise<void> {
     if (!this.startPromise) {
       this.startPromise = this.doStart();
     }
     return this.startPromise;
   }
-  
+
   private async doStart(): Promise<void> {
     // Subscribe to the stream
     await this.stream.subscribe(
@@ -118,18 +118,18 @@ export class EventHandler<TData = any> implements StatefulItem {
         this.markFailed();
         await this.cleanup();
         this.config.onStateChange?.();
-      }
+      },
     );
   }
-  
+
   private async processEvent(data: any): Promise<void> {
     // Record activity for liveness tracking
     this.recordActivity();
-    
+
     try {
       // Delegate processing to the processor
       this.processor.processEvent(data);
-      
+
       // Check if we're finished after state update
       if (this.processor.isComplete()) {
         this.markCompleted();
@@ -143,74 +143,80 @@ export class EventHandler<TData = any> implements StatefulItem {
       this.config.onStateChange?.();
     }
   }
-  
+
   getState(): State {
     return this.state;
   }
-  
+
   getStats(): Stats {
     return this.processor.getStats();
   }
-  
+
   private isInTerminalState(): boolean {
     return this.state === State.Completed || this.state === State.Failed;
   }
-  
+
   private async cleanup(): Promise<void> {
     console.log(`Cleaning up ${this.config.id}`);
     await this.stream.unsubscribe();
   }
-  
+
   async dispose(): Promise<void> {
     this.clearLivenessTimer();
     await this.cleanup();
   }
-  
+
   // State transition methods
   private recordActivity(): void {
     // Can't record activity if we're in a terminal state
     if (this.isInTerminalState()) return;
-    
+
     // If we were stalled, recover
     if (this.state === State.Stalled) {
       this.state = State.Active;
-      console.log(`${this.config.id} for client ${this.config.clientId} recovered`);
+      console.log(
+        `${this.config.id} for client ${this.config.clientId} recovered`,
+      );
       this.config.onStateChange?.();
     }
-    
+
     this.resetLivenessTimer();
   }
-  
+
   private markCompleted(): void {
     if (this.isInTerminalState()) return;
-    
+
     this.clearLivenessTimer();
     this.state = State.Completed;
-    console.log(`${this.config.id} for client ${this.config.clientId} completed`);
+    console.log(
+      `${this.config.id} for client ${this.config.clientId} completed`,
+    );
     this.config.onStateChange?.();
   }
-  
+
   private markFailed(): void {
     if (this.isInTerminalState()) return;
-    
+
     this.clearLivenessTimer();
     this.state = State.Failed;
     this.config.onStateChange?.();
   }
-  
+
   // Liveness timeout methods
   private resetLivenessTimer(): void {
     this.clearLivenessTimer();
-    
+
     this.livenessTimer = setTimeout(() => {
       if (this.state === State.Active) {
         this.state = State.Stalled;
-        console.log(`${this.config.id} for client ${this.config.clientId} stalled`);
+        console.log(
+          `${this.config.id} for client ${this.config.clientId} stalled`,
+        );
         this.config.onStateChange?.();
       }
     }, this.config.livenessTimeoutMs);
   }
-  
+
   private clearLivenessTimer(): void {
     if (this.livenessTimer) {
       clearTimeout(this.livenessTimer);

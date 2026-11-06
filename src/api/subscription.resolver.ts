@@ -16,7 +16,12 @@ interface GraphQLUpdatePayload {
  * Defines the subscribe function that returns an async iterator
  */
 type SubscriptionResolver = {
-  subscribe: (parent: any, args: any, context: any, info: any) => AsyncIterableIterator<GraphQLUpdatePayload>;
+  subscribe: (
+    parent: any,
+    args: any,
+    context: any,
+    info: any,
+  ) => AsyncIterableIterator<GraphQLUpdatePayload>;
 };
 
 /**
@@ -25,25 +30,29 @@ type SubscriptionResolver = {
  */
 function createSourceSubscriptionResolver(
   sourceDefinition: SourceDefinition,
-  subscriptionService: SubscriptionService
+  subscriptionService: SubscriptionService,
 ): SubscriptionResolver {
   return {
-    subscribe: async function* (parent: any, args: any, context: any, info: any) {
+    subscribe: async function* (
+      parent: any,
+      args: any,
+      context: any,
+      info: any,
+    ) {
       // Create subscription through service
       // GraphQL automatically handles field selection
-      const updates$ = subscriptionService.createSubscription(
-        sourceDefinition,
-        args.where
-      ).pipe(
-        // Wrap update in source name for GraphQL response structure
-        map((update: GraphQLUpdate) => ({
-          [sourceDefinition.name]: update
-        }))
-      );
+      const updates$ = subscriptionService
+        .createSubscription(sourceDefinition, args.where)
+        .pipe(
+          // Wrap update in source name for GraphQL response structure
+          map((update: GraphQLUpdate) => ({
+            [sourceDefinition.name]: update,
+          })),
+        );
 
       // Convert Observable to AsyncIterator for GraphQL
       yield* eachValueFrom(updates$);
-    }
+    },
   };
 }
 
@@ -53,12 +62,15 @@ function createSourceSubscriptionResolver(
  */
 export function buildSubscriptionResolvers(
   sources: Map<string, SourceDefinition>,
-  subscriptionService: SubscriptionService
+  subscriptionService: SubscriptionService,
 ): Record<string, SubscriptionResolver> {
   const resolvers: Record<string, SubscriptionResolver> = {};
 
   sources.forEach((sourceDefinition, sourceName) => {
-    resolvers[sourceName] = createSourceSubscriptionResolver(sourceDefinition, subscriptionService);
+    resolvers[sourceName] = createSourceSubscriptionResolver(
+      sourceDefinition,
+      subscriptionService,
+    );
   });
 
   return resolvers;

@@ -4,7 +4,7 @@
  */
 export enum DatabaseRowUpdateType {
   Delete = 'DELETE',
-  Upsert = 'UPSERT',  // Could be INSERT or UPDATE, we need to check cache
+  Upsert = 'UPSERT', // Could be INSERT or UPDATE, we need to check cache
   // Future: Diff = 'DIFF', Insert = 'INSERT', etc.
 }
 
@@ -22,9 +22,9 @@ export interface ProtocolHandler {
    * Parse a line from the COPY stream
    * Returns null if the line should be skipped
    */
-  parseLine(line: string): { 
-    row: Record<string, any>; 
-    timestamp: bigint; 
+  parseLine(line: string): {
+    row: Record<string, any>;
+    timestamp: bigint;
     updateType: DatabaseRowUpdateType;
   } | null;
 }

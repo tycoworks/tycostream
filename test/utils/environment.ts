@@ -15,23 +15,22 @@ import sourcesConfig from '../../src/config/sources.config';
  * Database configuration for TestEnvironment
  */
 export interface DatabaseConfig {
-  host: string;      // Database host
-  port: number;      // Database port
-  user: string;      // Database user
-  password: string;  // Database password
-  name: string;      // Database name
-  workers: string;   // Number of Materialize workers
+  host: string; // Database host
+  port: number; // Database port
+  user: string; // Database user
+  password: string; // Database password
+  name: string; // Database name
+  workers: string; // Number of Materialize workers
 }
 
 /**
  * GraphQL endpoint configuration
  */
 export interface GraphQLEndpoint {
-  host: string;  // e.g., "localhost"
-  port: number;  // e.g., 4001
-  path: string;  // e.g., "/graphql"
+  host: string; // e.g., "localhost"
+  port: number; // e.g., 4001
+  path: string; // e.g., "/graphql"
 }
-
 
 /**
  * Complete test environment configuration
@@ -40,8 +39,8 @@ export interface TestEnvironmentConfig {
   appPort: number;
   schemaPath: string;
   database: DatabaseConfig;
-  graphqlUI: boolean;        // Enable GraphQL UI
-  logLevel: 'verbose' | 'debug' | 'log' | 'warn' | 'error' | 'fatal';  // Log level
+  graphqlUI: boolean; // Enable GraphQL UI
+  logLevel: 'verbose' | 'debug' | 'log' | 'warn' | 'error' | 'fatal'; // Log level
 }
 
 /**
@@ -52,11 +51,12 @@ export class TestEnvironment {
   private app: INestApplication;
   private databaseContainer: StartedTestContainer;
   private databaseClient: Client;
-  private databasePort: number;  // Mapped port from Docker container
+  private databasePort: number; // Mapped port from Docker container
   private config: TestEnvironmentConfig;
   private clientManager: TestClientManager;
 
-  private static readonly DATABASE_VERSION = 'materialize/materialized:v26.49.1';
+  private static readonly DATABASE_VERSION =
+    'materialize/materialized:v26.49.1';
 
   constructor(config: TestEnvironmentConfig) {
     this.config = config;
@@ -69,92 +69,97 @@ export class TestEnvironment {
     // Start database container
     console.log('Starting database container...');
     this.databaseContainer = await this.createDatabaseContainer();
-    this.databasePort = this.databaseContainer.getMappedPort(this.config.database.port);
+    this.databasePort = this.databaseContainer.getMappedPort(
+      this.config.database.port,
+    );
     console.log(`Database container started on port ${this.databasePort}`);
-    
+
     // Create database client
     console.log('Creating database client...');
     this.databaseClient = await this.createDatabaseClient();
     console.log('Database client connected');
-    
+
     // Create and start app
     console.log('Creating NestJS application...');
     this.app = await this.createTestApp();
     await this.app.listen(this.config.appPort);
     console.log(`Application listening on port ${this.config.appPort}`);
-    
+
     // Create client manager with all dependencies configured
     console.log('Creating client manager...');
     this.clientManager = this.createClientManager();
     console.log('Client manager created');
-    
+
     // Wait for server to stabilize
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     console.log('Test environment ready');
   }
 
-  
   /**
    * Create a client and return it for direct use
    */
   createClient<TData = any>(id: string): TestClient<TData> {
     return this.clientManager.createClient(id);
   }
-  
+
   /**
    * Wait for all clients to complete
    */
   async waitForCompletion(): Promise<void> {
     return this.clientManager.waitForCompletion();
   }
-  
+
   /**
    * Get aggregated statistics for all clients
    */
   getStats(): Stats {
     return this.clientManager.getStats();
   }
-  
+
   /**
    * Stop and clean up all test resources
    */
   async stop(): Promise<void> {
     console.log('Starting test environment shutdown...');
-    
+
     // Dispose all clients
     console.log('Disposing all test clients...');
     await this.clientManager.dispose();
     console.log('Test clients disposed');
-    
+
     // Close app first
     console.log('Closing NestJS application...');
     await this.app.close();
     console.log('NestJS application closed');
-    
+
     // Wait for connections to close
     console.log('Waiting for connections to close...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     // Close database connection
     console.log('Closing database connection...');
     await this.databaseClient.end();
     console.log('Database connection closed');
-    
+
     // Stop container last
     console.log('Stopping database container...');
     await this.databaseContainer.stop();
     console.log('Database container stopped');
-    
+
     console.log('Test environment shutdown complete');
   }
 
   /**
    * Execute a SQL query and wait for database to process
    */
-  async executeSql(query: string, params?: any[], waitMs: number = 100): Promise<void> {
+  async executeSql(
+    query: string,
+    params?: any[],
+    waitMs: number = 100,
+  ): Promise<void> {
     await this.databaseClient.query(query, params);
     if (waitMs > 0) {
-      await new Promise(resolve => setTimeout(resolve, waitMs));
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
 
@@ -171,17 +176,17 @@ export class TestEnvironment {
   async waitUntil(
     condition: () => boolean | Promise<boolean>,
     timeoutMs: number = 5000,
-    intervalMs: number = 100
+    intervalMs: number = 100,
   ): Promise<void> {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeoutMs) {
       if (await condition()) {
         return;
       }
-      await new Promise(resolve => setTimeout(resolve, intervalMs));
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
-    
+
     throw new Error(`Condition not met within ${timeoutMs}ms`);
   }
 
@@ -201,7 +206,7 @@ export class TestEnvironment {
     return await new GenericContainer(TestEnvironment.DATABASE_VERSION)
       .withExposedPorts(this.config.database.port)
       .withEnvironment({
-        MZ_WORKERS: this.config.database.workers
+        MZ_WORKERS: this.config.database.workers,
       })
       .withStartupTimeout(120000)
       .start();
@@ -213,12 +218,12 @@ export class TestEnvironment {
   private async createDatabaseClient(): Promise<Client> {
     const client = new Client({
       host: this.config.database.host,
-      port: this.databasePort,  // Use mapped port from container
+      port: this.databasePort, // Use mapped port from container
       user: this.config.database.user,
       password: this.config.database.password,
-      database: this.config.database.name
+      database: this.config.database.name,
     });
-    
+
     await client.connect();
     return client;
   }
@@ -238,31 +243,30 @@ export class TestEnvironment {
     process.env.LOG_LEVEL = this.config.logLevel;
   }
 
-
   /**
    * Create and configure the NestJS application for testing
    */
   private async createTestApp(): Promise<INestApplication> {
     this.setupEnvironmentVariables();
-    
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-    .overrideModule(ConfigModule)
-    .useModule(
-      ConfigModule.forRoot({
-        isGlobal: true,
-        cache: false,
-        load: [databaseConfig, graphqlConfig, sourcesConfig],
-      })
-    )
-    .compile();
+      .overrideModule(ConfigModule)
+      .useModule(
+        ConfigModule.forRoot({
+          isGlobal: true,
+          cache: false,
+          load: [databaseConfig, graphqlConfig, sourcesConfig],
+        }),
+      )
+      .compile();
 
     const app = moduleFixture.createNestApplication();
-    
+
     // Set log level
     app.useLogger([this.config.logLevel]);
-    
+
     return app;
   }
 
@@ -273,9 +277,9 @@ export class TestEnvironment {
     const graphqlEndpoint = {
       host: 'localhost',
       port: this.config.appPort,
-      path: '/graphql'
+      path: '/graphql',
     };
-    
+
     return new TestClientManager(graphqlEndpoint, 30000);
   }
 }

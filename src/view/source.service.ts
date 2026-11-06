@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Source } from './source';
 import { DatabaseStreamService } from '../database/stream.service';
@@ -17,7 +22,7 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private configService: ConfigService,
-    private streamService: DatabaseStreamService
+    private streamService: DatabaseStreamService,
   ) {}
 
   /**
@@ -25,7 +30,9 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
    */
   async onModuleInit() {
     // Load source configuration from config
-    const sourceConfig = this.configService.get<{ sources: Map<string, SourceDefinition> }>('sources');
+    const sourceConfig = this.configService.get<{
+      sources: Map<string, SourceDefinition>;
+    }>('sources');
     const sources = sourceConfig?.sources;
 
     if (!sources || sources.size === 0) {
@@ -35,10 +42,14 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
     // Store source definitions and log details
     for (const [sourceName, sourceDef] of sources.entries()) {
       this.sourceDefinitions.set(sourceName, sourceDef);
-      this.logger.log(`  - ${sourceName}: ${sourceDef.fields.length} fields, primary key: ${sourceDef.primaryKeyField}`);
+      this.logger.log(
+        `  - ${sourceName}: ${sourceDef.fields.length} fields, primary key: ${sourceDef.primaryKeyField}`,
+      );
     }
 
-    this.logger.log(`Sources: Loaded ${this.sourceDefinitions.size} source definitions`);
+    this.logger.log(
+      `Sources: Loaded ${this.sourceDefinitions.size} source definitions`,
+    );
   }
 
   /**
@@ -46,12 +57,12 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
    */
   async onModuleDestroy() {
     this.logger.log('Shutting down source service...');
-    
+
     // Clean up all sources
-    const cleanupPromises = Array.from(this.sources.values()).map(
-      source => source.dispose()
+    const cleanupPromises = Array.from(this.sources.values()).map((source) =>
+      source.dispose(),
     );
-    
+
     await Promise.all(cleanupPromises);
     this.sources.clear();
     this.logger.log('Source service shutdown complete');
@@ -64,21 +75,23 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
   getSource(sourceName: string): Source {
     const sourceDef = this.sourceDefinitions.get(sourceName);
     if (!sourceDef) {
-      throw new Error(`Unknown source: ${sourceName}. Available sources: ${Array.from(this.sourceDefinitions.keys()).join(', ')}`);
+      throw new Error(
+        `Unknown source: ${sourceName}. Available sources: ${Array.from(this.sourceDefinitions.keys()).join(', ')}`,
+      );
     }
 
     let source = this.sources.get(sourceName);
-    
+
     // Check if existing source is disposed and needs recreation
     if (source && source.isDisposed) {
       this.logger.debug(`Source ${sourceName} is disposed, already cleaned up`);
       source = undefined;
     }
-    
+
     if (!source) {
       source = this.createSource(sourceDef);
       this.sources.set(sourceName, source);
-      
+
       this.logger.log(`Created source for: ${sourceName}`);
     }
 
@@ -90,16 +103,20 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
    */
   private createSource(sourceDef: SourceDefinition): Source {
     // Create protocol handler for this source
-    const protocolHandler = new MaterializeProtocolHandler(sourceDef, sourceDef.name);
-    
-    // Get or create the database stream
-    const databaseStream = this.streamService.getStream(sourceDef.name, protocolHandler);
-    
-    // Create source with the stream instance and cleanup callback
-    return new Source(
-      databaseStream,
+    const protocolHandler = new MaterializeProtocolHandler(
       sourceDef,
-      () => this.removeSource(sourceDef.name)
+      sourceDef.name,
+    );
+
+    // Get or create the database stream
+    const databaseStream = this.streamService.getStream(
+      sourceDef.name,
+      protocolHandler,
+    );
+
+    // Create source with the stream instance and cleanup callback
+    return new Source(databaseStream, sourceDef, () =>
+      this.removeSource(sourceDef.name),
     );
   }
 
@@ -117,5 +134,4 @@ export class SourceService implements OnModuleInit, OnModuleDestroy {
       this.streamService.removeStream(sourceName);
     }
   }
-
 }

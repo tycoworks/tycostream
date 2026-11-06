@@ -12,23 +12,29 @@ describe('SourceService', () => {
   let mockClient: any;
 
   const mockSourceDefs = new Map<string, SourceDefinition>([
-    ['trades', {
-      name: 'trades',
-      primaryKeyField: 'trade_id',
-      fields: [
-        { name: 'trade_id', dataType: DataType.String },
-        { name: 'symbol', dataType: DataType.String },
-        { name: 'quantity', dataType: DataType.Integer }
-      ]
-    }],
-    ['live_pnl', {
-      name: 'live_pnl',
-      primaryKeyField: 'account_id',
-      fields: [
-        { name: 'account_id', dataType: DataType.String },
-        { name: 'pnl', dataType: DataType.Float }
-      ]
-    }]
+    [
+      'trades',
+      {
+        name: 'trades',
+        primaryKeyField: 'trade_id',
+        fields: [
+          { name: 'trade_id', dataType: DataType.String },
+          { name: 'symbol', dataType: DataType.String },
+          { name: 'quantity', dataType: DataType.Integer },
+        ],
+      },
+    ],
+    [
+      'live_pnl',
+      {
+        name: 'live_pnl',
+        primaryKeyField: 'account_id',
+        fields: [
+          { name: 'account_id', dataType: DataType.String },
+          { name: 'pnl', dataType: DataType.Float },
+        ],
+      },
+    ],
   ]);
 
   // ConfigService returns the whole source configuration, not just the map
@@ -40,7 +46,7 @@ describe('SourceService', () => {
       release: jest.fn(),
       on: jest.fn(),
       removeAllListeners: jest.fn(),
-      end: jest.fn()
+      end: jest.fn(),
     };
 
     mockConfigService = {
@@ -51,9 +57,9 @@ describe('SourceService', () => {
       getStream: jest.fn().mockReturnValue({
         connect: jest.fn().mockResolvedValue(undefined),
         disconnect: jest.fn(),
-        streaming: false
+        streaming: false,
       }),
-      removeStream: jest.fn()
+      removeStream: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -79,13 +85,17 @@ describe('SourceService', () => {
     it('should throw when source definitions are missing', async () => {
       mockConfigService.get.mockReturnValue(undefined);
 
-      await expect(sourceService.onModuleInit()).rejects.toThrow('No source definitions found.');
+      await expect(sourceService.onModuleInit()).rejects.toThrow(
+        'No source definitions found.',
+      );
     });
 
     it('should throw when source definitions are empty', async () => {
       mockConfigService.get.mockReturnValue({ sources: new Map() });
 
-      await expect(sourceService.onModuleInit()).rejects.toThrow('No source definitions found.');
+      await expect(sourceService.onModuleInit()).rejects.toThrow(
+        'No source definitions found.',
+      );
     });
   });
 
@@ -97,7 +107,7 @@ describe('SourceService', () => {
 
     it('should create streaming service for valid source', () => {
       const streamingService = sourceService.getSource('trades');
-      
+
       expect(streamingService).toBeDefined();
       expect(streamingService.getUpdates).toBeDefined();
       expect(streamingService.getPrimaryKeyField).toBeDefined();
@@ -106,37 +116,39 @@ describe('SourceService', () => {
     it('should reuse existing streaming service for same source', () => {
       const firstService = sourceService.getSource('trades');
       const secondService = sourceService.getSource('trades');
-      
+
       expect(firstService).toBe(secondService);
     });
 
     it('should create separate streaming services for different sources', () => {
       const tradesService = sourceService.getSource('trades');
       const pnlService = sourceService.getSource('live_pnl');
-      
+
       expect(tradesService).not.toBe(pnlService);
     });
 
     it('should throw error for unknown source', () => {
       expect(() => {
         sourceService.getSource('unknown_source');
-      }).toThrow('Unknown source: unknown_source. Available sources: trades, live_pnl');
+      }).toThrow(
+        'Unknown source: unknown_source. Available sources: trades, live_pnl',
+      );
     });
 
     it('should create fresh source when existing one is disposed', () => {
       // Get initial source
       const firstSource = sourceService.getSource('trades');
       expect(firstSource).toBeDefined();
-      
+
       // Mock the source as disposed
       Object.defineProperty(firstSource, 'isDisposed', {
         get: jest.fn().mockReturnValue(true),
-        configurable: true
+        configurable: true,
       });
-      
+
       // Get source again - should create a new one
       const secondSource = sourceService.getSource('trades');
-      
+
       // Should be a different instance
       expect(secondSource).not.toBe(firstSource);
       expect(secondSource).toBeDefined();
@@ -153,13 +165,13 @@ describe('SourceService', () => {
       // Create a source first
       const source = sourceService.getSource('trades');
       expect(source).toBeDefined();
-      
+
       // Remove it
       sourceService.removeSource('trades');
-      
+
       // Verify database stream was removed
       expect(mockConnectionService.removeStream).toHaveBeenCalledWith('trades');
-      
+
       // Getting the source again should create a new one
       const newSource = sourceService.getSource('trades');
       expect(newSource).not.toBe(source);
@@ -168,7 +180,7 @@ describe('SourceService', () => {
     it('should handle removing non-existent source gracefully', () => {
       // Should not throw
       expect(() => sourceService.removeSource('non_existent')).not.toThrow();
-      
+
       // Should not call removeStream for non-existent source
       expect(mockConnectionService.removeStream).not.toHaveBeenCalled();
     });
@@ -184,14 +196,14 @@ describe('SourceService', () => {
       // Create streaming services
       const tradesService = sourceService.getSource('trades');
       const pnlService = sourceService.getSource('live_pnl');
-      
+
       // Spy on their cleanup methods
       const tradesCleanup = jest.spyOn(tradesService, 'dispose');
       const pnlCleanup = jest.spyOn(pnlService, 'dispose');
-      
+
       // Destroy module
       await sourceService.onModuleDestroy();
-      
+
       // Verify cleanup was called
       expect(tradesCleanup).toHaveBeenCalled();
       expect(pnlCleanup).toHaveBeenCalled();

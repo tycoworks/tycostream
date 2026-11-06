@@ -14,10 +14,10 @@ export class StreamBuffer {
     // Convert buffer to UTF-8 string and combine with any buffered data
     const combined = this.buffer + chunk.toString('utf8');
     const lines = combined.split('\n');
-    
+
     // Last "line" might be incomplete - save it for next chunk
     this.buffer = lines.pop() || '';
-    
+
     return lines;
   }
 

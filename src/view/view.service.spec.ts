@@ -21,18 +21,18 @@ describe('ViewService', () => {
     mockSource = {
       getUpdates: jest.fn().mockReturnValue(sourceUpdates$),
       getPrimaryKeyField: jest.fn().mockReturnValue('id'),
-      dispose: jest.fn()
+      dispose: jest.fn(),
     } as any;
 
     // Mock SourceService
     sourceService = {
-      getSource: jest.fn().mockReturnValue(mockSource)
+      getSource: jest.fn().mockReturnValue(mockSource),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ViewService,
-        { provide: SourceService, useValue: sourceService }
+        { provide: SourceService, useValue: sourceService },
       ],
     }).compile();
 
@@ -47,13 +47,13 @@ describe('ViewService', () => {
   describe('getUpdates', () => {
     it('should get source from SourceService', () => {
       viewService.getUpdates('test_source');
-      
+
       expect(sourceService.getSource).toHaveBeenCalledWith('test_source');
     });
 
     it('should create a View with the source', () => {
       const updates$ = viewService.getUpdates('test_source');
-      
+
       expect(updates$).toBeDefined();
       expect(mockSource.getUpdates).toHaveBeenCalled();
     });
@@ -62,11 +62,11 @@ describe('ViewService', () => {
       const filter = new Filter({
         expression: 'test',
         fields: new Set(['field']),
-        evaluate: () => true
+        evaluate: () => true,
       });
 
       const updates$ = viewService.getUpdates('test_source', filter);
-      
+
       expect(updates$).toBeDefined();
       // View is created internally with the filter
       expect(sourceService.getSource).toHaveBeenCalledWith('test_source');
@@ -74,12 +74,12 @@ describe('ViewService', () => {
 
     it('should return an observable that can be subscribed to', (done) => {
       const updates$ = viewService.getUpdates('test_source');
-      
+
       // Should be able to subscribe without error
       const subscription = updates$.subscribe({
         next: () => {},
         error: done.fail,
-        complete: () => done()
+        complete: () => done(),
       });
 
       // Complete the source to end the test
@@ -92,20 +92,20 @@ describe('ViewService', () => {
     it('should create independent views for each subscriber', () => {
       const updates1$ = viewService.getUpdates('test_source');
       const updates2$ = viewService.getUpdates('test_source');
-      
+
       // Each call should get the source
       expect(sourceService.getSource).toHaveBeenCalledTimes(2);
-      
+
       // Each should get their own observable
       expect(updates1$).not.toBe(updates2$);
     });
 
     it('should handle cleanup when subscriber disconnects', () => {
       const updates$ = viewService.getUpdates('test_source');
-      
+
       const subscription = updates$.subscribe();
       subscription.unsubscribe();
-      
+
       // View cleanup happens internally
       // We can't easily test this without exposing internals
       expect(sourceService.getSource).toHaveBeenCalled();
@@ -115,7 +115,7 @@ describe('ViewService', () => {
   describe('onModuleDestroy', () => {
     it('should clean up resources', async () => {
       await viewService.onModuleDestroy();
-      
+
       // Should log shutdown messages (we can't easily test logging)
       // Main thing is it doesn't throw
       expect(true).toBe(true);

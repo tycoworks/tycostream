@@ -7,9 +7,7 @@ import type { Cache } from './cache.types';
 export class SimpleCache implements Cache {
   private cache = new Map<string | number, Record<string, any>>();
 
-  constructor(
-    private primaryKeyField: string
-  ) {}
+  constructor(private primaryKeyField: string) {}
 
   /**
    * Store a row in the cache, creating a shallow copy to prevent mutations
@@ -59,7 +57,6 @@ export class SimpleCache implements Cache {
   getAllRows(): Record<string, any>[] {
     return Array.from(this.cache.values());
   }
-
 
   /**
    * Get cache size

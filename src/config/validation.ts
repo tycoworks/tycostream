@@ -22,11 +22,13 @@ export function validateConfig<T extends object>(
 
   if (errors.length > 0) {
     const errorMessages = errors
-      .map(error => Object.values(error.constraints || {}).join(', '))
+      .map((error) => Object.values(error.constraints || {}).join(', '))
       .join('; ');
-    
+
     logger.error(`Configuration validation failed for ${envVariablesKey}`);
-    throw new Error(`Invalid configuration for ${envVariablesKey}: ${errorMessages}`);
+    throw new Error(
+      `Invalid configuration for ${envVariablesKey}: ${errorMessages}`,
+    );
   }
 
   return validatedConfig;

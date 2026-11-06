@@ -22,12 +22,12 @@ describe('logging.utils', () => {
     });
 
     it('should handle complex objects', () => {
-      const data = { 
-        id: 1, 
-        nested: { 
-          array: [1, 2, 3], 
-          bool: true 
-        } 
+      const data = {
+        id: 1,
+        nested: {
+          array: [1, 2, 3],
+          bool: true,
+        },
       };
       const result = truncateForLog(data);
       expect(result).toContain('id');

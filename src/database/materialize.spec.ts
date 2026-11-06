@@ -14,8 +14,8 @@ describe('MaterializeProtocolHandler', () => {
       fields: [
         { name: 'id', dataType: DataType.String },
         { name: 'name', dataType: DataType.String },
-        { name: 'value', dataType: DataType.Integer }
-      ]
+        { name: 'value', dataType: DataType.Integer },
+      ],
     };
 
     handler = new MaterializeProtocolHandler(mockSourceDef, 'test_view');
@@ -27,12 +27,12 @@ describe('MaterializeProtocolHandler', () => {
       // We can't directly access private columnNames, but we can test through parseLine
       const testLine = '1234567890\tupsert\t123\ttest\t42';
       const result = handler.parseLine(testLine);
-      
+
       expect(result).toBeDefined();
       expect(result?.row).toEqual({
         id: '123',
         name: 'test',
-        value: 42  // Should be parsed as integer
+        value: 42, // Should be parsed as integer
       });
     });
 
@@ -40,12 +40,13 @@ describe('MaterializeProtocolHandler', () => {
       const singleFieldDef: SourceDefinition = {
         name: 'single',
         primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.String }
-        ]
+        fields: [{ name: 'id', dataType: DataType.String }],
       };
 
-      const singleFieldHandler = new MaterializeProtocolHandler(singleFieldDef, 'single_field_view');
+      const singleFieldHandler = new MaterializeProtocolHandler(
+        singleFieldDef,
+        'single_field_view',
+      );
       const query = singleFieldHandler.createSubscribeQuery();
       expect(query).toContain('single_field_view');
     });
@@ -54,8 +55,10 @@ describe('MaterializeProtocolHandler', () => {
   describe('createSubscribeQuery', () => {
     it('should create correct SUBSCRIBE query', () => {
       const query = handler.createSubscribeQuery();
-      
-      expect(query).toBe('SUBSCRIBE (SELECT id, name, value FROM test_view) ENVELOPE UPSERT (KEY (id)) WITH (SNAPSHOT)');
+
+      expect(query).toBe(
+        'SUBSCRIBE (SELECT id, name, value FROM test_view) ENVELOPE UPSERT (KEY (id)) WITH (SNAPSHOT)',
+      );
     });
 
     it('should use the correct primary key field', () => {
@@ -65,13 +68,16 @@ describe('MaterializeProtocolHandler', () => {
         fields: [
           { name: 'id', dataType: DataType.String },
           { name: 'name', dataType: DataType.String },
-          { name: 'value', dataType: DataType.Integer }
-        ]
+          { name: 'value', dataType: DataType.Integer },
+        ],
       };
 
-      const customHandler = new MaterializeProtocolHandler(customKeyDef, 'custom_view');
+      const customHandler = new MaterializeProtocolHandler(
+        customKeyDef,
+        'custom_view',
+      );
       const query = customHandler.createSubscribeQuery();
-      
+
       expect(query).toContain('KEY (name)');
     });
   });
@@ -87,7 +93,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row).toEqual({
         id: '123',
         name: 'test name',
-        value: 42
+        value: 42,
       });
     });
 
@@ -101,7 +107,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row).toEqual({
         id: '123',
         name: 'test name',
-        value: 42
+        value: 42,
       });
     });
 
@@ -113,7 +119,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row).toEqual({
         id: '123',
         name: null,
-        value: null
+        value: null,
       });
     });
 
@@ -126,10 +132,10 @@ describe('MaterializeProtocolHandler', () => {
     it('should return null for invalid lines', () => {
       // Too few fields
       expect(handler.parseLine('1234567890')).toBeNull();
-      
+
       // Missing timestamp
       expect(handler.parseLine('\tupsert\t123')).toBeNull();
-      
+
       // Missing mz_state
       expect(handler.parseLine('1234567890\t\t123')).toBeNull();
     });
@@ -137,7 +143,7 @@ describe('MaterializeProtocolHandler', () => {
     it('should handle lines with only timestamp and mz_state', () => {
       // Valid line but no data fields
       const result = handler.parseLine('1234567890\tupsert');
-      
+
       expect(result).toBeDefined();
       expect(result?.timestamp).toBe(BigInt(1234567890));
       expect(result?.updateType).toBe(DatabaseRowUpdateType.Upsert);
@@ -151,7 +157,7 @@ describe('MaterializeProtocolHandler', () => {
 
       expect(result).toBeDefined();
       expect(result?.row).toEqual({
-        id: '123'
+        id: '123',
       });
     });
 
@@ -164,7 +170,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result?.row).toEqual({
         id: '123',
         name: 'test',
-        value: 42
+        value: 42,
       });
     });
 
@@ -190,10 +196,13 @@ describe('MaterializeProtocolHandler', () => {
         fields: [
           { name: 'id', dataType: DataType.String },
           { name: 'is_active', dataType: DataType.Boolean },
-          { name: 'is_verified', dataType: DataType.Boolean }
-        ]
+          { name: 'is_verified', dataType: DataType.Boolean },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(booleanSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        booleanSourceDef,
+        'test_view',
+      );
 
       // Test 't' and 'f' values
       const line1 = '1234567890\tupsert\t123\tt\tf';
@@ -201,7 +210,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result1?.row).toEqual({
         id: '123',
         is_active: true,
-        is_verified: false
+        is_verified: false,
       });
 
       // Test 'true' value
@@ -210,7 +219,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result2?.row).toEqual({
         id: '123',
         is_active: true,
-        is_verified: false
+        is_verified: false,
       });
     });
 
@@ -221,17 +230,20 @@ describe('MaterializeProtocolHandler', () => {
         fields: [
           { name: 'id', dataType: DataType.String },
           { name: 'price', dataType: DataType.Float },
-          { name: 'rate', dataType: DataType.Float }
-        ]
+          { name: 'rate', dataType: DataType.Float },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(floatSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        floatSourceDef,
+        'test_view',
+      );
 
       const line = '1234567890\tupsert\t123\t99.99\t0.05';
       const result = handler.parseLine(line);
       expect(result?.row).toEqual({
         id: '123',
         price: 99.99,
-        rate: 0.05
+        rate: 0.05,
       });
 
       // Test scientific notation
@@ -240,7 +252,7 @@ describe('MaterializeProtocolHandler', () => {
       expect(result2?.row).toEqual({
         id: '123',
         price: 1.23e10,
-        rate: -4.56e-3
+        rate: -4.56e-3,
       });
     });
 
@@ -250,16 +262,19 @@ describe('MaterializeProtocolHandler', () => {
         primaryKeyField: 'id',
         fields: [
           { name: 'id', dataType: DataType.String },
-          { name: 'large_number', dataType: DataType.BigInt }
-        ]
+          { name: 'large_number', dataType: DataType.BigInt },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(bigintSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        bigintSourceDef,
+        'test_view',
+      );
 
       const line = '1234567890\tupsert\t123\t9223372036854775807';
       const result = handler.parseLine(line);
       expect(result?.row).toEqual({
         id: '123',
-        large_number: '9223372036854775807' // Should remain as string
+        large_number: '9223372036854775807', // Should remain as string
       });
       expect(typeof result?.row.large_number).toBe('string');
     });
@@ -272,18 +287,22 @@ describe('MaterializeProtocolHandler', () => {
           { name: 'id', dataType: DataType.String },
           { name: 'created_at', dataType: DataType.Timestamp },
           { name: 'birth_date', dataType: DataType.Date },
-          { name: 'start_time', dataType: DataType.Time }
-        ]
+          { name: 'start_time', dataType: DataType.Time },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(temporalSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        temporalSourceDef,
+        'test_view',
+      );
 
-      const line = '1234567890\tupsert\t123\t2023-01-15 14:30:00\t1990-05-20\t09:15:30';
+      const line =
+        '1234567890\tupsert\t123\t2023-01-15 14:30:00\t1990-05-20\t09:15:30';
       const result = handler.parseLine(line);
       expect(result?.row).toEqual({
         id: '123',
         created_at: '2023-01-15 14:30:00',
         birth_date: '1990-05-20',
-        start_time: '09:15:30'
+        start_time: '09:15:30',
       });
     });
 
@@ -293,16 +312,20 @@ describe('MaterializeProtocolHandler', () => {
         primaryKeyField: 'id',
         fields: [
           { name: 'id', dataType: DataType.UUID },
-          { name: 'metadata', dataType: DataType.JSON }
-        ]
+          { name: 'metadata', dataType: DataType.JSON },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(specialSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        specialSourceDef,
+        'test_view',
+      );
 
-      const line = '1234567890\tupsert\t550e8400-e29b-41d4-a716-446655440000\t{"key":"value","num":42}';
+      const line =
+        '1234567890\tupsert\t550e8400-e29b-41d4-a716-446655440000\t{"key":"value","num":42}';
       const result = handler.parseLine(line);
       expect(result?.row).toEqual({
         id: '550e8400-e29b-41d4-a716-446655440000',
-        metadata: '{"key":"value","num":42}'
+        metadata: '{"key":"value","num":42}',
       });
     });
 
@@ -313,10 +336,13 @@ describe('MaterializeProtocolHandler', () => {
         fields: [
           { name: 'id', dataType: DataType.String },
           { name: 'int_value', dataType: DataType.Integer },
-          { name: 'float_value', dataType: DataType.Float }
-        ]
+          { name: 'float_value', dataType: DataType.Float },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(numericSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        numericSourceDef,
+        'test_view',
+      );
 
       const line = '1234567890\tupsert\t123\tnot_a_number\tinvalid_float';
       const result = handler.parseLine(line);
@@ -330,7 +356,7 @@ describe('MaterializeProtocolHandler', () => {
     it('should preserve enum string values', () => {
       const orderStatusEnum: EnumType = {
         name: 'order_status',
-        values: ['pending', 'processing', 'shipped', 'delivered', 'cancelled']
+        values: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],
       };
 
       const enumSourceDef: SourceDefinition = {
@@ -338,19 +364,26 @@ describe('MaterializeProtocolHandler', () => {
         primaryKeyField: 'id',
         fields: [
           { name: 'id', dataType: DataType.Integer },
-          { name: 'status', dataType: DataType.String, enumType: orderStatusEnum },
-          { name: 'notes', dataType: DataType.String }
-        ]
+          {
+            name: 'status',
+            dataType: DataType.String,
+            enumType: orderStatusEnum,
+          },
+          { name: 'notes', dataType: DataType.String },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(enumSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        enumSourceDef,
+        'test_view',
+      );
 
       // Test preserving 'shipped' as string
       const line1 = '1234567890\tupsert\t123\tshipped\tOrder shipped today';
       const result1 = handler.parseLine(line1);
       expect(result1?.row).toEqual({
         id: 123,
-        status: 'shipped',  // Preserved as string
-        notes: 'Order shipped today'
+        status: 'shipped', // Preserved as string
+        notes: 'Order shipped today',
       });
 
       // Test all enum values preserved as strings
@@ -359,7 +392,7 @@ describe('MaterializeProtocolHandler', () => {
         'processing',
         'shipped',
         'delivered',
-        'cancelled'
+        'cancelled',
       ];
 
       testCases.forEach((value) => {
@@ -372,7 +405,7 @@ describe('MaterializeProtocolHandler', () => {
     it('should handle NULL enum values', () => {
       const priorityEnum: EnumType = {
         name: 'priority',
-        values: ['low', 'medium', 'high', 'critical']
+        values: ['low', 'medium', 'high', 'critical'],
       };
 
       const enumSourceDef: SourceDefinition = {
@@ -380,27 +413,34 @@ describe('MaterializeProtocolHandler', () => {
         primaryKeyField: 'id',
         fields: [
           { name: 'id', dataType: DataType.Integer },
-          { name: 'priority', dataType: DataType.String, enumType: priorityEnum }
-        ]
+          {
+            name: 'priority',
+            dataType: DataType.String,
+            enumType: priorityEnum,
+          },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(enumSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        enumSourceDef,
+        'test_view',
+      );
 
       const line = '1234567890\tupsert\t789\t\\N';
       const result = handler.parseLine(line);
       expect(result?.row).toEqual({
         id: 789,
-        priority: null
+        priority: null,
       });
     });
 
     it('should handle multiple enum fields', () => {
       const statusEnum: EnumType = {
         name: 'order_status',
-        values: ['pending', 'shipped', 'delivered']
+        values: ['pending', 'shipped', 'delivered'],
       };
       const priorityEnum: EnumType = {
         name: 'priority',
-        values: ['low', 'medium', 'high']
+        values: ['low', 'medium', 'high'],
       };
 
       const enumSourceDef: SourceDefinition = {
@@ -409,19 +449,26 @@ describe('MaterializeProtocolHandler', () => {
         fields: [
           { name: 'id', dataType: DataType.Integer },
           { name: 'status', dataType: DataType.String, enumType: statusEnum },
-          { name: 'priority', dataType: DataType.String, enumType: priorityEnum },
-          { name: 'amount', dataType: DataType.Float }
-        ]
+          {
+            name: 'priority',
+            dataType: DataType.String,
+            enumType: priorityEnum,
+          },
+          { name: 'amount', dataType: DataType.Float },
+        ],
       };
-      const handler = new MaterializeProtocolHandler(enumSourceDef, 'test_view');
+      const handler = new MaterializeProtocolHandler(
+        enumSourceDef,
+        'test_view',
+      );
 
       const line = '1234567890\tupsert\t999\tdelivered\thigh\t123.45';
       const result = handler.parseLine(line);
       expect(result?.row).toEqual({
         id: 999,
-        status: 'delivered',      // Preserved as string
-        priority: 'high',         // Preserved as string
-        amount: 123.45
+        status: 'delivered', // Preserved as string
+        priority: 'high', // Preserved as string
+        amount: 123.45,
       });
     });
   });

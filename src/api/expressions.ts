@@ -20,10 +20,10 @@ export type FieldComparison = {
   _lt?: any;
   _gte?: any;
   _lte?: any;
-  _in?: any;  // Runtime validates this should be an array
-  _nin?: any;  // Runtime validates this should be an array
+  _in?: any; // Runtime validates this should be an array
+  _nin?: any; // Runtime validates this should be an array
   _is_null?: boolean;
-  [key: string]: any;  // Allow unknown operators for error handling
+  [key: string]: any; // Allow unknown operators for error handling
 };
 
 /**
@@ -46,12 +46,14 @@ export class ExpressionBuilder {
     const expression = this.buildExpressionString(tree, 'datum', fields);
 
     try {
-      const evaluate = new Function('datum', `return ${expression}`) as (row: any) => boolean;
+      const evaluate = new Function('datum', `return ${expression}`) as (
+        row: any,
+      ) => boolean;
 
       return {
         evaluate,
         fields,
-        expression
+        expression,
       };
     } catch (error) {
       throw new Error(`Failed to compile filter expression: ${error.message}`);
@@ -62,15 +64,23 @@ export class ExpressionBuilder {
    * Internal helper that builds expression string and collects fields
    * Optimizes enum comparisons when source definition is provided
    */
-  private buildExpressionString(tree: ExpressionTree, fieldVar: string, fields: Set<string>): string {
+  private buildExpressionString(
+    tree: ExpressionTree,
+    fieldVar: string,
+    fields: Set<string>,
+  ): string {
     // Handle logical operators
     if (tree._and) {
-      const expressions = tree._and.map(t => this.buildExpressionString(t, fieldVar, fields));
+      const expressions = tree._and.map((t) =>
+        this.buildExpressionString(t, fieldVar, fields),
+      );
       return `(${expressions.join(' && ')})`;
     }
 
     if (tree._or) {
-      const expressions = tree._or.map(t => this.buildExpressionString(t, fieldVar, fields));
+      const expressions = tree._or.map((t) =>
+        this.buildExpressionString(t, fieldVar, fields),
+      );
       return `(${expressions.join(' || ')})`;
     }
 
@@ -90,7 +100,9 @@ export class ExpressionBuilder {
       fields.add(field);
 
       // Check if this field is an enum
-      const fieldDef = this.sourceDefinition.fields.find(f => f.name === field);
+      const fieldDef = this.sourceDefinition.fields.find(
+        (f) => f.name === field,
+      );
       const enumType = fieldDef?.enumType;
 
       for (const [op, value] of Object.entries(operators)) {
@@ -104,31 +116,69 @@ export class ExpressionBuilder {
             expressions.push(`${fieldAccess} !== ${JSON.stringify(value)}`);
             break;
           case '_gt':
-            expressions.push(this.buildOrdinalComparison(fieldAccess, op, value, enumType?.values));
+            expressions.push(
+              this.buildOrdinalComparison(
+                fieldAccess,
+                op,
+                value,
+                enumType?.values,
+              ),
+            );
             break;
           case '_lt':
-            expressions.push(this.buildOrdinalComparison(fieldAccess, op, value, enumType?.values));
+            expressions.push(
+              this.buildOrdinalComparison(
+                fieldAccess,
+                op,
+                value,
+                enumType?.values,
+              ),
+            );
             break;
           case '_gte':
-            expressions.push(this.buildOrdinalComparison(fieldAccess, op, value, enumType?.values));
+            expressions.push(
+              this.buildOrdinalComparison(
+                fieldAccess,
+                op,
+                value,
+                enumType?.values,
+              ),
+            );
             break;
           case '_lte':
-            expressions.push(this.buildOrdinalComparison(fieldAccess, op, value, enumType?.values));
+            expressions.push(
+              this.buildOrdinalComparison(
+                fieldAccess,
+                op,
+                value,
+                enumType?.values,
+              ),
+            );
             break;
           case '_in':
             if (!Array.isArray(value)) {
-              throw new Error(`_in operator requires an array, got ${typeof value}`);
+              throw new Error(
+                `_in operator requires an array, got ${typeof value}`,
+              );
             }
-            expressions.push(`[${value.map(v => JSON.stringify(v)).join(', ')}].indexOf(${fieldAccess}) !== -1`);
+            expressions.push(
+              `[${value.map((v) => JSON.stringify(v)).join(', ')}].indexOf(${fieldAccess}) !== -1`,
+            );
             break;
           case '_nin':
             if (!Array.isArray(value)) {
-              throw new Error(`_nin operator requires an array, got ${typeof value}`);
+              throw new Error(
+                `_nin operator requires an array, got ${typeof value}`,
+              );
             }
-            expressions.push(`[${value.map(v => JSON.stringify(v)).join(', ')}].indexOf(${fieldAccess}) === -1`);
+            expressions.push(
+              `[${value.map((v) => JSON.stringify(v)).join(', ')}].indexOf(${fieldAccess}) === -1`,
+            );
             break;
           case '_is_null':
-            expressions.push(value ? `${fieldAccess} == null` : `${fieldAccess} != null`);
+            expressions.push(
+              value ? `${fieldAccess} == null` : `${fieldAccess} != null`,
+            );
             break;
           default:
             throw new Error(`Unknown operator: ${op}`);
@@ -157,7 +207,12 @@ export class ExpressionBuilder {
    * We generate fast ternary chain:
    *   (datum.status === 'pending' ? 0 : datum.status === 'processing' ? 1 : datum.status === 'shipped' ? 2 : -1) > 0
    */
-  private buildOrdinalComparison(fieldAccess: string, op: string, value: any, enumValues?: string[]): string {
+  private buildOrdinalComparison(
+    fieldAccess: string,
+    op: string,
+    value: any,
+    enumValues?: string[],
+  ): string {
     let leftExpr: string;
     let rightExpr: string;
 
@@ -166,14 +221,17 @@ export class ExpressionBuilder {
       const valueIndex = enumValues.indexOf(value);
       if (valueIndex === -1) {
         // Invalid enum value - will always be false
-        ExpressionBuilder.logger.warn(`Invalid enum value '${value}' in comparison`);
+        ExpressionBuilder.logger.warn(
+          `Invalid enum value '${value}' in comparison`,
+        );
         return 'false';
       }
 
       // Generate a ternary chain to convert field value to index
-      const ternaryChain = enumValues
-        .map((v, i) => `${fieldAccess} === ${JSON.stringify(v)} ? ${i}`)
-        .join(' : ') + ' : -1';
+      const ternaryChain =
+        enumValues
+          .map((v, i) => `${fieldAccess} === ${JSON.stringify(v)} ? ${i}`)
+          .join(' : ') + ' : -1';
 
       leftExpr = `(${ternaryChain})`;
       rightExpr = String(valueIndex);

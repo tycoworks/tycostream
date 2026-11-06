@@ -16,25 +16,36 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
 
   constructor(
     private sourceDefinition: SourceDefinition,
-    private sourceName: string
+    private sourceName: string,
   ) {
     // Initialize column names for COPY stream parsing
     // With ENVELOPE UPSERT, Materialize reorders output: [mz_timestamp, mz_state, key_columns, value_columns]
-    const keyFields = sourceDefinition.fields.filter(f => f.name === sourceDefinition.primaryKeyField);
-    const nonKeyFields = sourceDefinition.fields.filter(f => f.name !== sourceDefinition.primaryKeyField);
-    this.columnNames = ['mz_timestamp', 'mz_state', ...keyFields.map(f => f.name), ...nonKeyFields.map(f => f.name)];
-    
+    const keyFields = sourceDefinition.fields.filter(
+      (f) => f.name === sourceDefinition.primaryKeyField,
+    );
+    const nonKeyFields = sourceDefinition.fields.filter(
+      (f) => f.name !== sourceDefinition.primaryKeyField,
+    );
+    this.columnNames = [
+      'mz_timestamp',
+      'mz_state',
+      ...keyFields.map((f) => f.name),
+      ...nonKeyFields.map((f) => f.name),
+    ];
+
     // Build column type map and enum map
     this.columnTypes = new Map();
     this.enumTypes = new Map();
-    sourceDefinition.fields.forEach(field => {
+    sourceDefinition.fields.forEach((field) => {
       this.columnTypes.set(field.name, field.dataType);
       if (field.enumType) {
         this.enumTypes.set(field.name, field.enumType);
       }
     });
-    
-    this.logger.debug(`MaterializeProtocolHandler initialized for ${sourceName} - columns: ${this.columnNames.length} [${this.columnNames.join(', ')}], primaryKey: ${sourceDefinition.primaryKeyField}`);
+
+    this.logger.debug(
+      `MaterializeProtocolHandler initialized for ${sourceName} - columns: ${this.columnNames.length} [${this.columnNames.join(', ')}], primaryKey: ${sourceDefinition.primaryKeyField}`,
+    );
   }
 
   /**
@@ -44,8 +55,8 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
   createSubscribeQuery(): string {
     const keyColumn = this.sourceDefinition.primaryKeyField;
     // Get all column names from the source definition
-    const columns = this.sourceDefinition.fields.map(f => f.name).join(', ');
-    
+    const columns = this.sourceDefinition.fields.map((f) => f.name).join(', ');
+
     // Use SELECT to explicitly specify columns from our YAML definition
     const query = `SUBSCRIBE (SELECT ${columns} FROM ${this.sourceName}) ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)`;
     this.logger.debug(`Created subscribe query: ${query}`);
@@ -56,7 +67,11 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
    * Parse a single line of COPY output
    * Returns null if the line should be skipped
    */
-  parseLine(line: string): { row: Record<string, any>; timestamp: bigint; updateType: DatabaseRowUpdateType } | null {
+  parseLine(line: string): {
+    row: Record<string, any>;
+    timestamp: bigint;
+    updateType: DatabaseRowUpdateType;
+  } | null {
     const trimmed = line.trim();
     if (!trimmed) return null;
 
@@ -68,7 +83,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     // Parse timestamp (first field)
     const timestampField = fields[0];
     if (!timestampField) return null;
-    
+
     let timestamp: bigint;
     try {
       timestamp = BigInt(timestampField);
@@ -88,16 +103,18 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
       if (columnName && field !== undefined) {
         const dataType = this.columnTypes.get(columnName);
         const enumType = this.enumTypes.get(columnName);
-        row[columnName] = dataType !== undefined
-          ? parseValueFromDataType(field, dataType, enumType)
-          : field;
+        row[columnName] =
+          dataType !== undefined
+            ? parseValueFromDataType(field, dataType, enumType)
+            : field;
       }
     }
 
-    const updateType = mzState === 'delete' 
-      ? DatabaseRowUpdateType.Delete 
-      : DatabaseRowUpdateType.Upsert;
-      
+    const updateType =
+      mzState === 'delete'
+        ? DatabaseRowUpdateType.Delete
+        : DatabaseRowUpdateType.Upsert;
+
     return { row, timestamp, updateType };
   }
 }
@@ -106,7 +123,11 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
  * Parse a COPY text format value based on DataType
  * Handles PostgreSQL COPY format including \\N for NULL
  */
-function parseValueFromDataType(value: string, dataType: DataType, enumType?: EnumType): any {
+function parseValueFromDataType(
+  value: string,
+  dataType: DataType,
+  enumType?: EnumType,
+): any {
   // Handle COPY format NULL
   if (value === '\\N') return null;
 

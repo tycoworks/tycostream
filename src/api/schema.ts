@@ -1,7 +1,18 @@
-import type { SourceDefinition, SourceField, EnumType, SourceConfiguration } from '../config/source.types';
+import type {
+  SourceDefinition,
+  SourceField,
+  EnumType,
+  SourceConfiguration,
+} from '../config/source.types';
 import { DataType } from '../common/types';
 import { GraphQLRowOperation } from './subscription.resolver';
-import { GraphQLString, GraphQLInt, GraphQLFloat, GraphQLBoolean, GraphQLID } from 'graphql';
+import {
+  GraphQLString,
+  GraphQLInt,
+  GraphQLFloat,
+  GraphQLBoolean,
+  GraphQLID,
+} from 'graphql';
 import type { GraphQLScalarType } from 'graphql';
 
 /**
@@ -11,7 +22,7 @@ enum ComparisonInputType {
   String = 'StringComparison',
   Int = 'IntComparison',
   Float = 'FloatComparison',
-  Boolean = 'BooleanComparison'
+  Boolean = 'BooleanComparison',
 }
 
 /**
@@ -28,7 +39,7 @@ export function generateSchema(config: SourceConfiguration): string {
   const expressionInputTypes = buildExpressionInputTypes(sources);
   const sourceTypes = buildSourceTypes(sources);
   const subscriptionFields = buildSubscriptionFields(sources);
-  
+
   let schema = `
     # ================== ENUMS & BASE TYPES ==================
 
@@ -79,7 +90,7 @@ function buildEnumTypes(enumTypes: Map<string, EnumType>): string {
   const enumDefinitions: string[] = [];
 
   for (const enumType of enumTypes.values()) {
-    const values = enumType.values.map(value => `      ${value}`).join('\n');
+    const values = enumType.values.map((value) => `      ${value}`).join('\n');
     enumDefinitions.push(`    # User-defined enum: ${enumType.name}
     enum ${enumType.name} {
 ${values}
@@ -170,10 +181,10 @@ function buildComparisonTypes(): string {
  */
 function buildSourceTypes(sources: Map<string, SourceDefinition>): string {
   const types: string[] = [];
-  
+
   for (const [sourceName, sourceDefinition] of sources) {
     const fields = buildFieldDefinitions(sourceDefinition);
-    
+
     types.push(`    # ${sourceName} type
     type ${sourceName} {
 ${fields}
@@ -186,7 +197,7 @@ ${fields}
       fields: [${GraphQLString.name}!]!
     }`);
   }
-  
+
   return types.join('\n\n');
 }
 
@@ -194,9 +205,14 @@ ${fields}
  * Build subscription fields for all sources
  * Creates a subscription field for each source that returns its update type
  */
-function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string {
+function buildSubscriptionFields(
+  sources: Map<string, SourceDefinition>,
+): string {
   return Array.from(sources.keys())
-    .map(sourceName => `      ${sourceName}(where: ${sourceName}Expression): ${sourceName}Update!`)
+    .map(
+      (sourceName) =>
+        `      ${sourceName}(where: ${sourceName}Expression): ${sourceName}Update!`,
+    )
     .join('\n');
 }
 
@@ -205,17 +221,19 @@ function buildSubscriptionFields(sources: Map<string, SourceDefinition>): string
  * Creates expression input types for each source with field comparisons and logical operators
  * Used by subscriptions (where)
  */
-function buildExpressionInputTypes(sources: Map<string, SourceDefinition>): string {
+function buildExpressionInputTypes(
+  sources: Map<string, SourceDefinition>,
+): string {
   const inputTypes: string[] = [];
-  
+
   for (const [sourceName, sourceDefinition] of sources) {
     const fieldComparisons = sourceDefinition.fields
-      .map(field => {
+      .map((field) => {
         const comparisonType = getComparisonType(field);
         return `      ${field.name}: ${comparisonType}`;
       })
       .join('\n');
-    
+
     inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions)
     input ${sourceName}Expression {
 ${fieldComparisons}
@@ -224,7 +242,7 @@ ${fieldComparisons}
       _not: ${sourceName}Expression
     }`);
   }
-  
+
   return inputTypes.join('\n\n');
 }
 
@@ -260,12 +278,13 @@ function getComparisonType(field: SourceField): string {
  */
 function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
   return sourceDefinition.fields
-    .map(field => {
+    .map((field) => {
       // Use enum type if this field has one, otherwise use scalar type
       const graphqlTypeName = field.enumType
         ? field.enumType.name
         : getGraphQLScalarType(field.dataType).name;
-      const nullable = field.name !== sourceDefinition.primaryKeyField ? '' : '!';
+      const nullable =
+        field.name !== sourceDefinition.primaryKeyField ? '' : '!';
       return `      ${field.name}: ${graphqlTypeName}${nullable}`;
     })
     .join('\n');
@@ -283,7 +302,7 @@ function getGraphQLScalarType(dataType: DataType): GraphQLScalarType {
     case DataType.Float:
       return GraphQLFloat;
     case DataType.BigInt:
-      return GraphQLString;  // BigInt as string to preserve precision
+      return GraphQLString; // BigInt as string to preserve precision
 
     // String types
     case DataType.String:
@@ -302,7 +321,7 @@ function getGraphQLScalarType(dataType: DataType): GraphQLScalarType {
       return GraphQLBoolean;
     case DataType.JSON:
     case DataType.Array:
-      return GraphQLString;  // JSON/Arrays as strings
+      return GraphQLString; // JSON/Arrays as strings
 
     default:
       // Fallback to string

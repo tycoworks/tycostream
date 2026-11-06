@@ -43,6 +43,6 @@ export default registerAs('database', (): DatabaseConfig => {
     password: process.env.DATABASE_PASSWORD || 'materialize',
     database: process.env.DATABASE_NAME || 'materialize',
   };
-  
+
   return validateConfig(rawConfig, 'database', DatabaseConfig);
 });

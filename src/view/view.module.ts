@@ -9,12 +9,9 @@ import { ViewService } from './view.service';
  */
 @Module({
   imports: [DatabaseModule],
-  providers: [
-    SourceService,
-    ViewService
-  ],
+  providers: [SourceService, ViewService],
   exports: [
-    ViewService  // Only export ViewService, SourceService is internal
+    ViewService, // Only export ViewService, SourceService is internal
   ],
 })
 export class ViewModule {}

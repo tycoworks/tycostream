@@ -25,26 +25,36 @@ import { SubscriptionService } from './subscription.service';
        * Factory function runs after ConfigModule loads source definitions
        * Generates schema and resolvers dynamically from config
        */
-      useFactory: async (configService: ConfigService, viewService: ViewService) => {
+      useFactory: async (
+        configService: ConfigService,
+        viewService: ViewService,
+      ) => {
         const logger = new Logger('GraphQLModule');
-        
+
         // Get source configuration from config
-        const sourceConfig = configService.get<SourceConfiguration>('sources') || { sources: new Map(), enums: new Map() };
+        const sourceConfig = configService.get<SourceConfiguration>(
+          'sources',
+        ) || { sources: new Map(), enums: new Map() };
 
         // Generate SDL from source configuration
         const typeDefs = generateSchema(sourceConfig);
-        
+
         // Log the generated SDL
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
-        
+
         // Create service instances for resolvers
         const subscriptionService = new SubscriptionService(viewService);
-        
+
         // Build resolvers
-        const subscriptionResolvers = buildSubscriptionResolvers(sourceConfig.sources, subscriptionService);
-        
+        const subscriptionResolvers = buildSubscriptionResolvers(
+          sourceConfig.sources,
+          subscriptionService,
+        );
+
         const graphqlConfig = configService.get('graphql');
-        logger.log(`GraphQL: Port ${graphqlConfig.port}, Playground ${graphqlConfig.playground ? 'enabled' : 'disabled'}`);
+        logger.log(
+          `GraphQL: Port ${graphqlConfig.port}, Playground ${graphqlConfig.playground ? 'enabled' : 'disabled'}`,
+        );
 
         // Configure landing page plugin based on GRAPHQL_UI environment variable
         const landingPagePlugin = graphqlConfig.playground
@@ -53,7 +63,7 @@ import { SubscriptionService } from './subscription.service';
               includeCookies: true,
             })
           : ApolloServerPluginLandingPageDisabled();
-        
+
         return {
           typeDefs,
           introspection: true, // Always enable introspection for API discovery

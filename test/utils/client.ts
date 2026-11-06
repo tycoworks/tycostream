@@ -24,7 +24,7 @@ export interface SubscriptionOptions<TData = any> {
 
 export class TestClient<TData = any> implements StatefulItem {
   private graphqlClient: ApolloClient;
-  
+
   // === State Management (public for parent access) ===
   stateManager: StateManager<EventHandler>;
 
@@ -32,31 +32,36 @@ export class TestClient<TData = any> implements StatefulItem {
     // Create Apollo client with WebSocket support using graphql-ws
     const { host, port, path } = options.graphqlEndpoint;
     const wsUrl = `ws://${host}:${port}${path}`;
-    
+
     const wsClient = createClient({
       url: wsUrl,
-      webSocketImpl: WebSocket as any
+      webSocketImpl: WebSocket as any,
     });
-    
+
     this.graphqlClient = new ApolloClient({
       link: new GraphQLWsLink(wsClient),
-      cache: new InMemoryCache()
+      cache: new InMemoryCache(),
     });
-    
+
     // Initialize state manager
     this.stateManager = new StateManager<EventHandler>(
       `Client ${options.clientId}`,
-      false  // Don't fail on stall
+      false, // Don't fail on stall
     );
   }
 
   // === Public Methods ===
-  
-  async subscribe(id: string, options: SubscriptionOptions<TData>): Promise<void> {
+
+  async subscribe(
+    id: string,
+    options: SubscriptionOptions<TData>,
+  ): Promise<void> {
     if (this.stateManager.has(id)) {
-      throw new Error(`Client ${this.options.clientId}: Handler '${id}' already exists`);
+      throw new Error(
+        `Client ${this.options.clientId}: Handler '${id}' already exists`,
+      );
     }
-    
+
     // Create and start subscription handler
     const handler = createSubscriptionHandler<TData>({
       id,
@@ -67,13 +72,13 @@ export class TestClient<TData = any> implements StatefulItem {
       expectedState: options.expectedState,
       graphqlClient: this.graphqlClient,
       onStateChange: () => this.handleStateChange(),
-      livenessTimeoutMs: this.options.livenessTimeoutMs
+      livenessTimeoutMs: this.options.livenessTimeoutMs,
     });
-    
+
     await handler.start();
     this.stateManager.add(id, handler);
   }
-  
+
   async waitForCompletion(): Promise<void> {
     return this.stateManager.waitForCompletion();
   }
@@ -82,42 +87,44 @@ export class TestClient<TData = any> implements StatefulItem {
     // Dispose all handlers
     const handlers = this.stateManager.getItems();
     await Promise.all(
-      Array.from(handlers.values()).map(handler => handler.dispose())
+      Array.from(handlers.values()).map((handler) => handler.dispose()),
     );
   }
 
   getState(): State {
     return this.stateManager.getState();
   }
-  
+
   getStats(): Stats {
     let totalExpected = 0;
     let totalReceived = 0;
-    
+
     const handlers = this.stateManager.getItems();
     for (const handler of handlers.values()) {
       const stats = handler.getStats();
       totalExpected += stats.totalExpected;
       totalReceived += stats.totalReceived;
     }
-    
+
     return {
       totalExpected,
-      totalReceived
+      totalReceived,
     };
   }
 
   // === Private Methods ===
-  
+
   private handleStateChange(): void {
     const oldState = this.stateManager.getState();
     this.stateManager.handleChildStateChange();
     const newState = this.stateManager.getState();
-    
+
     // Log completion with stats
     if (oldState !== newState && newState === State.Completed) {
       const stats = this.getStats();
-      console.log(`Client ${this.options.clientId} completed - received ${stats.totalReceived}/${stats.totalExpected} items`);
+      console.log(
+        `Client ${this.options.clientId} completed - received ${stats.totalReceived}/${stats.totalExpected} items`,
+      );
     }
     // Parent notification happens automatically via StateManager chain
   }

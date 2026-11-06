@@ -15,10 +15,10 @@ describe('Integration Test', () => {
         user: 'materialize',
         password: 'materialize',
         name: 'materialize',
-        workers: '1'
+        workers: '1',
       },
       graphqlUI: false,
-      logLevel: 'error'
+      logLevel: 'error',
     });
 
     // Create test tables matching our schema
@@ -34,7 +34,7 @@ describe('Integration Test', () => {
         metadata JSON
       )
     `);
-    
+
     await testEnv.executeSql(`
       CREATE TABLE all_types (
         id INTEGER,
@@ -72,14 +72,50 @@ describe('Integration Test', () => {
     // This tests enum ordinal comparison (bronze < silver < gold < platinum)
     const expectedState = new Map([
       // From initial operations (Alice is platinum rank)
-      [1, { user_id: 1, name: 'Alice Updated', email: 'alice@example.com', active: true, rank: 'platinum' }],
+      [
+        1,
+        {
+          user_id: 1,
+          name: 'Alice Updated',
+          email: 'alice@example.com',
+          active: true,
+          rank: 'platinum',
+        },
+      ],
 
       // From concurrent test (no email field provided, so it's null)
-      [100, { user_id: 100, name: 'Shared User', email: null, active: true, rank: 'silver' }],
+      [
+        100,
+        {
+          user_id: 100,
+          name: 'Shared User',
+          email: null,
+          active: true,
+          rank: 'silver',
+        },
+      ],
 
       // From late joiner test
-      [1000, { user_id: 1000, name: 'LateJoiner1', email: 'late1@test.com', active: true, rank: 'gold' }],
-      [1002, { user_id: 1002, name: 'LateJoiner3', email: 'late3@test.com', active: true, rank: 'silver' }]
+      [
+        1000,
+        {
+          user_id: 1000,
+          name: 'LateJoiner1',
+          email: 'late1@test.com',
+          active: true,
+          rank: 'gold',
+        },
+      ],
+      [
+        1002,
+        {
+          user_id: 1002,
+          name: 'LateJoiner3',
+          email: 'late3@test.com',
+          active: true,
+          rank: 'silver',
+        },
+      ],
     ]);
 
     // Create a client and add subscription for active users with rank >= silver
@@ -109,85 +145,83 @@ describe('Integration Test', () => {
       `,
       expectedState,
       dataPath: 'users',
-      idField: 'user_id'
+      idField: 'user_id',
     });
 
     // === BASIC OPERATIONS ===
     // Insert users - one active platinum, one inactive bronze
     // Bronze rank should be filtered out by rank >= silver condition
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1, 'Alice', 'alice@test.com', true, 'platinum')"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1, 'Alice', 'alice@test.com', true, 'platinum')",
     );
 
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active, rank) VALUES (2, 'Bob', 'bob@test.com', false, 'bronze')"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (2, 'Bob', 'bob@test.com', false, 'bronze')",
     );
 
     // Update the active user - test multi-field updates
     await testEnv.executeSql(
-      "UPDATE users SET name = 'Alice Updated', email = 'alice@example.com' WHERE user_id = 1"
+      "UPDATE users SET name = 'Alice Updated', email = 'alice@example.com' WHERE user_id = 1",
     );
 
     // === DELETE OPERATIONS ===
     // Insert and delete an active user
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active) VALUES (3, 'ToDelete', 'delete@test.com', true)"
+      "INSERT INTO users (user_id, name, email, active) VALUES (3, 'ToDelete', 'delete@test.com', true)",
     );
-    
-    await testEnv.executeSql(
-      "DELETE FROM users WHERE user_id = 3"
-    );
+
+    await testEnv.executeSql('DELETE FROM users WHERE user_id = 3');
 
     // === VIEW ENTER/LEAVE ===
     // Test user entering view (inactive -> active)
     await testEnv.executeSql(
-      "UPDATE users SET active = true WHERE user_id = 2"
+      'UPDATE users SET active = true WHERE user_id = 2',
     );
-    
+
     // Test user leaving view (active -> inactive)
     await testEnv.executeSql(
-      "UPDATE users SET active = false WHERE user_id = 2"
+      'UPDATE users SET active = false WHERE user_id = 2',
     );
 
     // === CONCURRENT OPERATIONS ===
     // Add a user that will be shared across "concurrent" scenarios
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, active, rank) VALUES (100, 'Shared User', true, 'silver')"
+      "INSERT INTO users (user_id, name, active, rank) VALUES (100, 'Shared User', true, 'silver')",
     );
 
     // === LATE JOINER SIMULATION ===
     // Insert data that would have existed before subscription
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1000, 'LateJoiner1', 'late1@test.com', true, 'gold')"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1000, 'LateJoiner1', 'late1@test.com', true, 'gold')",
     );
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1001, 'LateJoiner2', 'late2@test.com', false, 'bronze')"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1001, 'LateJoiner2', 'late2@test.com', false, 'bronze')",
     );
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1002, 'LateJoiner3', 'late3@test.com', true, 'silver')"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1002, 'LateJoiner3', 'late3@test.com', true, 'silver')",
     );
 
     // === ENUM ORDINAL TEST ===
     // Insert an active user with bronze rank - should NOT appear due to rank < silver
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1003, 'BronzeUser', 'bronze@test.com', true, 'bronze')"
+      "INSERT INTO users (user_id, name, email, active, rank) VALUES (1003, 'BronzeUser', 'bronze@test.com', true, 'bronze')",
     );
 
     // === TYPE TESTING WITH NULL VALUES ===
     // Test various data types including NULL handling
     await testEnv.executeSql(
-      "INSERT INTO users (user_id, name, email, active, created_at, updated_at, metadata) VALUES " +
-      "(2000, 'TypeTest', NULL, true, '2023-12-25 13:45:30', '2023-12-25 13:45:30+00', '{\"key\": \"value\"}')"
+      'INSERT INTO users (user_id, name, email, active, created_at, updated_at, metadata) VALUES ' +
+        "(2000, 'TypeTest', NULL, true, '2023-12-25 13:45:30', '2023-12-25 13:45:30+00', '{\"key\": \"value\"}')",
     );
-    
-    // Update to test metadata changes  
+
+    // Update to test metadata changes
     await testEnv.executeSql(
-      "UPDATE users SET metadata = '{\"updated\": true}' WHERE user_id = 2000"
+      'UPDATE users SET metadata = \'{"updated": true}\' WHERE user_id = 2000',
     );
-    
+
     // Remove from view
     await testEnv.executeSql(
-      "UPDATE users SET active = false WHERE user_id = 2000"
+      'UPDATE users SET active = false WHERE user_id = 2000',
     );
 
     // Wait for all events to process and convergence
