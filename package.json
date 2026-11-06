@@ -25,7 +25,7 @@
     "@nestjs/platform-express": "^12.4.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
-    "graphql": "^16.11.0",
+    "graphql": "^17.1.0",
     "graphql-yoga": "^6.0.1",
     "js-yaml": "^5.5.0",
     "pg": "^8.16.3",
