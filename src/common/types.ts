@@ -28,3 +28,45 @@ export enum DataType {
   JSON, // JSON/JSONB data
   Array, // Array types
 }
+
+/**
+ * Comparison operators a client can use on a field in a `where` filter
+ */
+export enum ComparisonOperator {
+  Eq = '_eq',
+  Neq = '_neq',
+  Gt = '_gt',
+  Gte = '_gte',
+  Lt = '_lt',
+  Lte = '_lte',
+  In = '_in',
+  Nin = '_nin',
+  IsNull = '_is_null',
+}
+
+/**
+ * Operators that combine conditions in a `where` filter
+ */
+export enum LogicalOperator {
+  And = '_and',
+  Or = '_or',
+  Not = '_not',
+}
+
+/**
+ * A client's filter, as it arrives in a subscription's `where` argument
+ */
+export type WhereClause = {
+  [LogicalOperator.And]?: WhereClause[];
+  [LogicalOperator.Or]?: WhereClause[];
+  [LogicalOperator.Not]?: WhereClause;
+} & {
+  [field: string]: FieldComparison | WhereClause[] | WhereClause | undefined;
+};
+
+/**
+ * The comparisons on one field of a `where` filter
+ */
+export type FieldComparison = {
+  [operator in ComparisonOperator]?: unknown;
+};

@@ -28,6 +28,7 @@
     "graphql": "^17.1.0",
     "graphql-yoga": "^6.0.1",
     "js-yaml": "^5.5.0",
+    "kysely": "^0.29.8",
     "pg": "^8.16.3",
     "pg-copy-streams": "^7.0.0",
     "pg-type-names": "^1.0.0",
