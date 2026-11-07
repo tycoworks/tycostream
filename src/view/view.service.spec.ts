@@ -1,125 +1,47 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ViewService } from './view.service.js';
-import { SourceService } from './source.service.js';
-import { Source } from './source.js';
-import { Filter } from './filter.js';
-import { Subject } from 'rxjs';
-import type { RowUpdateEvent } from './types.js';
+import { DatabaseStreamService } from '../database/stream.service.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { DataType } from '../config/source.types.js';
 import type { Mocked } from 'vitest';
+
+const trades: SourceDefinition = {
+  name: 'trades',
+  primaryKeyField: 'id',
+  fields: [{ name: 'id', dataType: DataType.Integer }],
+};
 
 describe('ViewService', () => {
   let viewService: ViewService;
-  let sourceService: Mocked<SourceService>;
-  let mockSource: Mocked<Source>;
-  let sourceUpdates$: Subject<RowUpdateEvent>;
+  let streamService: Mocked<DatabaseStreamService>;
+  const changes = { return: vi.fn() };
 
   beforeEach(async () => {
-    // Create a subject for source updates
-    sourceUpdates$ = new Subject<RowUpdateEvent>();
-
-    // Mock Source
-    mockSource = {
-      getUpdates: vi.fn().mockReturnValue(sourceUpdates$),
-      getPrimaryKeyField: vi.fn().mockReturnValue('id'),
-      dispose: vi.fn(),
-    } as any;
-
-    // Mock SourceService
-    sourceService = {
-      getSource: vi.fn().mockReturnValue(mockSource),
-    } as any;
+    streamService = {
+      subscribe: vi.fn().mockReturnValue(changes),
+    } as unknown as Mocked<DatabaseStreamService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ViewService,
-        { provide: SourceService, useValue: sourceService },
+        { provide: DatabaseStreamService, useValue: streamService },
       ],
     }).compile();
 
     viewService = module.get<ViewService>(ViewService);
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
-    sourceUpdates$.complete();
+  it('should pass the source and filter to the database and return its events', () => {
+    const where = { id: { _eq: 1 } };
+
+    expect(viewService.subscribe(trades, where)).toBe(changes);
+    expect(streamService.subscribe).toHaveBeenCalledWith(trades, where);
   });
 
-  describe('getUpdates', () => {
-    it('should get source from SourceService', () => {
-      viewService.getUpdates('test_source');
+  it('should open a separate database subscription for each view', () => {
+    viewService.subscribe(trades);
+    viewService.subscribe(trades);
 
-      expect(sourceService.getSource).toHaveBeenCalledWith('test_source');
-    });
-
-    it('should create a View with the source', () => {
-      const updates$ = viewService.getUpdates('test_source');
-
-      expect(updates$).toBeDefined();
-      expect(mockSource.getUpdates).toHaveBeenCalled();
-    });
-
-    it('should pass filter to View when provided', () => {
-      const filter = new Filter({
-        expression: 'test',
-        fields: new Set(['field']),
-        evaluate: () => true,
-      });
-
-      const updates$ = viewService.getUpdates('test_source', filter);
-
-      expect(updates$).toBeDefined();
-      // View is created internally with the filter
-      expect(sourceService.getSource).toHaveBeenCalledWith('test_source');
-    });
-
-    it('should return an observable that can be subscribed to', () =>
-      new Promise<void>((done, fail) => {
-        const updates$ = viewService.getUpdates('test_source');
-
-        // Should be able to subscribe without error
-        const subscription = updates$.subscribe({
-          next: () => {},
-          error: fail,
-          complete: () => done(),
-        });
-
-        // Complete the source to end the test
-        sourceUpdates$.complete();
-        subscription.unsubscribe();
-      }));
-  });
-
-  describe('multiple subscribers', () => {
-    it('should create independent views for each subscriber', () => {
-      const updates1$ = viewService.getUpdates('test_source');
-      const updates2$ = viewService.getUpdates('test_source');
-
-      // Each call should get the source
-      expect(sourceService.getSource).toHaveBeenCalledTimes(2);
-
-      // Each should get their own observable
-      expect(updates1$).not.toBe(updates2$);
-    });
-
-    it('should handle cleanup when subscriber disconnects', () => {
-      const updates$ = viewService.getUpdates('test_source');
-
-      const subscription = updates$.subscribe();
-      subscription.unsubscribe();
-
-      // View cleanup happens internally
-      // We can't easily test this without exposing internals
-      expect(sourceService.getSource).toHaveBeenCalled();
-    });
-  });
-
-  describe('onModuleDestroy', () => {
-    it('should clean up resources', async () => {
-      await viewService.onModuleDestroy();
-
-      // Should log shutdown messages (we can't easily test logging)
-      // Main thing is it doesn't throw
-      expect(true).toBe(true);
-    });
+    expect(streamService.subscribe).toHaveBeenCalledTimes(2);
   });
 });

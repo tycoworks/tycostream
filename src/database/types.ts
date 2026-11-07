@@ -1,30 +1,27 @@
+import type pg from 'pg';
+import type { RowUpdateEvent } from '../common/types.js';
+import type { CompiledQuery } from './query.js';
+
 /**
- * Database row update types from protocol handlers
- * More specific than RowUpdateType - represents what the database tells us
+ * A subscription's row events, one complete timestamp at a time. Ending the
+ * iteration closes the subscription.
  */
-export enum DatabaseRowUpdateType {
-  Delete = 'DELETE',
-  Upsert = 'UPSERT', // Could be INSERT or UPDATE, we need to check cache
-  // Future: Diff = 'DIFF', Insert = 'INSERT', etc.
+export interface ChangeBatches extends AsyncIterableIterator<RowUpdateEvent[]> {
+  return(): Promise<IteratorResult<RowUpdateEvent[]>>;
 }
 
 /**
  * Interface for database-specific protocol implementations
- * Abstracts query construction and wire format parsing
+ * Says everything that's said over a subscription's connection, but opens
+ * and closes no connections
  */
 export interface ProtocolHandler {
   /**
-   * Create the streaming query for this database protocol
+   * Subscribes to the query over an open connection and yields its row
+   * events, one complete timestamp at a time, the snapshot first
    */
-  createSubscribeQuery(): string;
-
-  /**
-   * Parse a line from the COPY stream
-   * Returns null if the line should be skipped
-   */
-  parseLine(line: string): {
-    row: Record<string, any>;
-    timestamp: bigint;
-    updateType: DatabaseRowUpdateType;
-  } | null;
+  read(
+    client: pg.ClientBase,
+    query: CompiledQuery,
+  ): AsyncIterable<RowUpdateEvent[]>;
 }

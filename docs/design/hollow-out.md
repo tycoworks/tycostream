@@ -143,7 +143,7 @@ DatabaseModule  DatabaseStreamService ──► DatabaseStream ── client ─
   - `DatabaseStreamService.subscribe(view, where)` compiles the `where` with `query.ts` (step 2), picks the protocol handler, and opens a stream per subscription instead of caching one per view. It closes any still open on shutdown. So the layers above never see SQL or Materialize.
   - From step 5, the `pg.Pool` provider for plain queries.
 - **`ViewModule`** (the domain), a pass-through for now:
-  - `ViewService.subscribe(view, where)` looks up the view's definition, passes it and the `where` to `DatabaseStreamService`, and returns its events.
+  - `ViewService.subscribe(view, where)` takes the view's definition from the API, which already has it, passes it and the `where` to `DatabaseStreamService`, and returns its events.
   - Keeping the layer means post 4's shared cache goes back where it was, between the stream and the subscribers, without touching the API or the database code.
 - **`ApiModule`:** schema generation unchanged. `SubscriptionService` passes the `where` straight to `ViewService` and maps events to GraphQL updates. The resolver returns a `Repeater`. From step 5, query resolvers.
 - **`src/common/types.ts`** holds what the layers share: the `where` operators and types, and the row events.

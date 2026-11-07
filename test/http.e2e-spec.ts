@@ -12,11 +12,13 @@ import sourcesConfig from '../src/config/sources.config.js';
 /**
  * HTTP behaviour of the GraphQL endpoint that browser clients rely on,
  * and that the Node test clients in the other suites can't see.
- * No database is needed: tycostream only connects when a client subscribes.
+ * No database is needed: tycostream only connects when a client subscribes,
+ * and nothing listens on the database port, so a subscription's connection
+ * fails.
  */
 async function createApp(graphqlUI: boolean): Promise<INestApplication<App>> {
   process.env.DATABASE_HOST = 'localhost';
-  process.env.DATABASE_PORT = '6875';
+  process.env.DATABASE_PORT = '1';
   process.env.DATABASE_USER = 'materialize';
   process.env.DATABASE_PASSWORD = 'materialize';
   process.env.DATABASE_NAME = 'materialize';
@@ -90,6 +92,21 @@ describe('HTTP', () => {
 
     afterAll(async () => {
       await app.close();
+    });
+
+    it('ends a subscription whose database connection fails with a GraphQL error, and keeps serving', async () => {
+      const subscription = await request(app.getHttpServer())
+        .post('/graphql')
+        .set('Accept', 'text/event-stream')
+        .send({ query: 'subscription { users { operation } }' });
+
+      expect(subscription.text).toContain('"errors"');
+      expect(subscription.text).toContain('event: complete');
+
+      const ping = await request(app.getHttpServer())
+        .post('/graphql')
+        .send({ query: '{ ping }' });
+      expect(ping.body).toEqual({ data: { ping: 'pong' } });
     });
 
     it('refuses to serve GraphiQL', async () => {

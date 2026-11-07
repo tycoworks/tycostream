@@ -1,10 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { map, tap } from 'rxjs/operators';
+import { Repeater } from '@repeaterjs/repeater';
 import { ViewService } from '../view/view.service.js';
-import { Filter } from '../view/filter.js';
-import { ExpressionBuilder, ExpressionTree } from './expressions.js';
-import { RowUpdateEvent, RowUpdateType } from '../view/types.js';
+import { RowUpdateType } from '../common/types.js';
+import type { RowUpdateEvent, WhereClause } from '../common/types.js';
 import { truncateForLog } from '../common/logging.utils.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
@@ -44,50 +42,56 @@ export class SubscriptionService {
 
   /**
    * Creates a subscription stream for a data source
-   * Transforms database events into GraphQL updates
+   * Transforms row events into GraphQL updates. Throws if the filter is
+   * invalid; a database error ends this subscription with that error.
    */
   createSubscription(
     sourceDefinition: SourceDefinition,
-    where?: ExpressionTree,
-  ): Observable<GraphQLUpdate> {
-    // Parse and compile filter if provided, using ExpressionBuilder for enum optimization
-    const filter = where
-      ? new Filter(
-          new ExpressionBuilder(sourceDefinition).buildExpression(where),
-        )
-      : undefined;
-
+    where?: WhereClause,
+  ): AsyncIterableIterator<GraphQLUpdate> {
     this.logger.log(
-      `Subscription for ${sourceDefinition.name}${filter ? ` with filter: ${filter.match.expression}` : ' (unfiltered)'}`,
+      `Subscription for ${sourceDefinition.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`,
     );
 
-    // Get updates from view service with deltaUpdates enabled for efficiency
-    return this.viewService
-      .getUpdates(sourceDefinition.name, filter, true)
-      .pipe(
-        map((event: RowUpdateEvent) => this.transformToGraphQLUpdate(event)),
-        tap((update) => {
-          this.logger.debug(
-            `Sending GraphQL update - source: ${sourceDefinition.name}, operation: ${update.operation}, ` +
-              `data: ${truncateForLog(update.data)}, fields: [${update.fields.join(', ')}]`,
-          );
-        }),
-      );
+    const batches = this.viewService.subscribe(sourceDefinition, where);
+
+    return new Repeater<GraphQLUpdate>(async (push, stop) => {
+      const forward = async () => {
+        for await (const events of batches) {
+          for (const event of events) {
+            const update = this.transformToGraphQLUpdate(event);
+            this.logger.debug(
+              `Sending GraphQL update - source: ${sourceDefinition.name}, operation: ${update.operation}, ` +
+                `data: ${truncateForLog(update.data)}, fields: [${update.fields.join(', ')}]`,
+            );
+            await push(update);
+          }
+        }
+        // The view ended by itself
+        void stop();
+      };
+      forward().catch((error: unknown) => void stop(error));
+
+      await stop;
+      // Closes the view at once, even on a view that's idle
+      await batches.return();
+    });
   }
 
   /**
-   * Transforms a database event into a GraphQL update
+   * Transforms a row event into a GraphQL update
+   * Sends only the event's fields: the whole row for an insert, the key and
+   * the changed fields for an update, and the key alone for a delete
    */
   private transformToGraphQLUpdate(event: RowUpdateEvent): GraphQLUpdate {
     const operation = ROW_UPDATE_TYPE_MAP[event.type];
 
     // Convert Set to array for GraphQL
     const fields = Array.from(event.fields);
+    const data = Object.fromEntries(
+      fields.map((field) => [field, event.row[field]]),
+    );
 
-    return {
-      operation,
-      data: event.row,
-      fields,
-    };
+    return { operation, data, fields };
   }
 }

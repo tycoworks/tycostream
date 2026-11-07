@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Repeater } from '@repeaterjs/repeater';
 import {
   SubscriptionService,
   GraphQLRowOperation,
 } from './subscription.service.js';
 import { ViewService } from '../view/view.service.js';
-import { of } from 'rxjs';
-import { RowUpdateType } from '../view/types.js';
+import { RowUpdateType } from '../common/types.js';
+import type { RowUpdateEvent } from '../common/types.js';
+import type { ChangeBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import type { Mocked } from 'vitest';
@@ -23,12 +25,38 @@ describe('SubscriptionService', () => {
       { name: 'value', dataType: DataType.Integer },
     ],
   };
+  const ALL_FIELDS = new Set(['id', 'name', 'value']);
+  const ROW = { id: '1', name: 'test', value: 7 };
+
+  // A view that sends these batches, then stays open; records when it's closed
+  const viewOf = (...batches: RowUpdateEvent[][]) => {
+    const closed = vi.fn();
+    const view = new Repeater<RowUpdateEvent[]>(async (push, stop) => {
+      for (const batch of batches) {
+        await push(batch);
+      }
+      await stop;
+      closed();
+    });
+    viewService.subscribe.mockReturnValue(view as ChangeBatches);
+    return closed;
+  };
+
+  const take = async (
+    updates: AsyncIterableIterator<unknown>,
+    count: number,
+  ) => {
+    const taken: unknown[] = [];
+    for (let i = 0; i < count; i++) {
+      taken.push((await updates.next()).value);
+    }
+    return taken;
+  };
 
   beforeEach(async () => {
-    // Minimal mock - just enough to satisfy dependencies
     viewService = {
-      getUpdates: vi.fn(),
-    } as any;
+      subscribe: vi.fn(),
+    } as unknown as Mocked<ViewService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -45,189 +73,139 @@ describe('SubscriptionService', () => {
   });
 
   describe('createSubscription', () => {
-    it('should create subscription without filter', () =>
-      new Promise<void>((done, fail) => {
-        const mockEvent = {
-          type: RowUpdateType.Insert,
-          fields: new Set(['id', 'name']),
-          row: { id: '1', name: 'test' },
-        };
+    it('should pass the source and filter to the view', () => {
+      viewOf();
+      const where = { name: { _eq: 'test' } };
 
-        viewService.getUpdates.mockReturnValue(of(mockEvent));
+      subscriptionService.createSubscription(testSourceDefinition, where);
 
-        const subscription =
-          subscriptionService.createSubscription(testSourceDefinition);
+      expect(viewService.subscribe).toHaveBeenCalledWith(
+        testSourceDefinition,
+        where,
+      );
+    });
 
-        subscription.subscribe({
-          next: (update) => {
-            expect(update.operation).toBe(GraphQLRowOperation.Insert);
-            expect(update.data).toEqual({ id: '1', name: 'test' });
-            expect(update.fields).toEqual(['id', 'name']);
-            done();
-          },
-          error: fail,
-        });
+    it('should send an insert with the whole row', async () => {
+      viewOf([{ type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW }]);
 
-        expect(viewService.getUpdates).toHaveBeenCalledWith(
-          'test_source',
-          undefined,
-          true,
-        );
-      }));
+      const updates =
+        subscriptionService.createSubscription(testSourceDefinition);
 
-    it('should create subscription with filter', () =>
-      new Promise<void>((done, fail) => {
-        const mockEvent = {
+      expect(await take(updates, 1)).toEqual([
+        {
+          operation: GraphQLRowOperation.Insert,
+          data: ROW,
+          fields: ['id', 'name', 'value'],
+        },
+      ]);
+    });
+
+    it('should send an update with the key and the changed fields only', async () => {
+      viewOf([
+        {
           type: RowUpdateType.Update,
-          fields: new Set(['value']),
-          row: { id: '1', name: 'test', value: 150 },
-        };
+          fields: new Set(['id', 'value']),
+          row: ROW,
+        },
+      ]);
 
-        viewService.getUpdates.mockReturnValue(of(mockEvent));
+      const updates =
+        subscriptionService.createSubscription(testSourceDefinition);
 
-        const whereFilter = { value: { _gt: 100 } };
-        const subscription = subscriptionService.createSubscription(
-          testSourceDefinition,
-          whereFilter,
-        );
+      expect(await take(updates, 1)).toEqual([
+        {
+          operation: GraphQLRowOperation.Update,
+          data: { id: '1', value: 7 },
+          fields: ['id', 'value'],
+        },
+      ]);
+    });
 
-        subscription.subscribe({
-          next: (update) => {
-            expect(update.operation).toBe(GraphQLRowOperation.Update);
-            expect(update.data).toEqual({ id: '1', name: 'test', value: 150 });
-            expect(update.fields).toEqual(['value']);
-            done();
-          },
-          error: fail,
-        });
+    it('should send a delete with the key only', async () => {
+      viewOf([
+        { type: RowUpdateType.Delete, fields: new Set(['id']), row: ROW },
+      ]);
 
-        // Should pass filter to viewService
-        expect(viewService.getUpdates).toHaveBeenCalledWith(
-          'test_source',
-          expect.objectContaining({
-            match: expect.objectContaining({
-              expression: expect.any(String),
-              fields: expect.any(Set),
-              evaluate: expect.any(Function),
-            }),
-          }),
-          true,
-        );
-      }));
+      const updates =
+        subscriptionService.createSubscription(testSourceDefinition);
 
-    it('should handle INSERT operations', () =>
-      new Promise<void>((done) => {
-        const mockEvent = {
-          type: RowUpdateType.Insert,
-          fields: new Set(['id', 'name', 'value']),
-          row: { id: '1', name: 'new', value: 100 },
-        };
+      expect(await take(updates, 1)).toEqual([
+        {
+          operation: GraphQLRowOperation.Delete,
+          data: { id: '1' },
+          fields: ['id'],
+        },
+      ]);
+    });
 
-        viewService.getUpdates.mockReturnValue(of(mockEvent));
-
-        subscriptionService.createSubscription(testSourceDefinition).subscribe({
-          next: (update) => {
-            expect(update.operation).toBe(GraphQLRowOperation.Insert);
-            expect(update.data).toEqual(mockEvent.row);
-            expect(update.fields).toEqual(['id', 'name', 'value']);
-            done();
-          },
-        });
-      }));
-
-    it('should handle UPDATE operations', () =>
-      new Promise<void>((done) => {
-        const mockEvent = {
-          type: RowUpdateType.Update,
-          fields: new Set(['value']),
-          row: { id: '1', name: 'test', value: 200 },
-        };
-
-        viewService.getUpdates.mockReturnValue(of(mockEvent));
-
-        subscriptionService.createSubscription(testSourceDefinition).subscribe({
-          next: (update) => {
-            expect(update.operation).toBe(GraphQLRowOperation.Update);
-            expect(update.data).toEqual(mockEvent.row);
-            expect(update.fields).toEqual(['value']);
-            done();
-          },
-        });
-      }));
-
-    it('should handle DELETE operations', () =>
-      new Promise<void>((done) => {
-        const mockEvent = {
-          type: RowUpdateType.Delete,
-          fields: new Set(['id']),
-          row: { id: '1' },
-        };
-
-        viewService.getUpdates.mockReturnValue(of(mockEvent));
-
-        subscriptionService.createSubscription(testSourceDefinition).subscribe({
-          next: (update) => {
-            expect(update.operation).toBe(GraphQLRowOperation.Delete);
-            expect(update.data).toEqual(mockEvent.row);
-            expect(update.fields).toEqual(['id']);
-            done();
-          },
-        });
-      }));
-
-    it('should handle multiple events in sequence', () =>
-      new Promise<void>((done) => {
-        const events = [
+    it('should send every event of every timestamp, in order', async () => {
+      viewOf(
+        [
+          { type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW },
           {
             type: RowUpdateType.Insert,
-            fields: new Set(['id', 'name']),
-            row: { id: '1', name: 'first' },
+            fields: ALL_FIELDS,
+            row: { ...ROW, id: '2' },
           },
-          {
-            type: RowUpdateType.Update,
-            fields: new Set(['name']),
-            row: { id: '1', name: 'updated' },
-          },
-          {
-            type: RowUpdateType.Delete,
-            fields: new Set(['id']),
-            row: { id: '1' },
-          },
-        ];
+        ],
+        [{ type: RowUpdateType.Delete, fields: new Set(['id']), row: ROW }],
+      );
 
-        viewService.getUpdates.mockReturnValue(of(...events));
+      const updates =
+        subscriptionService.createSubscription(testSourceDefinition);
 
-        const updates: any[] = [];
-        subscriptionService.createSubscription(testSourceDefinition).subscribe({
-          next: (update) => {
-            updates.push(update);
-            if (updates.length === 3) {
-              expect(updates[0].operation).toBe(GraphQLRowOperation.Insert);
-              expect(updates[1].operation).toBe(GraphQLRowOperation.Update);
-              expect(updates[2].operation).toBe(GraphQLRowOperation.Delete);
-              done();
-            }
-          },
-        });
-      }));
+      expect(
+        (
+          (await take(updates, 3)) as {
+            operation: GraphQLRowOperation;
+            data: { id: string };
+          }[]
+        ).map((u) => [u.operation, u.data.id]),
+      ).toEqual([
+        [GraphQLRowOperation.Insert, '1'],
+        [GraphQLRowOperation.Insert, '2'],
+        [GraphQLRowOperation.Delete, '1'],
+      ]);
+    });
 
-    it('should preserve field order from Set', () =>
-      new Promise<void>((done) => {
-        const mockEvent = {
-          type: RowUpdateType.Insert,
-          fields: new Set(['zebra', 'apple', 'banana']),
-          row: { zebra: 'z', apple: 'a', banana: 'b' },
-        };
+    it('should close the view as soon as the client stops, even while the view is idle', async () => {
+      const closed = viewOf([
+        { type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW },
+      ]);
+      const updates =
+        subscriptionService.createSubscription(testSourceDefinition);
+      await take(updates, 1);
 
-        viewService.getUpdates.mockReturnValue(of(mockEvent));
+      // Waiting for an update that never comes
+      void updates.next();
+      await updates.return!();
 
-        subscriptionService.createSubscription(testSourceDefinition).subscribe({
-          next: (update) => {
-            // Array.from preserves insertion order of Set
-            expect(update.fields).toEqual(['zebra', 'apple', 'banana']);
-            done();
-          },
-        });
-      }));
+      expect(closed).toHaveBeenCalled();
+    });
+
+    it('should end with the error when the view fails', async () => {
+      viewService.subscribe.mockReturnValue(
+        new Repeater<RowUpdateEvent[]>((_push, stop) => {
+          void stop(new Error('connection lost'));
+        }) as ChangeBatches,
+      );
+
+      const updates =
+        subscriptionService.createSubscription(testSourceDefinition);
+
+      await expect(updates.next()).rejects.toThrow('connection lost');
+    });
+
+    it('should throw at once when the view rejects the filter', () => {
+      viewService.subscribe.mockImplementation(() => {
+        throw new Error('Unknown field');
+      });
+
+      expect(() =>
+        subscriptionService.createSubscription(testSourceDefinition, {
+          nope: { _eq: 1 },
+        }),
+      ).toThrow('Unknown field');
+    });
   });
 });

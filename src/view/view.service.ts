@@ -1,67 +1,31 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { SourceService } from './source.service.js';
-import { View } from './view.js';
-import { Filter } from './filter.js';
-import type { RowUpdateEvent } from './types.js';
+import { Injectable, Logger } from '@nestjs/common';
+import { DatabaseStreamService } from '../database/stream.service.js';
+import type { ChangeBatches } from '../database/types.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import type { WhereClause } from '../common/types.js';
+import { truncateForLog } from '../common/logging.utils.js';
 
 /**
  * ViewService manages views of streaming data
- * Views can filter, transform, and reorder data
- * This is the main interface for GraphQL subscriptions
+ * This is the main interface for GraphQL subscriptions. For now each view
+ * passes straight through to its own database subscription; a shared cache
+ * would go here.
  */
 @Injectable()
-export class ViewService implements OnModuleDestroy {
+export class ViewService {
   private readonly logger = new Logger(ViewService.name);
 
-  constructor(private sourceService: SourceService) {}
+  constructor(private readonly streamService: DatabaseStreamService) {}
 
   /**
-   * Get updates for a specific source with optional filtering
+   * A view of a source's rows that match the filter: its row events, one
+   * complete timestamp at a time, the snapshot first. Ending the iteration
+   * closes the view.
    */
-  getUpdates(
-    sourceName: string,
-    filter?: Filter,
-    deltaUpdates?: boolean,
-    skipSnapshot?: boolean,
-  ): Observable<RowUpdateEvent> {
-    // Get the source for this data source
-    const source = this.sourceService.getSource(sourceName);
-
-    // Create a new view for each subscriber (no caching)
-    const view = new View(source, filter, deltaUpdates, skipSnapshot);
-
+  subscribe(source: SourceDefinition, where?: WhereClause): ChangeBatches {
     this.logger.debug(
-      `Created new view for source: ${sourceName}, match: ${filter?.match.expression || '(unfiltered)'}${filter?.unmatch ? `, unmatch: ${filter.unmatch.expression}` : ''}${deltaUpdates ? ', deltaUpdates: true' : ''}${skipSnapshot ? ', skipSnapshot: true' : ''}`,
+      `Created new view for source: ${source.name}${where ? `, where: ${truncateForLog(where)}` : ' (unfiltered)'}`,
     );
-
-    // Return the view's filtered updates with cleanup
-    return this.createViewStream(view);
-  }
-
-  /**
-   * Create a stream that disposes view on disconnect
-   */
-  private createViewStream(view: View): Observable<RowUpdateEvent> {
-    return new Observable<RowUpdateEvent>((subscriber) => {
-      // Subscribe to the view's updates
-      const subscription = view.getUpdates().subscribe(subscriber);
-
-      // Return cleanup function
-      return () => {
-        subscription.unsubscribe();
-        // Dispose the view (each subscriber has their own)
-        view.dispose();
-      };
-    });
-  }
-
-  /**
-   * Clean up resources on module destroy
-   */
-  async onModuleDestroy() {
-    this.logger.log('Shutting down ViewService...');
-    // Views are disposed per-subscriber, nothing to clean up here
-    this.logger.log('ViewService shutdown complete');
+    return this.streamService.subscribe(source, where);
   }
 }

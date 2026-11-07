@@ -9,7 +9,7 @@ import {
   DataType,
   LogicalOperator,
 } from '../common/types.js';
-import { GraphQLRowOperation } from './subscription.resolver.js';
+import { GraphQLRowOperation } from './subscription.service.js';
 import {
   GraphQLString,
   GraphQLInt,
