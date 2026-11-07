@@ -1,27 +1,17 @@
-import { eachValueFrom } from 'rxjs-for-await';
-import { map } from 'rxjs/operators';
 import type { SourceDefinition } from '../config/source.types.js';
+import type { WhereClause } from '../common/types.js';
 import { SubscriptionService, GraphQLUpdate } from './subscription.service.js';
 
 /**
- * GraphQL subscription payload structure
- * Wraps the update in the source name for GraphQL response
- */
-interface GraphQLUpdatePayload {
-  [sourceName: string]: GraphQLUpdate;
-}
-
-/**
  * GraphQL subscription resolver type
- * Defines the subscribe function that returns an async iterator
+ * subscribe returns the updates; resolve gives each one as the field's value
  */
 type SubscriptionResolver = {
   subscribe: (
-    parent: any,
-    args: any,
-    context: any,
-    info: any,
-  ) => AsyncIterableIterator<GraphQLUpdatePayload>;
+    parent: unknown,
+    args: { where?: WhereClause },
+  ) => AsyncIterableIterator<GraphQLUpdate>;
+  resolve: (update: GraphQLUpdate) => GraphQLUpdate;
 };
 
 /**
@@ -33,21 +23,11 @@ function createSourceSubscriptionResolver(
   subscriptionService: SubscriptionService,
 ): SubscriptionResolver {
   return {
-    subscribe: async function* (parent: any, args: any) {
-      // Create subscription through service
-      // GraphQL automatically handles field selection
-      const updates$ = subscriptionService
-        .createSubscription(sourceDefinition, args.where)
-        .pipe(
-          // Wrap update in source name for GraphQL response structure
-          map((update: GraphQLUpdate) => ({
-            [sourceDefinition.name]: update,
-          })),
-        );
-
-      // Convert Observable to AsyncIterator for GraphQL
-      yield* eachValueFrom(updates$);
-    },
+    // Returns the service's iterator itself, not a generator wrapping it, so
+    // a client that disconnects closes its subscription at once
+    subscribe: (_parent, args) =>
+      subscriptionService.createSubscription(sourceDefinition, args.where),
+    resolve: (update) => update,
   };
 }
 
@@ -70,6 +50,3 @@ export function buildSubscriptionResolvers(
 
   return resolvers;
 }
-
-// Re-export for backward compatibility
-export { GraphQLRowOperation } from './subscription.service.js';

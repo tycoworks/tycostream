@@ -28,3 +28,69 @@ export enum DataType {
   JSON, // JSON/JSONB data
   Array, // Array types
 }
+
+/**
+ * Comparison operators a client can use on a field in a `where` filter
+ */
+export enum ComparisonOperator {
+  Eq = '_eq',
+  Neq = '_neq',
+  Gt = '_gt',
+  Gte = '_gte',
+  Lt = '_lt',
+  Lte = '_lte',
+  In = '_in',
+  Nin = '_nin',
+  IsNull = '_is_null',
+}
+
+/**
+ * Operators that combine conditions in a `where` filter
+ */
+export enum LogicalOperator {
+  And = '_and',
+  Or = '_or',
+  Not = '_not',
+}
+
+/**
+ * A client's filter, as it arrives in a subscription's `where` argument
+ */
+export type WhereClause = {
+  [LogicalOperator.And]?: WhereClause[];
+  [LogicalOperator.Or]?: WhereClause[];
+  [LogicalOperator.Not]?: WhereClause;
+} & {
+  [field: string]: FieldComparison | WhereClause[] | WhereClause | undefined;
+};
+
+/**
+ * The comparisons on one field of a `where` filter
+ */
+export type FieldComparison = {
+  [operator in ComparisonOperator]?: unknown;
+};
+
+/**
+ * Row update event types sent to GraphQL clients
+ * Maps to GraphQL's RowOperation enum (INSERT/UPDATE/DELETE)
+ */
+export enum RowUpdateType {
+  Insert,
+  Update,
+  Delete,
+}
+
+/**
+ * Row update event sent to GraphQL subscriptions
+ * fields: set of field names that are relevant for this event
+ *   - INSERT: all field names
+ *   - UPDATE: changed field names (including primary key)
+ *   - DELETE: primary key only
+ * row: complete row data (always present)
+ */
+export interface RowUpdateEvent {
+  type: RowUpdateType;
+  fields: Set<string>; // Field names relevant to this event
+  row: Record<string, any>; // Complete row data
+}

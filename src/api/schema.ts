@@ -4,8 +4,12 @@ import type {
   EnumType,
   SourceConfiguration,
 } from '../config/source.types.js';
-import { DataType } from '../common/types.js';
-import { GraphQLRowOperation } from './subscription.resolver.js';
+import {
+  ComparisonOperator,
+  DataType,
+  LogicalOperator,
+} from '../common/types.js';
+import { GraphQLRowOperation } from './subscription.service.js';
 import {
   GraphQLString,
   GraphQLInt,
@@ -23,6 +27,54 @@ enum ComparisonInputType {
   Int = 'IntComparison',
   Float = 'FloatComparison',
   Boolean = 'BooleanComparison',
+}
+
+/**
+ * The comparison operators each kind of field offers in a where filter
+ */
+const EQUALITY_OPERATORS = [
+  ComparisonOperator.Eq,
+  ComparisonOperator.Neq,
+  ComparisonOperator.IsNull,
+];
+const SET_OPERATORS = [ComparisonOperator.In, ComparisonOperator.Nin];
+const ORDERING_OPERATORS = [
+  ComparisonOperator.Gt,
+  ComparisonOperator.Gte,
+  ComparisonOperator.Lt,
+  ComparisonOperator.Lte,
+];
+const BOOLEAN_OPERATORS = EQUALITY_OPERATORS;
+const STRING_OPERATORS = [...EQUALITY_OPERATORS, ...SET_OPERATORS];
+const ORDERED_OPERATORS = [
+  ...EQUALITY_OPERATORS,
+  ...ORDERING_OPERATORS,
+  ...SET_OPERATORS,
+];
+
+/**
+ * Builds a comparison input type: each operator takes a value of the field's
+ * type, a list of them for set operators, or a boolean for _is_null
+ */
+function buildComparisonInput(
+  name: string,
+  valueType: string,
+  operators: ComparisonOperator[],
+): string {
+  const fields = operators
+    .map((operator) => {
+      switch (operator) {
+        case ComparisonOperator.In:
+        case ComparisonOperator.Nin:
+          return `      ${operator}: [${valueType}!]`;
+        case ComparisonOperator.IsNull:
+          return `      ${operator}: ${GraphQLBoolean.name}`;
+        default:
+          return `      ${operator}: ${valueType}`;
+      }
+    })
+    .join('\n');
+  return `    input ${name} {\n${fields}\n    }`;
 }
 
 /**
@@ -113,18 +165,14 @@ function buildEnumComparisonTypes(enumTypes: Map<string, EnumType>): string {
 
   for (const enumType of enumTypes.values()) {
     const enumName = enumType.name;
-    comparisonTypes.push(`    # Comparison operators for ${enumName} enum
-    input ${enumName}Comparison {
-      _eq: ${enumName}
-      _neq: ${enumName}
-      _gt: ${enumName}
-      _gte: ${enumName}
-      _lt: ${enumName}
-      _lte: ${enumName}
-      _in: [${enumName}!]
-      _nin: [${enumName}!]
-      _is_null: ${GraphQLBoolean.name}
-    }`);
+    comparisonTypes.push(
+      `    # Comparison operators for ${enumName} enum\n` +
+        buildComparisonInput(
+          `${enumName}Comparison`,
+          enumName,
+          ORDERED_OPERATORS,
+        ),
+    );
   }
 
   return comparisonTypes.join('\n\n');
@@ -135,44 +183,29 @@ function buildEnumComparisonTypes(enumTypes: Map<string, EnumType>): string {
  * Creates comparison input types for different data types
  */
 function buildComparisonTypes(): string {
-  return `    # Comparison operators
-    input StringComparison {
-      _eq: ${GraphQLString.name}
-      _neq: ${GraphQLString.name}
-      _in: [${GraphQLString.name}!]
-      _nin: [${GraphQLString.name}!]
-      _is_null: ${GraphQLBoolean.name}
-    }
-    
-    input IntComparison {
-      _eq: ${GraphQLInt.name}
-      _neq: ${GraphQLInt.name}
-      _gt: ${GraphQLInt.name}
-      _lt: ${GraphQLInt.name}
-      _gte: ${GraphQLInt.name}
-      _lte: ${GraphQLInt.name}
-      _in: [${GraphQLInt.name}!]
-      _nin: [${GraphQLInt.name}!]
-      _is_null: ${GraphQLBoolean.name}
-    }
-    
-    input FloatComparison {
-      _eq: ${GraphQLFloat.name}
-      _neq: ${GraphQLFloat.name}
-      _gt: ${GraphQLFloat.name}
-      _lt: ${GraphQLFloat.name}
-      _gte: ${GraphQLFloat.name}
-      _lte: ${GraphQLFloat.name}
-      _in: [${GraphQLFloat.name}!]
-      _nin: [${GraphQLFloat.name}!]
-      _is_null: ${GraphQLBoolean.name}
-    }
-    
-    input BooleanComparison {
-      _eq: ${GraphQLBoolean.name}
-      _neq: ${GraphQLBoolean.name}
-      _is_null: ${GraphQLBoolean.name}
-    }`;
+  return [
+    `    # Comparison operators\n` +
+      buildComparisonInput(
+        ComparisonInputType.String,
+        GraphQLString.name,
+        STRING_OPERATORS,
+      ),
+    buildComparisonInput(
+      ComparisonInputType.Int,
+      GraphQLInt.name,
+      ORDERED_OPERATORS,
+    ),
+    buildComparisonInput(
+      ComparisonInputType.Float,
+      GraphQLFloat.name,
+      ORDERED_OPERATORS,
+    ),
+    buildComparisonInput(
+      ComparisonInputType.Boolean,
+      GraphQLBoolean.name,
+      BOOLEAN_OPERATORS,
+    ),
+  ].join('\n\n');
 }
 
 /**
@@ -237,9 +270,9 @@ function buildExpressionInputTypes(
     inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions)
     input ${sourceName}Expression {
 ${fieldComparisons}
-      _and: [${sourceName}Expression!]
-      _or: [${sourceName}Expression!]
-      _not: ${sourceName}Expression
+      ${LogicalOperator.And}: [${sourceName}Expression!]
+      ${LogicalOperator.Or}: [${sourceName}Expression!]
+      ${LogicalOperator.Not}: ${sourceName}Expression
     }`);
   }
 

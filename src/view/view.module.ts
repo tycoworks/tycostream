@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module.js';
-import { SourceService } from './source.service.js';
 import { ViewService } from './view.service.js';
 
 /**
@@ -9,9 +8,7 @@ import { ViewService } from './view.service.js';
  */
 @Module({
   imports: [DatabaseModule],
-  providers: [SourceService, ViewService],
-  exports: [
-    ViewService, // Only export ViewService, SourceService is internal
-  ],
+  providers: [ViewService],
+  exports: [ViewService],
 })
 export class ViewModule {}

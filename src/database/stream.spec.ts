@@ -1,322 +1,182 @@
 import { DatabaseStream } from './stream.js';
-import type { DatabaseConfig } from '../config/database.config.js';
 import type { ProtocolHandler } from './types.js';
-import { DatabaseRowUpdateType } from './types.js';
-import { Client } from 'pg';
-import type { Mock, Mocked } from 'vitest';
+import { RowUpdateType } from '../common/types.js';
+import type { RowUpdateEvent } from '../common/types.js';
 
-// Mock pg module
-vi.mock('pg', () => {
-  return {
-    Client: vi.fn(),
-  };
+// Each pg.Client the stream creates, so tests can drive and inspect it
+const pgState = vi.hoisted(() => ({
+  clients: [] as {
+    config: unknown;
+    connect: ReturnType<typeof vi.fn>;
+    end: ReturnType<typeof vi.fn>;
+    emit: (event: string, value: unknown) => void;
+  }[],
+  connect: (): Promise<void> => Promise.resolve(),
+}));
+
+vi.mock('pg', () => ({
+  default: {
+    Client: vi.fn(function (config: unknown) {
+      const listeners = new Map<string, (value: unknown) => void>();
+      const client = {
+        config,
+        connect: vi.fn(() => pgState.connect()),
+        end: vi.fn(() => Promise.resolve()),
+        on: vi.fn((event: string, listener: (value: unknown) => void) => {
+          listeners.set(event, listener);
+        }),
+        emit: (event: string, value: unknown) => listeners.get(event)?.(value),
+      };
+      pgState.clients.push(client);
+      return client;
+    }),
+  },
+}));
+
+const CONFIG = {
+  host: 'localhost',
+  port: 6875,
+  user: 'materialize',
+  password: 'materialize',
+  database: 'materialize',
+};
+const QUERY = { sql: 'select 1', parameters: [] };
+
+const insert = (id: number): RowUpdateEvent => ({
+  type: RowUpdateType.Insert,
+  fields: new Set(['id']),
+  row: { id },
 });
 
+// A handler that yields these batches, then either ends or waits forever,
+// as Materialize's does on an idle view
+const handlerOf = (batches: RowUpdateEvent[][], ends = false) => ({
+  read: vi.fn(async function* () {
+    for (const batch of batches) {
+      yield batch;
+    }
+    if (!ends) {
+      await new Promise(() => {});
+    }
+  }),
+});
+
+const streamOf = (handler: ProtocolHandler) =>
+  new DatabaseStream(CONFIG, 'trades', handler, QUERY);
+
 describe('DatabaseStream', () => {
-  let stream: DatabaseStream;
-  let mockConfig: DatabaseConfig;
-  let mockProtocolHandler: Mocked<ProtocolHandler>;
-
-  const mockClient = {
-    connect: vi.fn().mockResolvedValue(undefined),
-    query: vi.fn(),
-    end: vi.fn().mockResolvedValue(undefined),
-  };
-
   beforeEach(() => {
-    // Reset all mocks
-    vi.clearAllMocks();
-    mockClient.connect.mockResolvedValue(undefined);
-    mockClient.end.mockResolvedValue(undefined);
-    mockClient.query.mockClear();
+    pgState.clients.length = 0;
+    pgState.connect = () => Promise.resolve();
+  });
 
-    // Reset pg Client mock
-    (Client as unknown as Mock).mockImplementation(function () {
-      return mockClient;
+  it('should connect, hand the connection and query to the handler, and pass on its batches in order', async () => {
+    const handler = handlerOf([[insert(1)], [insert(2)]]);
+    const changes = streamOf(handler).read();
+
+    expect((await changes.next()).value).toEqual([insert(1)]);
+    expect((await changes.next()).value).toEqual([insert(2)]);
+
+    const [client] = pgState.clients;
+    expect(client.connect).toHaveBeenCalled();
+    expect(client.config).toEqual(expect.objectContaining(CONFIG));
+    expect(handler.read).toHaveBeenCalledWith(client, QUERY);
+    await changes.return();
+  });
+
+  it('should open nothing until the first pull', async () => {
+    const onOpen = vi.fn();
+    const onClose = vi.fn();
+    const changes = streamOf(handlerOf([[insert(1)]])).read({
+      onOpen,
+      onClose,
     });
 
-    mockConfig = {
-      host: 'localhost',
-      port: 6875,
-      database: 'materialize',
-      user: 'test',
-      password: 'test',
+    await changes.return();
+
+    expect(pgState.clients).toHaveLength(0);
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('should close the connection, once, when the consumer stops on an idle view', async () => {
+    const onOpen = vi.fn();
+    const onClose = vi.fn();
+    const changes = streamOf(handlerOf([[insert(1)]])).read({
+      onOpen,
+      onClose,
+    });
+    await changes.next();
+
+    // Waiting for a batch that never comes
+    void changes.next();
+    await changes.return();
+    await changes.return();
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(pgState.clients[0].end).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('should close the connection when the consumer stops while it is still connecting', async () => {
+    pgState.connect = () => new Promise(() => {});
+    const handler = handlerOf([[insert(1)]]);
+    const onClose = vi.fn();
+    const changes = streamOf(handler).read({ onClose });
+
+    void changes.next();
+    await changes.return();
+
+    expect(pgState.clients[0].end).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(handler.read).not.toHaveBeenCalled();
+  });
+
+  it('should end with the error, and close, when the connection fails', async () => {
+    const onClose = vi.fn();
+    const changes = streamOf(handlerOf([])).read({ onClose });
+    const next = changes.next();
+    await vi.waitFor(() => expect(pgState.clients).toHaveLength(1));
+
+    pgState.clients[0].emit('error', new Error('connection reset'));
+
+    await expect(next).rejects.toThrow('connection reset');
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(pgState.clients[0].end).toHaveBeenCalled();
+  });
+
+  it('should end with the error, and close, when connecting fails', async () => {
+    pgState.connect = () => Promise.reject(new Error('ECONNREFUSED'));
+    const onClose = vi.fn();
+    const changes = streamOf(handlerOf([])).read({ onClose });
+
+    await expect(changes.next()).rejects.toThrow('ECONNREFUSED');
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('should end with the error, and close, when the handler fails', async () => {
+    const handler: ProtocolHandler = {
+      // eslint-disable-next-line require-yield
+      read: async function* () {
+        throw new Error("the key isn't unique");
+      },
     };
+    const onClose = vi.fn();
+    const changes = streamOf(handler).read({ onClose });
 
-    mockProtocolHandler = {
-      createSubscribeQuery: vi.fn().mockReturnValue('SUBSCRIBE TO test_source'),
-      parseLine: vi.fn(),
-    };
-
-    stream = new DatabaseStream(mockConfig, 'test_source', mockProtocolHandler);
+    await expect(changes.next()).rejects.toThrow("the key isn't unique");
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(pgState.clients[0].end).toHaveBeenCalled();
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  describe('initialization', () => {
-    it('should be defined', () => {
-      expect(stream).toBeDefined();
+  it('should end, and close, when the handler finishes by itself', async () => {
+    const onClose = vi.fn();
+    const changes = streamOf(handlerOf([[insert(1)]], true)).read({
+      onClose,
     });
 
-    it('should not be streaming initially', () => {
-      expect(stream.streaming).toBe(false);
-    });
-  });
-
-  describe('connect', () => {
-    it('should connect to database and create subscribe query', async () => {
-      const mockUpdateCallback = vi.fn();
-      const mockErrorCallback = vi.fn();
-
-      // Mock successful connection and query
-      const mockStream = {
-        on: vi.fn(),
-      };
-      mockClient.query.mockReturnValue(mockStream);
-
-      await stream.connect(mockUpdateCallback, mockErrorCallback);
-
-      expect(Client).toHaveBeenCalled();
-      expect(mockClient.connect).toHaveBeenCalled();
-      expect(mockProtocolHandler.createSubscribeQuery).toHaveBeenCalled();
-      expect(mockClient.query).toHaveBeenCalledWith(
-        expect.objectContaining({}), // pg-copy-streams object
-      );
-      expect(stream.streaming).toBe(true);
-    });
-
-    it('should not start streaming if already active', async () => {
-      const mockUpdateCallback = vi.fn();
-
-      // First call
-      const mockStream = { on: vi.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-      await stream.connect(mockUpdateCallback);
-
-      // Second call should not connect again
-      vi.clearAllMocks();
-      await stream.connect(mockUpdateCallback);
-
-      expect(Client).not.toHaveBeenCalled();
-    });
-
-    it('should handle connection errors', async () => {
-      const mockUpdateCallback = vi.fn();
-      const connectionError = new Error('Connection failed');
-
-      mockClient.connect.mockRejectedValue(connectionError);
-
-      await expect(stream.connect(mockUpdateCallback)).rejects.toThrow(
-        'Database connection failed: Connection failed',
-      );
-      // Note: streaming might be briefly true before error occurs, depending on timing
-    });
-  });
-
-  describe('onModuleDestroy', () => {
-    it('should disconnect client when streaming', async () => {
-      const mockUpdateCallback = vi.fn();
-
-      // Start streaming
-      const mockStream = { on: vi.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-      await stream.connect(mockUpdateCallback);
-
-      // Destroy
-      stream.disconnect();
-
-      expect(mockClient.end).toHaveBeenCalled();
-    });
-
-    it('should handle disconnect errors gracefully', async () => {
-      const mockUpdateCallback = vi.fn();
-
-      // Start streaming
-      const mockStream = { on: vi.fn() };
-      mockClient.query.mockReturnValue(mockStream);
-      await stream.connect(mockUpdateCallback);
-
-      // Mock client.end() error
-      mockClient.end.mockRejectedValue(new Error('Disconnect failed'));
-
-      // Should not throw
-      expect(() => stream.disconnect()).not.toThrow();
-    });
-  });
-
-  describe('protocol integration', () => {
-    it('should call update callback when line is parsed successfully', async () => {
-      const mockUpdateCallback = vi.fn();
-      let dataCallback: (chunk: Buffer) => void;
-
-      // Mock stream setup
-      const mockStream = {
-        on: vi.fn((event, callback) => {
-          if (event === 'data') {
-            dataCallback = callback;
-          }
-        }),
-      };
-      mockClient.query.mockReturnValue(mockStream);
-
-      // Mock protocol parsing
-      mockProtocolHandler.parseLine.mockReturnValue({
-        row: { id: '1', name: 'test' },
-        timestamp: BigInt(1000),
-        updateType: DatabaseRowUpdateType.Upsert,
-      });
-
-      await stream.connect(mockUpdateCallback);
-
-      // Simulate receiving data
-      const chunk = Buffer.from('test line\n');
-      dataCallback!(chunk);
-
-      expect(mockUpdateCallback).toHaveBeenCalledWith(
-        { id: '1', name: 'test' },
-        BigInt(1000),
-        DatabaseRowUpdateType.Upsert,
-      );
-    });
-
-    it('should call update callback with delete type when appropriate', async () => {
-      const mockUpdateCallback = vi.fn();
-      let dataCallback: (chunk: Buffer) => void;
-
-      const mockStream = {
-        on: vi.fn((event, callback) => {
-          if (event === 'data') {
-            dataCallback = callback;
-          }
-        }),
-      };
-      mockClient.query.mockReturnValue(mockStream);
-
-      // Mock delete event
-      mockProtocolHandler.parseLine.mockReturnValue({
-        row: { id: '1', name: 'test' },
-        timestamp: BigInt(1000),
-        updateType: DatabaseRowUpdateType.Delete,
-      });
-
-      await stream.connect(mockUpdateCallback);
-
-      const chunk = Buffer.from('delete line\n');
-      dataCallback!(chunk);
-
-      expect(mockUpdateCallback).toHaveBeenCalledWith(
-        { id: '1', name: 'test' },
-        BigInt(1000),
-        DatabaseRowUpdateType.Delete,
-      );
-    });
-
-    it('should not call callback if line parsing fails', async () => {
-      const mockUpdateCallback = vi.fn();
-      let dataCallback: (chunk: Buffer) => void;
-
-      const mockStream = {
-        on: vi.fn((event, callback) => {
-          if (event === 'data') {
-            dataCallback = callback;
-          }
-        }),
-      };
-      mockClient.query.mockReturnValue(mockStream);
-
-      // Mock parsing failure
-      mockProtocolHandler.parseLine.mockReturnValue(null);
-
-      await stream.connect(mockUpdateCallback);
-
-      const chunk = Buffer.from('invalid line\n');
-      dataCallback!(chunk);
-
-      expect(mockUpdateCallback).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('error propagation', () => {
-    it('should suppress errors during shutdown', async () => {
-      const mockUpdateCallback = vi.fn();
-      const mockErrorCallback = vi.fn();
-
-      let errorCallback: (error: Error) => void;
-      const mockStream = {
-        on: vi.fn((event, callback) => {
-          if (event === 'error') {
-            errorCallback = callback;
-          }
-        }),
-      };
-      mockClient.query.mockReturnValue(mockStream);
-
-      await stream.connect(mockUpdateCallback, mockErrorCallback);
-
-      // Start shutdown
-      stream.disconnect();
-
-      // Simulate error during shutdown - should be suppressed
-      const error = new Error('Connection lost during shutdown');
-      errorCallback!(error);
-
-      // Error callback should NOT be called during shutdown
-      expect(mockErrorCallback).not.toHaveBeenCalled();
-    });
-
-    it('should call error callback on stream error', async () => {
-      const mockUpdateCallback = vi.fn();
-      const mockErrorCallback = vi.fn();
-
-      let errorCallback: (error: Error) => void;
-      const mockStream = {
-        on: vi.fn((event, callback) => {
-          if (event === 'error') {
-            errorCallback = callback;
-          }
-        }),
-      };
-      mockClient.query.mockReturnValue(mockStream);
-
-      await stream.connect(mockUpdateCallback, mockErrorCallback);
-
-      // Simulate stream error
-      const error = new Error('Database connection lost');
-      errorCallback!(error);
-
-      expect(mockErrorCallback).toHaveBeenCalledWith(error);
-      expect(stream.streaming).toBe(false);
-    });
-
-    it('should call error callback on unexpected stream end', async () => {
-      const mockUpdateCallback = vi.fn();
-      const mockErrorCallback = vi.fn();
-
-      let endCallback: () => void;
-      const mockStream = {
-        on: vi.fn((event, callback) => {
-          if (event === 'end') {
-            endCallback = callback;
-          }
-        }),
-      };
-      mockClient.query.mockReturnValue(mockStream);
-
-      await stream.connect(mockUpdateCallback, mockErrorCallback);
-
-      // Simulate unexpected stream end
-      endCallback!();
-
-      expect(mockErrorCallback).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: expect.stringContaining(
-            'Database stream ended unexpectedly',
-          ),
-        }),
-      );
-      expect(stream.streaming).toBe(false);
-    });
+    expect((await changes.next()).value).toEqual([insert(1)]);
+    expect((await changes.next()).done).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -6,17 +6,22 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { DatabaseConfig } from '../config/database.config.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import type { WhereClause } from '../common/types.js';
+import { MaterializeProtocolHandler } from './materialize.js';
+import { buildSelect } from './query.js';
 import { DatabaseStream } from './stream.js';
-import type { ProtocolHandler } from './types.js';
+import type { ChangeBatches } from './types.js';
 
 /**
  * Database stream management service
- * Manages DatabaseStream instances and their underlying connections
+ * Opens one DatabaseStream per subscription, and closes any still open on
+ * shutdown
  */
 @Injectable()
 export class DatabaseStreamService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DatabaseStreamService.name);
-  private streams = new Map<string, DatabaseStream>();
+  private readonly open = new Set<ChangeBatches>();
   private dbConfig!: DatabaseConfig;
 
   constructor(private configService: ConfigService) {}
@@ -36,56 +41,29 @@ export class DatabaseStreamService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Get or create a DatabaseStream for a specific source
-   * Manages the lifecycle of database streams
+   * Subscribes to a source's rows that match the filter. Throws if the
+   * filter is invalid; ending the iteration closes the subscription.
    */
-  getStream(
-    sourceName: string,
-    protocolHandler: ProtocolHandler,
-  ): DatabaseStream {
-    let stream = this.streams.get(sourceName);
-
-    // Check if existing stream is disposed and needs recreation
-    if (stream && stream.isDisposed) {
-      this.logger.debug(
-        `DatabaseStream ${sourceName} is disposed, creating fresh instance`,
-      );
-      this.streams.delete(sourceName);
-      stream = undefined;
-    }
-
-    if (!stream) {
-      this.logger.log(`Creating new database stream for source: ${sourceName}`);
-      stream = new DatabaseStream(this.dbConfig, sourceName, protocolHandler);
-      this.streams.set(sourceName, stream);
-    }
-    return stream;
-  }
-
-  /**
-   * Remove a stream when it's no longer needed
-   * Called by SourceService when disposing a Source
-   */
-  removeStream(sourceName: string): void {
-    const stream = this.streams.get(sourceName);
-    if (stream) {
-      this.logger.log(`Removing database stream for source: ${sourceName}`);
-      stream.disconnect();
-      this.streams.delete(sourceName);
-    }
+  subscribe(source: SourceDefinition, where?: WhereClause): ChangeBatches {
+    const stream = new DatabaseStream(
+      this.dbConfig,
+      source.name,
+      new MaterializeProtocolHandler(source),
+      buildSelect(source, where),
+    );
+    const changes = stream.read({
+      onOpen: () => this.open.add(changes),
+      onClose: () => this.open.delete(changes),
+    });
+    return changes;
   }
 
   /**
    * Cleanup all connections on module destroy
    */
   async onModuleDestroy() {
-    this.logger.log(`Closing ${this.streams.size} database streams`);
-
-    // Disconnect all streams
-    for (const [sourceName, stream] of this.streams) {
-      this.logger.debug(`Disconnecting stream for ${sourceName}`);
-      stream.disconnect();
-    }
-    this.streams.clear();
+    this.logger.log(`Closing ${this.open.size} database streams`);
+    await Promise.all([...this.open].map((changes) => changes.return()));
+    this.open.clear();
   }
 }

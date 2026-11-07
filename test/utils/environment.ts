@@ -47,6 +47,11 @@ export interface TestEnvironmentConfig {
  * Test environment that manages all infrastructure needed for E2E tests
  * Handles database container, connections, and NestJS app lifecycle
  */
+/**
+ * The Materialize image every test runs against
+ */
+export const MATERIALIZE_IMAGE = 'materialize/materialized:v26.49.1';
+
 export class TestEnvironment {
   private app: INestApplication;
   private databaseContainer: StartedTestContainer;
@@ -54,9 +59,6 @@ export class TestEnvironment {
   private databasePort: number; // Mapped port from Docker container
   private config: TestEnvironmentConfig;
   private clientManager: TestClientManager;
-
-  private static readonly DATABASE_VERSION =
-    'materialize/materialized:v26.49.1';
 
   constructor(config: TestEnvironmentConfig) {
     this.config = config;
@@ -164,6 +166,16 @@ export class TestEnvironment {
   }
 
   /**
+   * Run a SQL query and return its rows
+   */
+  async querySql<T extends Record<string, unknown>>(
+    query: string,
+  ): Promise<T[]> {
+    const result = await this.databaseClient.query<T>(query);
+    return result.rows;
+  }
+
+  /**
    * Get the application port
    */
   get port(): number {
@@ -203,7 +215,7 @@ export class TestEnvironment {
    * Create and start a database container
    */
   private async createDatabaseContainer(): Promise<StartedTestContainer> {
-    return await new GenericContainer(TestEnvironment.DATABASE_VERSION)
+    return await new GenericContainer(MATERIALIZE_IMAGE)
       .withExposedPorts(this.config.database.port)
       .withEnvironment({
         MZ_WORKERS: this.config.database.workers,

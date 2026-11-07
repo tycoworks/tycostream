@@ -1,475 +1,560 @@
-import { MaterializeProtocolHandler } from './materialize.js';
+import type pg from 'pg';
+import {
+  KeyViolationError,
+  MaterializeProtocolHandler,
+  pairChanges,
+  ProgressBatcher,
+} from './materialize.js';
+import type { DiffRow, RawRow } from './materialize.js';
+import { RowUpdateType } from '../common/types.js';
 import type { SourceDefinition, EnumType } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
-import { DatabaseRowUpdateType } from './types.js';
+
+const source = (fields: SourceDefinition['fields']): SourceDefinition => ({
+  name: 'test',
+  primaryKeyField: fields[0].name,
+  fields,
+});
+
+// The columns SUBSCRIBE adds to each row, then the row's own
+const change = (
+  timestamp: number,
+  diff: number,
+  row: Record<string, string | null>,
+): RawRow => ({
+  mz_timestamp: String(timestamp),
+  mz_progressed: 'f',
+  mz_diff: String(diff),
+  ...row,
+});
+const progress = (timestamp: number): RawRow => ({
+  mz_timestamp: String(timestamp),
+  mz_progressed: 't',
+  mz_diff: null,
+});
 
 describe('MaterializeProtocolHandler', () => {
-  let handler: MaterializeProtocolHandler;
-  let mockSourceDef: SourceDefinition;
+  const idAndName = source([
+    { name: 'id', dataType: DataType.Integer },
+    { name: 'name', dataType: DataType.String },
+  ]);
+
+  // A connection whose FETCHes return the given rows, one list per FETCH,
+  // then wait forever, as an idle subscription does
+  const fakeClient = (fetches: RawRow[][]) => {
+    const queries: unknown[][] = [];
+    const client = {
+      query: vi.fn((...args: unknown[]) => {
+        queries.push(args);
+        const config = args[0] as { text?: string };
+        if (config.text?.startsWith('FETCH')) {
+          const rows = fetches.shift();
+          return rows ? Promise.resolve({ rows }) : new Promise(() => {});
+        }
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+    return { client: client as unknown as pg.ClientBase, queries };
+  };
+
+  const readAll = (client: pg.ClientBase) =>
+    new MaterializeProtocolHandler(idAndName).read(client, {
+      sql: 'select 1',
+      parameters: [],
+    });
+
+  describe('read', () => {
+    it('should turn off the idle timeout, then declare a cursor for the query inside a transaction, keeping its parameters', async () => {
+      const { client, queries } = fakeClient([[progress(1)]]);
+      const batches = new MaterializeProtocolHandler(idAndName).read(client, {
+        sql: 'select "id" from "test" where "id" = $1',
+        parameters: [7],
+      });
+      void batches.next();
+      await vi.waitFor(() => expect(queries.length).toBeGreaterThan(3));
+
+      expect(queries[0]).toEqual([
+        'SET idle_in_transaction_session_timeout = 0',
+      ]);
+      expect(queries[1]).toEqual(['BEGIN']);
+      expect(queries[2]).toEqual([
+        'DECLARE c CURSOR FOR SUBSCRIBE (select "id" from "test" where "id" = $1) WITH (SNAPSHOT, PROGRESS)',
+        [7],
+      ]);
+      expect(queries[3]).toEqual([
+        expect.objectContaining({ text: 'FETCH 1000 c' }),
+      ]);
+    });
+
+    it('should fetch every column as text, so the schema decides the types', async () => {
+      const { client, queries } = fakeClient([]);
+      void readAll(client).next();
+      await vi.waitFor(() => expect(queries.length).toBe(4));
+
+      const { types } = queries[3][0] as {
+        types: { getTypeParser: () => (value: string) => unknown };
+      };
+      expect(types.getTypeParser()('2026-01-01')).toBe('2026-01-01');
+    });
+
+    it('should yield each complete timestamp across fetches as row events', async () => {
+      const { client } = fakeClient([
+        [change(1, 1, { id: '1', name: 'a' })],
+        [change(1, 1, { id: '2', name: 'b' }), progress(2)],
+        [
+          change(2, -1, { id: '1', name: 'a' }),
+          change(2, 1, { id: '1', name: 'c' }),
+          change(2, -1, { id: '2', name: 'b' }),
+          progress(3),
+        ],
+      ]);
+      const batches = readAll(client);
+
+      expect((await batches.next()).value).toEqual([
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['id', 'name']),
+          row: { id: 1, name: 'a' },
+        },
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['id', 'name']),
+          row: { id: 2, name: 'b' },
+        },
+      ]);
+      expect((await batches.next()).value).toEqual([
+        {
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'name']),
+          row: { id: 1, name: 'c' },
+        },
+        {
+          type: RowUpdateType.Delete,
+          fields: new Set(['id']),
+          row: { id: 2, name: 'b' },
+        },
+      ]);
+    });
+
+    it('should skip a timestamp whose changes cancel out', async () => {
+      const { client } = fakeClient([
+        [
+          change(1, 1, { id: '1', name: 'a' }),
+          change(1, -1, { id: '1', name: 'a' }),
+          progress(2),
+        ],
+        [change(2, 1, { id: '2', name: 'b' }), progress(3)],
+      ]);
+      const batches = readAll(client);
+
+      expect((await batches.next()).value).toEqual([
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['id', 'name']),
+          row: { id: 2, name: 'b' },
+        },
+      ]);
+    });
+
+    it('should fail when a key is not unique', async () => {
+      const { client } = fakeClient([
+        [
+          change(1, 1, { id: '1', name: 'a' }),
+          change(1, 1, { id: '1', name: 'b' }),
+          progress(2),
+        ],
+      ]);
+      const batches = readAll(client);
+
+      await expect(batches.next()).rejects.toThrow(KeyViolationError);
+    });
+  });
+});
+
+describe('ProgressBatcher', () => {
+  const idAndName = source([
+    { name: 'id', dataType: DataType.Integer },
+    { name: 'name', dataType: DataType.String },
+  ]);
+  let batcher: ProgressBatcher;
 
   beforeEach(() => {
-    mockSourceDef = {
-      name: 'test',
-      primaryKeyField: 'id',
-      fields: [
-        { name: 'id', dataType: DataType.String },
-        { name: 'name', dataType: DataType.String },
-        { name: 'value', dataType: DataType.Integer },
-      ],
+    batcher = new ProgressBatcher(idAndName);
+  });
+
+  describe('batching by progress', () => {
+    it('should hold rows until a progress row passes their timestamp', () => {
+      expect(
+        batcher.take([
+          change(1, 1, { id: '1', name: 'a' }),
+          change(1, 1, { id: '2', name: 'b' }),
+        ]),
+      ).toEqual([]);
+      expect(batcher.take([progress(2)])).toEqual([
+        [
+          { diff: 1, row: { id: 1, name: 'a' } },
+          { diff: 1, row: { id: 2, name: 'b' } },
+        ],
+      ]);
+    });
+
+    it('should not release a timestamp that progress has only reached', () => {
+      expect(
+        batcher.take([change(2, 1, { id: '1', name: 'a' }), progress(2)]),
+      ).toEqual([]);
+    });
+
+    it('should release each complete timestamp as its own batch, oldest first', () => {
+      expect(
+        batcher.take([
+          change(3, -1, { id: '1', name: 'a' }),
+          change(1, 1, { id: '1', name: 'a' }),
+          change(3, 1, { id: '1', name: 'b' }),
+          progress(4),
+        ]),
+      ).toEqual([
+        [{ diff: 1, row: { id: 1, name: 'a' } }],
+        [
+          { diff: -1, row: { id: 1, name: 'a' } },
+          { diff: 1, row: { id: 1, name: 'b' } },
+        ],
+      ]);
+    });
+
+    it('should keep a timestamp whole across several fetches', () => {
+      batcher.take([change(1, 1, { id: '1', name: 'a' })]);
+      batcher.take([change(1, 1, { id: '2', name: 'b' })]);
+      expect(batcher.take([progress(2)])).toEqual([
+        [
+          { diff: 1, row: { id: 1, name: 'a' } },
+          { diff: 1, row: { id: 2, name: 'b' } },
+        ],
+      ]);
+    });
+
+    it('should release nothing for progress on an idle view', () => {
+      expect(batcher.take([progress(1), progress(2)])).toEqual([]);
+    });
+
+    it('should keep the count in diffs above one', () => {
+      batcher.take([change(1, 2, { id: '1', name: 'a' })]);
+      expect(batcher.take([progress(2)])[0][0].diff).toBe(2);
+    });
+  });
+
+  describe('typing values by the schema', () => {
+    const typed = (
+      fields: SourceDefinition['fields'],
+      row: Record<string, string | null>,
+    ) => {
+      const batcher = new ProgressBatcher(source(fields));
+      batcher.take([change(1, 1, row)]);
+      return batcher.take([progress(2)])[0][0].row;
     };
 
-    handler = new MaterializeProtocolHandler(mockSourceDef, 'test_view');
-  });
-
-  describe('constructor', () => {
-    it('should initialize with correct column names', () => {
-      // Column names should be: mz_timestamp, mz_state, id (key), name, value (non-keys)
-      // We can't directly access private columnNames, but we can test through parseLine
-      const testLine = '1234567890\tupsert\t123\ttest\t42';
-      const result = handler.parseLine(testLine);
-
-      expect(result).toBeDefined();
-      expect(result?.row).toEqual({
-        id: '123',
-        name: 'test',
-        value: 42, // Should be parsed as integer
-      });
+    it('should parse booleans', () => {
+      expect(
+        typed(
+          [
+            { name: 'id', dataType: DataType.String },
+            { name: 'yes', dataType: DataType.Boolean },
+            { name: 'no', dataType: DataType.Boolean },
+          ],
+          { id: '1', yes: 't', no: 'f' },
+        ),
+      ).toEqual({ id: '1', yes: true, no: false });
     });
 
-    it('should handle schemas with only primary key field', () => {
-      const singleFieldDef: SourceDefinition = {
-        name: 'single',
-        primaryKeyField: 'id',
-        fields: [{ name: 'id', dataType: DataType.String }],
-      };
-
-      const singleFieldHandler = new MaterializeProtocolHandler(
-        singleFieldDef,
-        'single_field_view',
-      );
-      const query = singleFieldHandler.createSubscribeQuery();
-      expect(query).toContain('single_field_view');
-    });
-  });
-
-  describe('createSubscribeQuery', () => {
-    it('should create correct SUBSCRIBE query', () => {
-      const query = handler.createSubscribeQuery();
-
-      expect(query).toBe(
-        'SUBSCRIBE (SELECT id, name, value FROM test_view) ENVELOPE UPSERT (KEY (id)) WITH (SNAPSHOT)',
-      );
+    it('should parse integers and floats, including scientific notation', () => {
+      expect(
+        typed(
+          [
+            { name: 'id', dataType: DataType.Integer },
+            { name: 'price', dataType: DataType.Float },
+            { name: 'rate', dataType: DataType.Float },
+          ],
+          { id: '42', price: '99.99', rate: '-4.56e-3' },
+        ),
+      ).toEqual({ id: 42, price: 99.99, rate: -4.56e-3 });
     });
 
-    it('should use the correct primary key field', () => {
-      const customKeyDef: SourceDefinition = {
-        name: 'custom',
-        primaryKeyField: 'name',
-        fields: [
-          { name: 'id', dataType: DataType.String },
-          { name: 'name', dataType: DataType.String },
-          { name: 'value', dataType: DataType.Integer },
-        ],
-      };
-
-      const customHandler = new MaterializeProtocolHandler(
-        customKeyDef,
-        'custom_view',
-      );
-      const query = customHandler.createSubscribeQuery();
-
-      expect(query).toContain('KEY (name)');
-    });
-  });
-
-  describe('parseLine', () => {
-    it('should parse upsert line correctly', () => {
-      const line = '1234567890\tupsert\t123\ttest name\t42';
-      const result = handler.parseLine(line);
-
-      expect(result).toBeDefined();
-      expect(result?.timestamp).toBe(BigInt(1234567890));
-      expect(result?.updateType).toBe(DatabaseRowUpdateType.Upsert);
-      expect(result?.row).toEqual({
-        id: '123',
-        name: 'test name',
-        value: 42,
-      });
+    it('should keep bigints as strings to preserve precision', () => {
+      expect(
+        typed(
+          [
+            { name: 'id', dataType: DataType.String },
+            { name: 'big', dataType: DataType.BigInt },
+          ],
+          { id: '1', big: '9223372036854775807' },
+        ),
+      ).toEqual({ id: '1', big: '9223372036854775807' });
     });
 
-    it('should parse delete line correctly', () => {
-      const line = '1234567890\tdelete\t123\ttest name\t42';
-      const result = handler.parseLine(line);
-
-      expect(result).toBeDefined();
-      expect(result?.timestamp).toBe(BigInt(1234567890));
-      expect(result?.updateType).toBe(DatabaseRowUpdateType.Delete);
-      expect(result?.row).toEqual({
-        id: '123',
-        name: 'test name',
-        value: 42,
-      });
-    });
-
-    it('should handle null values (\\N)', () => {
-      const line = '1234567890\tupsert\t123\t\\N\t\\N';
-      const result = handler.parseLine(line);
-
-      expect(result).toBeDefined();
-      expect(result?.row).toEqual({
-        id: '123',
-        name: null,
-        value: null,
-      });
-    });
-
-    it('should return null for empty lines', () => {
-      expect(handler.parseLine('')).toBeNull();
-      expect(handler.parseLine('  ')).toBeNull();
-      expect(handler.parseLine('\t')).toBeNull();
-    });
-
-    it('should return null for invalid lines', () => {
-      // Too few fields
-      expect(handler.parseLine('1234567890')).toBeNull();
-
-      // Missing timestamp
-      expect(handler.parseLine('\tupsert\t123')).toBeNull();
-
-      // Missing mz_state
-      expect(handler.parseLine('1234567890\t\t123')).toBeNull();
-    });
-
-    it('should handle lines with only timestamp and mz_state', () => {
-      // Valid line but no data fields
-      const result = handler.parseLine('1234567890\tupsert');
-
-      expect(result).toBeDefined();
-      expect(result?.timestamp).toBe(BigInt(1234567890));
-      expect(result?.updateType).toBe(DatabaseRowUpdateType.Upsert);
-      expect(result?.row).toEqual({}); // Empty row object
-    });
-
-    it('should handle lines with fewer fields than expected', () => {
-      // Only has id field, missing name and value
-      const line = '1234567890\tupsert\t123';
-      const result = handler.parseLine(line);
-
-      expect(result).toBeDefined();
-      expect(result?.row).toEqual({
-        id: '123',
-      });
-    });
-
-    it('should handle lines with more fields than expected', () => {
-      // Has extra fields that should be ignored
-      const line = '1234567890\tupsert\t123\ttest\t42\textra1\textra2';
-      const result = handler.parseLine(line);
-
-      expect(result).toBeDefined();
-      expect(result?.row).toEqual({
-        id: '123',
-        name: 'test',
-        value: 42,
-      });
-    });
-
-    it('should handle tab characters in field values', () => {
-      // Note: This is an edge case - real Materialize probably escapes tabs
-      const line = '1234567890\tupsert\t123\tname with\ttab\t42';
-      const result = handler.parseLine(line);
-
-      // This will actually parse incorrectly due to the tab
-      // The parser will see "name with" as the name and "tab" as the value
-      // Since value is an integer field, parsing "tab" will result in NaN
-      expect(result).toBeDefined();
-      expect(result?.row.name).toBe('name with');
-      expect(result?.row.value).toBeNaN();
-    });
-  });
-
-  describe('parseLine with different DataTypes', () => {
-    it('should parse Boolean values correctly', () => {
-      const booleanSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.String },
-          { name: 'is_active', dataType: DataType.Boolean },
-          { name: 'is_verified', dataType: DataType.Boolean },
-        ],
-      };
-      const handler = new MaterializeProtocolHandler(
-        booleanSourceDef,
-        'test_view',
-      );
-
-      // Test 't' and 'f' values
-      const line1 = '1234567890\tupsert\t123\tt\tf';
-      const result1 = handler.parseLine(line1);
-      expect(result1?.row).toEqual({
-        id: '123',
-        is_active: true,
-        is_verified: false,
-      });
-
-      // Test 'true' value
-      const line2 = '1234567890\tupsert\t123\ttrue\tfalse';
-      const result2 = handler.parseLine(line2);
-      expect(result2?.row).toEqual({
-        id: '123',
-        is_active: true,
-        is_verified: false,
-      });
-    });
-
-    it('should parse Float values correctly', () => {
-      const floatSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.String },
-          { name: 'price', dataType: DataType.Float },
-          { name: 'rate', dataType: DataType.Float },
-        ],
-      };
-      const handler = new MaterializeProtocolHandler(
-        floatSourceDef,
-        'test_view',
-      );
-
-      const line = '1234567890\tupsert\t123\t99.99\t0.05';
-      const result = handler.parseLine(line);
-      expect(result?.row).toEqual({
-        id: '123',
-        price: 99.99,
-        rate: 0.05,
-      });
-
-      // Test scientific notation
-      const line2 = '1234567890\tupsert\t123\t1.23e10\t-4.56e-3';
-      const result2 = handler.parseLine(line2);
-      expect(result2?.row).toEqual({
-        id: '123',
-        price: 1.23e10,
-        rate: -4.56e-3,
-      });
-    });
-
-    it('should parse BigInt values as strings to preserve precision', () => {
-      const bigintSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.String },
-          { name: 'large_number', dataType: DataType.BigInt },
-        ],
-      };
-      const handler = new MaterializeProtocolHandler(
-        bigintSourceDef,
-        'test_view',
-      );
-
-      const line = '1234567890\tupsert\t123\t9223372036854775807';
-      const result = handler.parseLine(line);
-      expect(result?.row).toEqual({
-        id: '123',
-        large_number: '9223372036854775807', // Should remain as string
-      });
-      expect(typeof result?.row.large_number).toBe('string');
-    });
-
-    it('should parse timestamp/date/time values as strings', () => {
-      const temporalSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.String },
-          { name: 'created_at', dataType: DataType.Timestamp },
-          { name: 'birth_date', dataType: DataType.Date },
-          { name: 'start_time', dataType: DataType.Time },
-        ],
-      };
-      const handler = new MaterializeProtocolHandler(
-        temporalSourceDef,
-        'test_view',
-      );
-
-      const line =
-        '1234567890\tupsert\t123\t2023-01-15 14:30:00\t1990-05-20\t09:15:30';
-      const result = handler.parseLine(line);
-      expect(result?.row).toEqual({
-        id: '123',
-        created_at: '2023-01-15 14:30:00',
-        birth_date: '1990-05-20',
-        start_time: '09:15:30',
-      });
-    });
-
-    it('should parse UUID and JSON values as strings', () => {
-      const specialSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.UUID },
-          { name: 'metadata', dataType: DataType.JSON },
-        ],
-      };
-      const handler = new MaterializeProtocolHandler(
-        specialSourceDef,
-        'test_view',
-      );
-
-      const line =
-        '1234567890\tupsert\t550e8400-e29b-41d4-a716-446655440000\t{"key":"value","num":42}';
-      const result = handler.parseLine(line);
-      expect(result?.row).toEqual({
+    it('should keep timestamps, dates, times, UUIDs and JSON as strings', () => {
+      const row = {
         id: '550e8400-e29b-41d4-a716-446655440000',
-        metadata: '{"key":"value","num":42}',
-      });
+        at: '2023-01-15 14:30:00',
+        day: '1990-05-20',
+        time: '09:15:30',
+        meta: '{"key":"value","num":42}',
+      };
+      expect(
+        typed(
+          [
+            { name: 'id', dataType: DataType.UUID },
+            { name: 'at', dataType: DataType.Timestamp },
+            { name: 'day', dataType: DataType.Date },
+            { name: 'time', dataType: DataType.Time },
+            { name: 'meta', dataType: DataType.JSON },
+          ],
+          row,
+        ),
+      ).toEqual(row);
     });
 
-    it('should handle NaN for invalid numeric values', () => {
-      const numericSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
+    it('should keep nulls as nulls whatever the type', () => {
+      expect(
+        typed(
+          [
+            { name: 'id', dataType: DataType.Integer },
+            { name: 'flag', dataType: DataType.Boolean },
+            { name: 'qty', dataType: DataType.Float },
+            { name: 'name', dataType: DataType.String },
+          ],
+          { id: '1', flag: null, qty: null, name: null },
+        ),
+      ).toEqual({ id: 1, flag: null, qty: null, name: null });
+    });
+
+    it('should give NaN for numbers that do not parse', () => {
+      const row = typed(
+        [
           { name: 'id', dataType: DataType.String },
-          { name: 'int_value', dataType: DataType.Integer },
-          { name: 'float_value', dataType: DataType.Float },
+          { name: 'int', dataType: DataType.Integer },
+          { name: 'float', dataType: DataType.Float },
         ],
-      };
-      const handler = new MaterializeProtocolHandler(
-        numericSourceDef,
-        'test_view',
+        { id: '1', int: 'not_a_number', float: 'invalid' },
       );
-
-      const line = '1234567890\tupsert\t123\tnot_a_number\tinvalid_float';
-      const result = handler.parseLine(line);
-      expect(result?.row.id).toBe('123');
-      expect(result?.row.int_value).toBeNaN();
-      expect(result?.row.float_value).toBeNaN();
-    });
-  });
-
-  describe('enum handling', () => {
-    it('should preserve enum string values', () => {
-      const orderStatusEnum: EnumType = {
-        name: 'order_status',
-        values: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],
-      };
-
-      const enumSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.Integer },
-          {
-            name: 'status',
-            dataType: DataType.String,
-            enumType: orderStatusEnum,
-          },
-          { name: 'notes', dataType: DataType.String },
-        ],
-      };
-      const handler = new MaterializeProtocolHandler(
-        enumSourceDef,
-        'test_view',
-      );
-
-      // Test preserving 'shipped' as string
-      const line1 = '1234567890\tupsert\t123\tshipped\tOrder shipped today';
-      const result1 = handler.parseLine(line1);
-      expect(result1?.row).toEqual({
-        id: 123,
-        status: 'shipped', // Preserved as string
-        notes: 'Order shipped today',
-      });
-
-      // Test all enum values preserved as strings
-      const testCases = [
-        'pending',
-        'processing',
-        'shipped',
-        'delivered',
-        'cancelled',
-      ];
-
-      testCases.forEach((value) => {
-        const line = `1234567890\tupsert\t456\t${value}\tTest note`;
-        const result = handler.parseLine(line);
-        expect(result?.row.status).toBe(value);
-      });
+      expect(row.int).toBeNaN();
+      expect(row.float).toBeNaN();
     });
 
-    it('should handle NULL enum values', () => {
-      const priorityEnum: EnumType = {
-        name: 'priority',
-        values: ['low', 'medium', 'high', 'critical'],
-      };
-
-      const enumSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.Integer },
-          {
-            name: 'priority',
-            dataType: DataType.String,
-            enumType: priorityEnum,
-          },
-        ],
-      };
-      const handler = new MaterializeProtocolHandler(
-        enumSourceDef,
-        'test_view',
-      );
-
-      const line = '1234567890\tupsert\t789\t\\N';
-      const result = handler.parseLine(line);
-      expect(result?.row).toEqual({
-        id: 789,
-        priority: null,
-      });
-    });
-
-    it('should handle multiple enum fields', () => {
-      const statusEnum: EnumType = {
+    it('should keep enum values as their strings', () => {
+      const status: EnumType = {
         name: 'order_status',
         values: ['pending', 'shipped', 'delivered'],
       };
-      const priorityEnum: EnumType = {
-        name: 'priority',
-        values: ['low', 'medium', 'high'],
-      };
+      expect(
+        typed(
+          [
+            { name: 'id', dataType: DataType.Integer },
+            { name: 'status', dataType: DataType.String, enumType: status },
+            { name: 'other', dataType: DataType.String, enumType: status },
+          ],
+          { id: '1', status: 'shipped', other: null },
+        ),
+      ).toEqual({ id: 1, status: 'shipped', other: null });
+    });
 
-      const enumSourceDef: SourceDefinition = {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', dataType: DataType.Integer },
-          { name: 'status', dataType: DataType.String, enumType: statusEnum },
-          {
-            name: 'priority',
-            dataType: DataType.String,
-            enumType: priorityEnum,
-          },
-          { name: 'amount', dataType: DataType.Float },
-        ],
+    it('should take only the schema columns, not the SUBSCRIBE columns', () => {
+      expect(
+        Object.keys(
+          typed([{ name: 'id', dataType: DataType.Integer }], { id: '1' }),
+        ),
+      ).toEqual(['id']);
+    });
+  });
+});
+
+describe('pairChanges', () => {
+  const FIELDS = ['id', 'symbol', 'qty', 'traded_at'];
+
+  const row = (id: number, symbol: string, qty: number | null, at = 'T1') => ({
+    id,
+    symbol,
+    qty,
+    traded_at: at,
+  });
+  const add = (r: Record<string, unknown>): DiffRow => ({ diff: 1, row: r });
+  const remove = (r: Record<string, unknown>): DiffRow => ({
+    diff: -1,
+    row: r,
+  });
+
+  const pair = (rows: DiffRow[]) => pairChanges(rows, 'id', FIELDS);
+
+  describe('one row per key', () => {
+    it('should make a lone +1 an insert with every field', () => {
+      expect(pair([add(row(1, 'AAPL', 10))])).toEqual([
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(FIELDS),
+          row: row(1, 'AAPL', 10),
+        },
+      ]);
+    });
+
+    it('should make a lone -1 a delete of the key', () => {
+      expect(pair([remove(row(1, 'AAPL', 10))])).toEqual([
+        {
+          type: RowUpdateType.Delete,
+          fields: new Set(['id']),
+          row: row(1, 'AAPL', 10),
+        },
+      ]);
+    });
+  });
+
+  describe('updates', () => {
+    it('should pair a -1 and a +1 into an update of the changed fields', () => {
+      expect(
+        pair([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', 15, 'T2'))]),
+      ).toEqual([
+        {
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'qty', 'traded_at']),
+          row: row(1, 'AAPL', 15, 'T2'),
+        },
+      ]);
+    });
+
+    it('should pair them whichever arrives first', () => {
+      expect(
+        pair([add(row(1, 'AAPL', 15)), remove(row(1, 'AAPL', 10))]),
+      ).toEqual([
+        {
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'qty']),
+          row: row(1, 'AAPL', 15),
+        },
+      ]);
+    });
+
+    it('should count a field changing to or from null as a change', () => {
+      expect(
+        pair([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', null))]),
+      ).toEqual([
+        {
+          type: RowUpdateType.Update,
+          fields: new Set(['id', 'qty']),
+          row: row(1, 'AAPL', null),
+        },
+      ]);
+      expect(
+        pair([remove(row(1, 'AAPL', null)), add(row(1, 'AAPL', 0))])[0].fields,
+      ).toEqual(new Set(['id', 'qty']));
+    });
+
+    it('should compare dates by instant and bigints by value', () => {
+      const at = (iso: string) => new Date(iso);
+      const before = {
+        id: 1,
+        symbol: 'AAPL',
+        qty: 10n,
+        traded_at: at('2026-01-01T00:00:00Z'),
       };
-      const handler = new MaterializeProtocolHandler(
-        enumSourceDef,
-        'test_view',
+      const same = {
+        id: 1,
+        symbol: 'MSFT',
+        qty: 10n,
+        traded_at: at('2026-01-01T00:00:00Z'),
+      };
+      expect(pair([remove(before), add(same)])[0].fields).toEqual(
+        new Set(['id', 'symbol']),
       );
+      const later = {
+        ...before,
+        qty: 11n,
+        traded_at: at('2026-01-02T00:00:00Z'),
+      };
+      expect(pair([remove(before), add(later)])[0].fields).toEqual(
+        new Set(['id', 'qty', 'traded_at']),
+      );
+    });
+  });
 
-      const line = '1234567890\tupsert\t999\tdelivered\thigh\t123.45';
-      const result = handler.parseLine(line);
-      expect(result?.row).toEqual({
-        id: 999,
-        status: 'delivered', // Preserved as string
-        priority: 'high', // Preserved as string
-        amount: 123.45,
-      });
+  describe('netting', () => {
+    it('should drop identical rows that cancel out', () => {
+      expect(
+        pair([add(row(1, 'AAPL', 10)), remove(row(1, 'AAPL', 10))]),
+      ).toEqual([]);
+    });
+
+    it('should net before pairing, so a change that is undone within the timestamp is no change', () => {
+      expect(
+        pair([
+          remove(row(1, 'AAPL', 10)),
+          add(row(1, 'AAPL', 15)),
+          remove(row(1, 'AAPL', 15)),
+          add(row(1, 'AAPL', 10)),
+        ]),
+      ).toEqual([]);
+    });
+
+    it('should not net rows that differ only by null and the text "null"', () => {
+      const nullSymbol = { id: 1, symbol: null, qty: 1, traded_at: 'T1' };
+      const textNull = { id: 1, symbol: 'null', qty: 1, traded_at: 'T1' };
+      expect(pair([remove(nullSymbol), add(textNull)])[0].type).toBe(
+        RowUpdateType.Update,
+      );
+    });
+  });
+
+  describe('several keys in one timestamp', () => {
+    it('should give each key its own event', () => {
+      const events = pair([
+        add(row(3, 'MSFT', 5)),
+        remove(row(1, 'AAPL', 10)),
+        add(row(1, 'AAPL', 15)),
+        remove(row(2, 'GOOG', 7)),
+      ]);
+      expect(events).toHaveLength(3);
+      expect(events.map((e) => [e.row.id, e.type])).toEqual([
+        [3, RowUpdateType.Insert],
+        [1, RowUpdateType.Update],
+        [2, RowUpdateType.Delete],
+      ]);
+    });
+
+    it('should make a snapshot, all +1, into inserts', () => {
+      const snapshot = [1, 2, 3].map((id) => add(row(id, 'AAPL', id)));
+      expect(pair(snapshot).map((e) => e.type)).toEqual([
+        RowUpdateType.Insert,
+        RowUpdateType.Insert,
+        RowUpdateType.Insert,
+      ]);
+    });
+  });
+
+  describe('rows entering and leaving a filter', () => {
+    it('should make a row entering the filter an insert, and one leaving it a delete', () => {
+      // A filtered SUBSCRIBE sends only the side of a change that matches
+      expect(pair([add(row(1, 'AAPL', 15))])[0].type).toBe(
+        RowUpdateType.Insert,
+      );
+      expect(pair([remove(row(1, 'AAPL', 10))])[0].type).toBe(
+        RowUpdateType.Delete,
+      );
+    });
+  });
+
+  describe('key violations', () => {
+    it('should reject two +1 rows for one key', () => {
+      expect(() =>
+        pair([add(row(1, 'AAPL', 10)), add(row(1, 'MSFT', 10))]),
+      ).toThrow(KeyViolationError);
+    });
+
+    it('should reject a diff of +2', () => {
+      expect(() => pair([{ diff: 2, row: row(1, 'AAPL', 10) }])).toThrow(
+        "More than one row for id = 1: the key isn't unique",
+      );
+    });
+
+    it('should reject two -1 rows for one key', () => {
+      expect(() =>
+        pair([remove(row(1, 'AAPL', 10)), remove(row(1, 'MSFT', 10))]),
+      ).toThrow(KeyViolationError);
     });
   });
 });

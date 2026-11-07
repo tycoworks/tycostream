@@ -1,129 +1,252 @@
-import { Logger } from '@nestjs/common';
+import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType } from '../common/types.js';
+import { DataType, RowUpdateType } from '../common/types.js';
+import type { RowUpdateEvent } from '../common/types.js';
+import type { CompiledQuery } from './query.js';
 import type { ProtocolHandler } from './types.js';
-import { DatabaseRowUpdateType } from './types.js';
 
 /**
- * Handles Materialize-specific protocol details: query generation and data parsing
- * Implements the ProtocolHandler interface for Materialize's SUBSCRIBE with ENVELOPE UPSERT
+ * One fetched row as Materialize sends it: every column as text, or null
+ */
+export type RawRow = Record<string, string | null>;
+
+/**
+ * One row of a subscription's changes: +1 when it was added, -1 when it was
+ * removed, and the row's values
+ */
+export interface DiffRow {
+  diff: number;
+  row: Record<string, unknown>;
+}
+
+const CURSOR = 'c';
+
+// The columns SUBSCRIBE adds to each row, before the row's own
+enum SubscribeColumn {
+  Timestamp = 'mz_timestamp',
+  Progressed = 'mz_progressed',
+  Diff = 'mz_diff',
+}
+
+// How Postgres writes a true boolean as text
+const TEXT_TRUE = 't';
+
+// Joins a row's values into one key; no value's text can contain it
+const VALUE_SEPARATOR = '\u0000';
+
+// FETCH waits until rows exist, so a bigger batch only helps a busy view
+const FETCH_SIZE = 1000;
+
+// Every column arrives as text; parseValue types it as the schema says
+const TEXT_ONLY = { getTypeParser: () => (value: string) => value };
+
+/**
+ * Handles Materialize-specific protocol details: reads
+ * SUBSCRIBE (<query>) WITH (SNAPSHOT, PROGRESS) through a cursor
  */
 export class MaterializeProtocolHandler implements ProtocolHandler {
-  private readonly logger = new Logger(MaterializeProtocolHandler.name);
-  private columnNames: string[];
-  private columnTypes: Map<string, DataType>;
-
-  constructor(
-    private sourceDefinition: SourceDefinition,
-    private sourceName: string,
-  ) {
-    // Initialize column names for COPY stream parsing
-    // With ENVELOPE UPSERT, Materialize reorders output: [mz_timestamp, mz_state, key_columns, value_columns]
-    const keyFields = sourceDefinition.fields.filter(
-      (f) => f.name === sourceDefinition.primaryKeyField,
-    );
-    const nonKeyFields = sourceDefinition.fields.filter(
-      (f) => f.name !== sourceDefinition.primaryKeyField,
-    );
-    this.columnNames = [
-      'mz_timestamp',
-      'mz_state',
-      ...keyFields.map((f) => f.name),
-      ...nonKeyFields.map((f) => f.name),
-    ];
-
-    // Build column type map
-    this.columnTypes = new Map();
-    sourceDefinition.fields.forEach((field) => {
-      this.columnTypes.set(field.name, field.dataType);
-    });
-
-    this.logger.debug(
-      `MaterializeProtocolHandler initialized for ${sourceName} - columns: ${this.columnNames.length} [${this.columnNames.join(', ')}], primaryKey: ${sourceDefinition.primaryKeyField}`,
-    );
-  }
+  constructor(private readonly sourceDefinition: SourceDefinition) {}
 
   /**
-   * Create the SUBSCRIBE query for Materialize (without COPY wrapper)
-   * Uses ENVELOPE UPSERT format with KEY field and SNAPSHOT for late joiners
+   * Never ends by itself; it stops when the connection closes
    */
-  createSubscribeQuery(): string {
-    const keyColumn = this.sourceDefinition.primaryKeyField;
-    // Get all column names from the source definition
-    const columns = this.sourceDefinition.fields.map((f) => f.name).join(', ');
+  async *read(
+    client: pg.ClientBase,
+    query: CompiledQuery,
+  ): AsyncGenerator<RowUpdateEvent[]> {
+    // The transaction sits idle while the consumer works through a batch.
+    // Materialize's cap on a subscription's backlog limits a slow consumer,
+    // so its idle timeout shouldn't
+    await client.query('SET idle_in_transaction_session_timeout = 0');
+    // A cursor only lives inside a transaction
+    await client.query('BEGIN');
+    await client.query(
+      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${query.sql}) WITH (SNAPSHOT, PROGRESS)`,
+      [...query.parameters],
+    );
 
-    // Use SELECT to explicitly specify columns from our YAML definition
-    const query = `SUBSCRIBE (SELECT ${columns} FROM ${this.sourceName}) ENVELOPE UPSERT (KEY (${keyColumn})) WITH (SNAPSHOT)`;
-    this.logger.debug(`Created subscribe query: ${query}`);
-    return query;
-  }
-
-  /**
-   * Parse a single line of COPY output
-   * Returns null if the line should be skipped
-   */
-  parseLine(line: string): {
-    row: Record<string, any>;
-    timestamp: bigint;
-    updateType: DatabaseRowUpdateType;
-  } | null {
-    const trimmed = line.trim();
-    if (!trimmed) return null;
-
-    const fields = trimmed.split('\t');
-    // Materialize COPY protocol requires at least timestamp and diff fields
-    const MATERIALIZE_MINIMUM_FIELDS = 2;
-    if (fields.length < MATERIALIZE_MINIMUM_FIELDS) return null;
-
-    // Parse timestamp (first field)
-    const timestampField = fields[0];
-    if (!timestampField) return null;
-
-    let timestamp: bigint;
-    try {
-      timestamp = BigInt(timestampField);
-    } catch {
-      return null; // Invalid timestamp
-    }
-
-    // Parse mz_state (second field) - either 'upsert' or 'delete'
-    const mzState = fields[1];
-    if (!mzState) return null;
-
-    // Map remaining fields to row data (skip mz_timestamp and mz_state)
-    const row: Record<string, any> = {};
-    for (let i = 2; i < fields.length && i < this.columnNames.length; i++) {
-      const columnName = this.columnNames[i];
-      const field = fields[i];
-      if (columnName && field !== undefined) {
-        const dataType = this.columnTypes.get(columnName);
-        row[columnName] =
-          dataType !== undefined
-            ? parseValueFromDataType(field, dataType)
-            : field;
+    // FETCH without a timeout returns as soon as rows exist
+    const batcher = new ProgressBatcher(this.sourceDefinition);
+    const { primaryKeyField, fields } = this.sourceDefinition;
+    const fieldNames = fields.map((field) => field.name);
+    while (true) {
+      const { rows } = await client.query<RawRow>({
+        text: `FETCH ${FETCH_SIZE} ${CURSOR}`,
+        types: TEXT_ONLY,
+      });
+      for (const batch of batcher.take(rows)) {
+        const events = pairChanges(batch, primaryKeyField, fieldNames);
+        // A timestamp whose changes cancel out has nothing to send
+        if (events.length > 0) {
+          yield events;
+        }
       }
     }
-
-    const updateType =
-      mzState === 'delete'
-        ? DatabaseRowUpdateType.Delete
-        : DatabaseRowUpdateType.Upsert;
-
-    return { row, timestamp, updateType };
   }
 }
 
 /**
- * Parse a COPY text format value based on DataType
- * Handles PostgreSQL COPY format including \\N for NULL
+ * Holds a subscription's rows until a progress row says their timestamp is
+ * complete, typing each value as the schema says
  */
-function parseValueFromDataType(value: string, dataType: DataType): any {
-  // Handle COPY format NULL
-  if (value === '\\N') return null;
+export class ProgressBatcher {
+  private readonly pending = new Map<bigint, DiffRow[]>();
 
+  constructor(private readonly sourceDefinition: SourceDefinition) {}
+
+  /**
+   * Takes fetched rows and returns each timestamp they complete, oldest
+   * first. A progress row at timestamp t means every timestamp before t is
+   * complete; the snapshot is the first complete timestamp.
+   */
+  take(rows: RawRow[]): DiffRow[][] {
+    const complete: DiffRow[][] = [];
+    for (const raw of rows) {
+      const timestamp = BigInt(raw[SubscribeColumn.Timestamp]!);
+      if (raw[SubscribeColumn.Progressed] === TEXT_TRUE) {
+        for (const done of [...this.pending.keys()]
+          .filter((t) => t < timestamp)
+          .sort((a, b) => (a < b ? -1 : 1))) {
+          complete.push(this.pending.get(done)!);
+          this.pending.delete(done);
+        }
+      } else {
+        const batch = this.pending.get(timestamp) ?? [];
+        batch.push({
+          diff: Number(raw[SubscribeColumn.Diff]),
+          row: this.parseRow(raw),
+        });
+        this.pending.set(timestamp, batch);
+      }
+    }
+    return complete;
+  }
+
+  private parseRow(raw: RawRow): Record<string, unknown> {
+    return Object.fromEntries(
+      this.sourceDefinition.fields.map((field) => {
+        const value = raw[field.name];
+        return [
+          field.name,
+          value === null ? null : parseValue(value, field.dataType),
+        ];
+      }),
+    );
+  }
+}
+
+/**
+ * Thrown when a timestamp's rows can't be explained by one row per key,
+ * so the declared primary key isn't unique
+ */
+export class KeyViolationError extends Error {
+  constructor(primaryKeyField: string, key: unknown) {
+    super(
+      `More than one row for ${primaryKeyField} = ${String(key)}: the key isn't unique`,
+    );
+    this.name = 'KeyViolationError';
+  }
+}
+
+/**
+ * Turns the rows of one complete timestamp into insert, update and delete
+ * events. Rows can arrive in any order.
+ *
+ * - Identical rows are netted first: their diffs are summed, and rows that
+ *   come to zero are dropped.
+ * - Then, per key: a -1 alone is a delete, a +1 alone is an insert, and a -1
+ *   with a +1 is an update of the columns that differ. Anything else means
+ *   the key isn't unique.
+ *
+ * An update's and a delete's `fields` follow RowUpdateEvent: the key plus the
+ * changed columns, and the key alone.
+ */
+export function pairChanges(
+  rows: DiffRow[],
+  primaryKeyField: string,
+  fieldNames: string[],
+): RowUpdateEvent[] {
+  const byKey = new Map<string, DiffRow[]>();
+  for (const netted of netIdenticalRows(rows, fieldNames)) {
+    const key = valueKey(netted.row[primaryKeyField]);
+    const forKey = byKey.get(key) ?? [];
+    forKey.push(netted);
+    byKey.set(key, forKey);
+  }
+
+  return Array.from(byKey.values()).map((forKey) =>
+    toEvent(forKey, primaryKeyField, fieldNames),
+  );
+}
+
+function toEvent(
+  forKey: DiffRow[],
+  primaryKeyField: string,
+  fieldNames: string[],
+): RowUpdateEvent {
+  const removed = forKey.find((r) => r.diff === -1);
+  const added = forKey.find((r) => r.diff === 1);
+  const key = forKey[0].row[primaryKeyField];
+
+  if (forKey.length === 1 && added) {
+    return {
+      type: RowUpdateType.Insert,
+      fields: new Set(fieldNames),
+      row: added.row,
+    };
+  }
+  if (forKey.length === 1 && removed) {
+    return {
+      type: RowUpdateType.Delete,
+      fields: new Set([primaryKeyField]),
+      row: removed.row,
+    };
+  }
+  if (forKey.length === 2 && removed && added) {
+    const changed = fieldNames.filter(
+      (field) => valueKey(removed.row[field]) !== valueKey(added.row[field]),
+    );
+    return {
+      type: RowUpdateType.Update,
+      fields: new Set([primaryKeyField, ...changed]),
+      row: added.row,
+    };
+  }
+  throw new KeyViolationError(primaryKeyField, key);
+}
+
+// Sums the diffs of identical rows, keeping each row's first appearance
+function netIdenticalRows(rows: DiffRow[], fieldNames: string[]): DiffRow[] {
+  const netted = new Map<string, DiffRow>();
+  for (const { diff, row } of rows) {
+    const id = fieldNames
+      .map((field) => valueKey(row[field]))
+      .join(VALUE_SEPARATOR);
+    const existing = netted.get(id);
+    netted.set(id, { diff: (existing?.diff ?? 0) + diff, row });
+  }
+  return Array.from(netted.values()).filter((r) => r.diff !== 0);
+}
+
+// A comparable form of a value: Dates by instant, bigints by digits, and
+// null apart from the string 'null'
+function valueKey(value: unknown): string {
+  if (value instanceof Date) {
+    return `d:${value.toISOString()}`;
+  }
+  if (typeof value === 'bigint') {
+    return `n:${value.toString()}`;
+  }
+  return `j:${JSON.stringify(value) ?? 'undefined'}`;
+}
+
+/**
+ * Parse a column's text value into the type the GraphQL schema serves
+ */
+function parseValue(value: string, dataType: DataType): unknown {
   switch (dataType) {
     case DataType.Boolean:
-      return value === 't' || value === 'true';
+      return value === TEXT_TRUE;
 
     case DataType.Integer:
       return parseInt(value, 10);

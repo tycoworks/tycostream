@@ -1,3 +1,5 @@
+import { buildSchema } from 'graphql';
+import type { GraphQLInputObjectType } from 'graphql';
 import { generateSchema } from './schema.js';
 import type {
   SourceDefinition,
@@ -57,6 +59,59 @@ describe('generateSchema', () => {
 
     expect(schema).toContain('input FloatComparison');
     expect(schema).toContain('input BooleanComparison');
+  });
+
+  it('should give each comparison input exactly the operators for its type', () => {
+    const side = { name: 'side', values: ['buy', 'sell'] };
+    // One view, since a schema with no subscription fields isn't valid
+    const trades: SourceDefinition = {
+      name: 'trades',
+      primaryKeyField: 'id',
+      fields: [
+        { name: 'id', dataType: DataType.Integer },
+        { name: 'side', dataType: DataType.String, enumType: side },
+      ],
+    };
+    const config: SourceConfiguration = {
+      sources: new Map([['trades', trades]]),
+      enums: new Map([['side', side]]),
+    };
+    const schema = buildSchema(generateSchema(config));
+
+    // Each input's operators, with the type each one takes
+    const operators = (inputName: string) =>
+      Object.fromEntries(
+        Object.values(
+          (schema.getType(inputName) as GraphQLInputObjectType).getFields(),
+        ).map((field) => [field.name, field.type.toString()]),
+      );
+    const ordered = (type: string) => ({
+      _eq: type,
+      _neq: type,
+      _gt: type,
+      _gte: type,
+      _lt: type,
+      _lte: type,
+      _in: `[${type}!]`,
+      _nin: `[${type}!]`,
+      _is_null: 'Boolean',
+    });
+
+    expect(operators('StringComparison')).toEqual({
+      _eq: 'String',
+      _neq: 'String',
+      _in: '[String!]',
+      _nin: '[String!]',
+      _is_null: 'Boolean',
+    });
+    expect(operators('IntComparison')).toEqual(ordered('Int'));
+    expect(operators('FloatComparison')).toEqual(ordered('Float'));
+    expect(operators('sideComparison')).toEqual(ordered('side'));
+    expect(operators('BooleanComparison')).toEqual({
+      _eq: 'Boolean',
+      _neq: 'Boolean',
+      _is_null: 'Boolean',
+    });
   });
 
   it('should generate expression input types for subscription filters', () => {
