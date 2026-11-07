@@ -115,19 +115,30 @@ Found by reading the code on 5 Nov; only the first gets its own test (step 1).
 ```
 GraphQL (Yoga) ── resolver ──► subscribe(view, where)
                                  │
-                                 ├─ sql/      where → SELECT … WHERE (Kysely, compile-only)
-                                 ├─ database/ SubscribeReader: own pg.Client, DECLARE/FETCH loop → raw rows
-                                 └─ changes/  per-timestamp buffer + pairing → INSERT/UPDATE/DELETE
+                                 ├─ database/query.ts    where → SELECT … WHERE (Kysely, compile-only)
+                                 ├─ database/reader      own pg.Client, DECLARE/FETCH loop → raw rows
+                                 └─ database/changes.ts  per-timestamp pairing → INSERT/UPDATE/DELETE
                                  ▼
                          Repeater → SSE to the client
 ```
 
 - **`src/config/`** loads the database settings and `schema.yaml`, unchanged.
-- **`src/database/`**: a `DatabaseModule` with the pool provider, and `SubscribeReader`, which owns one connection, the `DECLARE`/`FETCH` loop and cleanup, and yields typed raw rows (`mz_timestamp`, `mz_progressed`, `mz_diff`, columns).
-- **`src/sql/`**: the `where` parser and validator (moved from `src/api/expressions.ts`) and the SQL compiler.
-- **`src/changes/`**: the pure change processor.
+- **`src/database/`** holds everything that knows SQL or Materialize's output:
+  - a `DatabaseModule` with the pool provider;
+  - `query.ts`, which compiles a `where` filter to SQL and validates it as it goes (step 2);
+  - `changes.ts`, the pure change processor (step 3);
+  - the Materialize reader, in `materialize.ts` in place of today's COPY handler, which owns one connection, the `DECLARE`/`FETCH` loop and cleanup, and yields one complete timestamp of `{ diff, row }` at a time (step 4).
+- **`src/common/types.ts`** holds what both layers share: the `where` operators and types, and the row events.
 - **`src/api/`**: schema generation (unchanged), subscription resolvers built on a `Repeater`, and, from step 7, query resolvers.
 - **Gone:** `src/view/` (shared sources, the cache, JavaScript filtering), the JavaScript filter compiler, `pg-copy-streams`, the COPY parser, `rxjs-for-await`.
+
+## Other databases
+
+tycostream only supports Materialize, but the new code keeps Materialize's specifics in one place, so another streaming database could be added later.
+
+- **Database-neutral:** `query.ts` writes Postgres-dialect SQL, and `changes.ts` pairs rows that each carry a +1 or -1 (`{ diff, row }`).
+- **Materialize-specific, all in the reader (step 4, `materialize.ts`):** `DECLARE … CURSOR FOR SUBSCRIBE`, `FETCH`, the `mz_timestamp`, `mz_progressed` and `mz_diff` columns, and buffering each timestamp until progress passes it. The reader sits behind a small interface that yields one complete batch of `{ diff, row }` at a time; another database would be another implementation of it.
+- **RisingWave, as of the 5 Nov research (to re-check before relying on it):** its subscription cursors mark each row with an `op` (Insert, Delete, UpdateDelete, UpdateInsert), which maps onto +1 and -1, so `changes.ts` would work as it is. But it can't subscribe to an ad hoc query, only to an existing table or materialized view, so a client's `where` couldn't be pushed down; tycostream would have to check it in memory, which is the evaluator post 4 brings back anyway.
 
 ## Sequence
 
