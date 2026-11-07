@@ -159,12 +159,7 @@ tycostream only supports Materialize, but the new code keeps Materialize's speci
 
 - **Database-neutral:** `query.ts` writes Postgres-dialect SQL, `DatabaseStream` owns a Postgres-protocol connection and nothing else, and every handler yields the same row events.
 - **Materialize-specific, all in `materialize.ts`:** `DECLARE … CURSOR FOR SUBSCRIBE`, the `FETCH` loop, the `mz_timestamp`, `mz_progressed` and `mz_diff` columns, buffering each timestamp until progress passes it, and pairing bare diffs into events. Another database would be another `ProtocolHandler`, as today.
-- **RisingWave, as of the 5 Nov research (to re-check before relying on it):** it speaks the Postgres protocol and reads subscriptions through cursors, so it would be a second protocol handler, with no change to `DatabaseStream`. That handler would differ in ways the boundary allows for:
-  - it creates a subscription object first, and drops it at the end, because closing the connection doesn't;
-  - `FETCH` without a timeout returns at once, so it fetches `WITH (timeout = …)`;
-  - there are no progress rows, so it decides when a timestamp is complete some other way;
-  - each row carries an `op` (Insert, Delete, UpdateDelete, UpdateInsert), so it could build the events straight from those, without Materialize's pairing.
-- **What RisingWave can't do:** subscribe to an ad hoc query, only to an existing table or materialized view. So a client's `where` couldn't be pushed down; tycostream would have to check it in memory, which is the evaluator post 4 brings back anyway.
+- **RisingWave** would be a second protocol handler, with no change to `DatabaseStream`; [risingwave.md](./risingwave.md) has how, and what it can't do.
 - **A database without the Postgres protocol** would need its own stream class too.
 
 ## Sequence
@@ -184,7 +179,7 @@ One commit per step, merged without squashing. Tests for each step are agreed wi
    - a database error ends one subscription, not the server.
 
    Tests: integration tests for the stream against Materialize in Testcontainers (rows arrive typed, each timestamp whole, parameters bind, an idle view stays open, `mz_internal.mz_subscriptions` empties after cleanup, a missing view fails only its own subscription). The end-to-end harness passes unchanged, and the late-joiner test becomes a normal `it`. (Done, with the independent review's fixes.)
-5. **Docs.** `architecture.md`, `implementation.md` and `roadmap.md` describe the new design, not the shared cache and RxJS; the README if anything in it is stale. Then the branch merges.
+5. **Docs.** `architecture.md`, `implementation.md` and `roadmap.md` describe the new design, not the shared cache and RxJS; the README says names must match exactly and to serve indexed or materialized views; the design docs written for the old design get a status note pointing here. Then the branch merges.
 
 After this branch, each separately:
 

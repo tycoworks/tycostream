@@ -62,6 +62,8 @@ sources:
       executed_at: Timestamp
 ```
 
+Names must match the database exactly, including case. Each client's subscription runs as its own query in Materialize, so index the views you serve, or make them materialized views, so a subscription doesn't recompute its view from scratch.
+
 You can use the bundled generator script to create schema files directly from your Materialize instance. For the trades table example above, the command would look like this:
 
 ```bash

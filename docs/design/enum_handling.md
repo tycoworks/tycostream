@@ -1,5 +1,7 @@
 # Enum Handling
 
+> **Status:** the GraphQL side still holds. Since the hollow-out ([hollow-out.md](./hollow-out.md)), enum comparisons compile to SQL (an ordering becomes the set of values on its side), and values arrive as text over `FETCH`, not COPY.
+
 ## Overview
 
 This document describes the design for first-class enum support in tycostream. Enums are a common PostgreSQL data type that should be represented as proper GraphQL enums with type-safe comparisons, not just strings. This provides better developer experience and type safety throughout the stack.

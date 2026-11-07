@@ -66,8 +66,8 @@
 - Validation (class-validator, class-transformer)
 - Date/time manipulation (date-fns, dayjs)
 - Logging (NestJS built-in logger, Pino, Winston)
-- Testing (Jest - NestJS default)
-- Async utilities (rxjs - built into NestJS)
+- Testing (Vitest, with NestJS testing utilities)
+- Streams to GraphQL subscriptions (@repeaterjs/repeater)
 - File parsing (yaml, csv-parse)
 - Configuration (@nestjs/config)
 
@@ -214,16 +214,15 @@ export class DatabaseStreamer {
 export class DatabaseModule {}
 ```
 
-### RxJS Integration
-- Return Observables from services, not Promises
-- Use RxJS operators for transformations
-- Leverage shareReplay for multicasting
-- Handle cleanup in Observable teardown logic
+### Streams
+- Return async iterators (a `Repeater`) from streaming services
+- Clean up in the `Repeater` once it's stopped, so a client that goes releases its connection at once
+- Let `push` wait for the consumer, so backpressure reaches the database
 
 ## Testing Standards
 
 ### Test Structure
-- Use Jest with NestJS testing utilities
+- Use Vitest with NestJS testing utilities
 - Create testing modules with Test.createTestingModule()
 - Mock providers using NestJS testing tokens
 - Use descriptive test names that explain the scenario
@@ -249,8 +248,7 @@ export class DatabaseModule {}
 - Avoid mixing callbacks with promises
 
 ### Streaming Patterns
-- Use async iterators for pull-based streams
-- Use RxJS Observables for push-based events
+- Use async iterators (a `Repeater`) for streams
 - Document backpressure handling strategy
 
 ## Performance Considerations

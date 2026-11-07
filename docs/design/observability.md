@@ -1,5 +1,7 @@
 # Observability
 
+> **Status:** the cache metrics no longer apply; the hollow-out ([hollow-out.md](./hollow-out.md)) removed the cache. Per-subscription connections are the thing to measure now.
+
 ## Overview
 
 This document outlines the observability features for tycostream, covering health checks, metrics, logging, and monitoring capabilities needed for production deployments. Features are organized by milestone.

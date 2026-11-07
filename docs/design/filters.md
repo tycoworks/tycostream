@@ -1,5 +1,7 @@
 # GraphQL Subscription Filters
 
+> **Status:** the filter format and operators still hold. Since the hollow-out ([hollow-out.md](./hollow-out.md)), filters are compiled to SQL and pushed down to Materialize; the shared cache, `Source`/`View` and the JavaScript evaluation described here are gone, and nulls follow SQL (D11).
+
 ## Overview
 
 tycostream supports filtering for GraphQL subscriptions, allowing clients to subscribe to subsets of data using Hasura-compatible `where` clauses. This document describes the design and architecture of the filtering system.

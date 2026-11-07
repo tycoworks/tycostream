@@ -4,8 +4,10 @@
 
 - ✅ NestJS modular architecture: GraphQL + stream ingestion with dependency injection
 - ✅ Snapshot + incremental live updates via Materialize `SUBSCRIBE`
-- ✅ RxJS Observables throughout for reactive streaming
+- ✅ Each client's filter pushed down to Materialize as its own `SUBSCRIBE`
+- ✅ Whole timestamps only: a client never sees half a transaction
 - ✅ Sends updates for changed fields only
+- ✅ A database error ends one subscription, not the server
 
 ## 📊 GraphQL Subscriptions
 
@@ -28,8 +30,10 @@
 
 ## Backlog
 
+- [Queries per view](./design/queries.md)
 - [Calculated states](./design/calculated_states.md)
 - Row-level security
 - [Observability](./design/observability.md)
-- [Database reconnection](./design/database_reconnection.md)
+- Database reconnection
+- Timestamps on updates, so a client can apply each timestamp whole
 - [Client reconnection](./design/client_reconnection.md)
