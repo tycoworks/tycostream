@@ -1,10 +1,10 @@
-# Plan: queries per view
+# Plan: queries per source
 
 Status: agreed with Chris, 7 Nov 2026. Branch: `queries`. Follows the hollow-out (`hollow-out.md`); `v0.3.0` is released after this branch.
 
 ## Summary
 
-Each view gets a GraphQL query beside its subscription: `trades(where: …)` returns the view's current rows that match the filter, once, through a connection pool. It shares the subscription's name, as Hasura's do. The placeholder `ping` query goes.
+Each source gets a GraphQL query beside its subscription: `trades(where: …)` returns the source's current rows that match the filter, once, through a connection pool. It shares the subscription's name, as Hasura's do. The placeholder `ping` query goes.
 
 ## Why queries
 
@@ -35,14 +35,14 @@ Checked on 7 Nov against `materialize/materialized:v26.49.0`, node-postgres 8 an
 
 ```
 DatabaseModule   (exports DatabaseService only)
-  DatabaseService        subscribe(view, where), query(view, where): compiles the SQL,
+  DatabaseService        subscribe(source, where), query(source, where): compiles the SQL,
                          uses the driver, tracks open subscriptions
-  DatabaseConnectionService  acquire(type, signal?) → Lease: makes every connection,
+  DatabaseConnectionService  acquire(type, signal?) → ConnectionLease: makes every connection,
                              with each type's limits, and stops lending at shutdown
   DatabaseStream         one subscription: a lease on first read, the driver's read, closed on stop
   DatabaseDriver         subscriptions: SubscriptionProtocol, queries: QueryProtocol
-    materialize.ts       MaterializeSubscriptions: DECLARE … SUBSCRIBE, FETCH, progress, pairing
-    postgres.ts          PostgresQueries, and typing text values by the schema
+    materialize.ts       MaterializeSubscriptionProtocol: DECLARE … SUBSCRIBE, FETCH, progress, pairing
+    postgres.ts          PostgresQueryProtocol, and typing text values by the schema
 ```
 
 ### Drivers
@@ -51,16 +51,16 @@ A driver is a subscription part and a query part, and drivers can share parts:
 
 ```ts
 abstract class DatabaseDriver {
-  abstract readonly subscriptions: SubscriptionProtocol; // read(client, view, query) → events per timestamp
-  abstract readonly queries: QueryProtocol;              // run(client, view, query) → rows
+  abstract readonly subscriptions: SubscriptionProtocol; // read(client, source, query) → events per timestamp
+  abstract readonly queries: QueryProtocol;              // run(client, source, query) → rows
 }
-// Materialize: MaterializeSubscriptions + PostgresQueries
-// RisingWave, later: RisingWaveSubscriptions + PostgresQueries
+// Materialize: MaterializeSubscriptionProtocol + PostgresQueryProtocol
+// RisingWave, later: RisingWaveSubscriptionProtocol + PostgresQueryProtocol
 ```
 
 - **Querying is the same for every Postgres-compatible database**, so it's written once, in `postgres.ts`. So is typing text values by the schema (`'t'` is true, bigints stay strings, …), which is how they all send text. The Materialize subscriptions use it too, which is what makes requirement 1 hold. A database that queries differently gets its own query part.
-- **Subscribing is what differs**, so each database has its own subscription part. Today's `MaterializeProtocolHandler` becomes `MaterializeSubscriptions`, and `ProtocolHandler` becomes `SubscriptionProtocol`.
-- **Both parts are stateless:** the view's definition comes with each call, and a subscription's batching state lives inside its `read`.
+- **Subscribing is what differs**, so each database has its own subscription part. Today's `MaterializeProtocolHandler` becomes `MaterializeSubscriptionProtocol`, implementing `SubscriptionProtocol` (was `ProtocolHandler`): an implementation is named after its database and the protocol it implements.
+- **Both parts are stateless:** the source's definition comes with each call, and a subscription's batching state lives inside its `read`.
 - **`DatabaseDriver` is an abstract class** so it can be a Nest provider token: `DatabaseModule` provides the Materialize driver, and choosing a database later is that one provider. Tests swap in a fake.
 
 ### Connections
@@ -70,12 +70,12 @@ abstract class DatabaseDriver {
 ```ts
 enum ConnectionType { Subscription, Query }
 
-interface Lease extends AsyncDisposable {
+interface ConnectionLease extends AsyncDisposable {
   readonly client: pg.ClientBase;
   close(): Promise<void>; // finished with it
 }
 
-acquire(type: ConnectionType, signal?: AbortSignal): Promise<Lease>
+acquire(type: ConnectionType, signal?: AbortSignal): Promise<ConnectionLease>
 ```
 
 - **`close()` is finishing normally:** a subscription's connection is ended, which drops its `SUBSCRIBE`; a query's goes back to the pool, unless it hit an error or the timeout, when it's discarded. `await using` calls it at the end of a scope.
@@ -98,9 +98,9 @@ acquire(type: ConnectionType, signal?: AbortSignal): Promise<Lease>
 
 ### Up through the layers
 
-- **Database:** `DatabaseStreamService` becomes `DatabaseService`, with `subscribe` and `query`. Both compile the `where`; `query` borrows a pooled connection and runs the driver's query part. It's the database layer's only export.
-- **View:** `ViewService.query(view, where)` beside `subscribe`: a view has current rows you query and changes you subscribe to. Permissions, later, apply to both.
-- **API:** the schema gets `Query.<view>(where: <view>Expression): [<view>!]!` per view. The resolvers go in `query.resolver.ts`. A database error is an ordinary GraphQL error for that request.
+- **Database:** `DatabaseService`, with `subscribe` and `query`. Both compile the `where`; `query` borrows a pooled connection and runs the driver's query part. It's the database layer's only export.
+- **View:** `ViewService.query(source, where)` beside `subscribe`. A view, a source plus a `where`, has current rows you query and changes you subscribe to. Permissions, later, apply to both.
+- **API:** the schema gets `Query.<source>(where: <source>Expression): [<source>!]!` per source. The resolvers go in `query.resolver.ts`. A database error is an ordinary GraphQL error for that request.
 - **`ping` goes;** the HTTP test uses a real query instead.
 
 ### Settings
@@ -129,8 +129,8 @@ The fetch size, connect timeout and keep-alive stay constants until someone need
 One commit each, shown before committing. Each builds and passes every test on its own (Chris, 7 Nov).
 
 1. **`DatabaseConnectionService`:** the subscription type, leases and cancelling, the shared settings, the shutdown order and `app.enableShutdownHooks()`; the stream borrows its connection instead of making one.
-2. **Drivers:** `DatabaseDriver` with `MaterializeSubscriptions`; `DatabaseStreamService` becomes `DatabaseService`; the wiring in `DatabaseModule` and `ViewService`. Commits 1 and 2 change nothing clients can see, apart from a clean shutdown.
-3. **Queries in the database layer:** the query type and the pool with its two settings, `PostgresQueries` and the shared typing in `postgres.ts`, `DatabaseService.query`; tested against Materialize directly. Nothing reaches GraphQL yet.
+2. **Drivers:** `DatabaseDriver` with `MaterializeSubscriptionProtocol`; `DatabaseStreamService` becomes `DatabaseService`; `Lease` becomes `ConnectionLease` and `ChangeBatches` becomes `RowUpdateBatches`; the wiring in `DatabaseModule` and `ViewService`. Commits 1 and 2 change nothing clients can see, apart from a clean shutdown.
+3. **Queries in the database layer:** the query type and the pool with its two settings, `PostgresQueryProtocol` and the shared typing in `postgres.ts`, `DatabaseService.query`; tested against Materialize directly. Nothing reaches GraphQL yet.
 4. **Queries through GraphQL:** `ViewService.query`, the schema's query fields and the resolvers, cancelling when the client leaves; `ping` removed; the end-to-end tests.
 
 ## Tests
@@ -138,7 +138,7 @@ One commit each, shown before committing. Each builds and passes every test on i
 - **Unit:**
   - `DatabaseConnectionService`, against a fake pg: each type's settings, `close()` against cancelling, refusing to lend once shutdown starts, the pool's `'error'` listener;
   - the stream against a fake `DatabaseConnectionService`, instead of mocking pg;
-  - `PostgresQueries` and its typing; the settings' validation; the schema's query fields; the resolvers.
+  - `PostgresQueryProtocol` and its typing; the settings' validation; the schema's query fields; the resolvers.
 - **End-to-end:**
   - a filtered query through GraphQL returns the same typed rows as a subscription's snapshot;
   - a query over the time limit fails, and Materialize stops it;

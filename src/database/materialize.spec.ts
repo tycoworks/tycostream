@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import {
   KeyViolationError,
-  MaterializeProtocolHandler,
+  MaterializeSubscriptionProtocol,
   pairChanges,
   ProgressBatcher,
 } from './materialize.js';
@@ -33,7 +33,7 @@ const progress = (timestamp: number): RawRow => ({
   mz_diff: null,
 });
 
-describe('MaterializeProtocolHandler', () => {
+describe('MaterializeSubscriptionProtocol', () => {
   const idAndName = source([
     { name: 'id', dataType: DataType.Integer },
     { name: 'name', dataType: DataType.String },
@@ -56,16 +56,14 @@ describe('MaterializeProtocolHandler', () => {
     return { client: client as unknown as pg.ClientBase, queries };
   };
 
+  const protocol = new MaterializeSubscriptionProtocol();
   const readAll = (client: pg.ClientBase) =>
-    new MaterializeProtocolHandler(idAndName).read(client, {
-      sql: 'select 1',
-      parameters: [],
-    });
+    protocol.read(client, idAndName, { sql: 'select 1', parameters: [] });
 
   describe('read', () => {
     it('should turn off the idle timeout, then declare a cursor for the query inside a transaction, keeping its parameters', async () => {
       const { client, queries } = fakeClient([[progress(1)]]);
-      const batches = new MaterializeProtocolHandler(idAndName).read(client, {
+      const batches = protocol.read(client, idAndName, {
         sql: 'select "id" from "test" where "id" = $1',
         parameters: [7],
       });
@@ -118,6 +116,49 @@ describe('MaterializeProtocolHandler', () => {
           type: RowUpdateType.Delete,
           fields: new Set(['id']),
           row: { id: 2, name: 'b' },
+        },
+      ]);
+    });
+
+    it('should keep two subscriptions on the one protocol apart, each with its own source and rows', async () => {
+      const prices = source([
+        { name: 'symbol', dataType: DataType.String },
+        { name: 'price', dataType: DataType.Float },
+      ]);
+      const first = fakeClient([
+        [change(1, 1, { id: '1', name: 'a' })],
+        [progress(2)],
+      ]);
+      const second = fakeClient([
+        [change(1, 1, { symbol: 'AAPL', price: '1.5' })],
+        [progress(2)],
+      ]);
+      const firstBatches = protocol.read(first.client, idAndName, {
+        sql: 'select 1',
+        parameters: [],
+      });
+      const secondBatches = protocol.read(second.client, prices, {
+        sql: 'select 2',
+        parameters: [],
+      });
+
+      // Interleaved, so a batcher shared between them would mix their rows
+      const [firstEvents, secondEvents] = await Promise.all([
+        firstBatches.next(),
+        secondBatches.next(),
+      ]);
+      expect(firstEvents.value).toEqual([
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['id', 'name']),
+          row: { id: 1, name: 'a' },
+        },
+      ]);
+      expect(secondEvents.value).toEqual([
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['symbol', 'price']),
+          row: { symbol: 'AAPL', price: 1.5 },
         },
       ]);
     });

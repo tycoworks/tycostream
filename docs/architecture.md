@@ -2,7 +2,9 @@
 
 ## Overview
 
-tycostream turns database views into GraphQL subscriptions. Each view in `schema.yaml` becomes a subscription; each client's subscription is pushed down to Materialize as its own `SUBSCRIBE` of a filtered `SELECT`, so Materialize does the filtering and the snapshot, and tycostream holds no rows beyond the changes it's passing on.
+tycostream turns database views into GraphQL subscriptions. Each source in `schema.yaml` becomes a subscription; each client's subscription is pushed down to Materialize as its own `SUBSCRIBE` of a filtered `SELECT`, so Materialize does the filtering and the snapshot, and tycostream holds no rows beyond the changes it's passing on.
+
+**Sources and views.** A *source* is whatever tycostream reads from: a table or view in the database, as listed in `schema.yaml`. (Not a Materialize `SOURCE`, which brings data into Materialize.) A *view* is one client's filtered window onto a source: a source plus a `where`.
 
 The design and its reasons are in [design/hollow-out.md](./design/hollow-out.md).
 
@@ -23,14 +25,15 @@ Three layers, each a Nest module that depends only on the one below.
 
 ### Database Module (`src/database/`)
 
-Connections and the Materialize protocol. Nothing above it sees SQL or how Materialize reports changes.
+Connections and the database's protocols. Nothing above it sees SQL or how the database reports changes.
 
-- **`DatabaseStreamService`** opens one stream per subscription. It compiles the client's `where` to SQL (`query.ts`), picks the protocol handler, and closes any open streams on shutdown.
+- **`DatabaseService`** is the layer's one export. It opens one stream per subscription, compiling the client's `where` to SQL (`query.ts`) and handing it to the driver; it closes any open streams first thing at shutdown.
+- **`DatabaseDriver`** is a database's way of doing each kind of work: today, its `SubscriptionProtocol`. `DatabaseModule` provides the Materialize driver; choosing another database is that one provider.
 - **`DatabaseConnectionService`** (`connection.service.ts`) is the one place connections are made. A caller says what a connection is for (`ConnectionType`) and gets a lease: a subscription gets a connection of its own. Closing a lease, or aborting the signal it was lent with, ends the connection at once, even mid-statement. It stops lending once shutdown starts.
-- **`DatabaseStream`** (`stream.ts`) is one subscription: it borrows a connection on the first read, hands it to the protocol handler, passes on what the handler yields, and cancels the connection when the client stops. It assumes only the Postgres wire protocol.
-- **`MaterializeProtocolHandler`** (`materialize.ts`) says everything that's said over that connection: `DECLARE … CURSOR FOR SUBSCRIBE (…) WITH (SNAPSHOT, PROGRESS)`, the `FETCH` loop, typing each column as the schema says, holding a timestamp's rows until a progress row passes it, and pairing them into insert, update and delete events.
+- **`DatabaseStream`** (`stream.ts`) is one subscription: it borrows a connection on the first read, hands it to the driver's subscription protocol, passes on what the protocol yields, and cancels the connection when the client stops. It assumes only the Postgres wire protocol.
+- **`MaterializeSubscriptionProtocol`** (`materialize.ts`), the Materialize driver's subscription protocol, says everything that's said over that connection: `DECLARE … CURSOR FOR SUBSCRIBE (…) WITH (SNAPSHOT, PROGRESS)`, the `FETCH` loop, typing each column as the schema says, holding a timestamp's rows until a progress row passes it, and pairing them into insert, update and delete events.
 
-The contract between this layer and the next is `ProtocolHandler.read`: tycostream's row events, one complete timestamp at a time. Another database would be another protocol handler.
+Every subscription protocol yields the same thing: tycostream's row events, one complete timestamp at a time. Another database would be another driver.
 
 ### View Module (`src/view/`)
 
@@ -38,7 +41,7 @@ The domain layer. `ViewService` is a pass-through to the database layer for now;
 
 ### API Module (`src/api/`)
 
-- Generates the GraphQL schema from `schema.yaml`: a type, an update type and a filter input per view.
+- Generates the GraphQL schema from `schema.yaml`: a type, an update type and a filter input per source.
 - `SubscriptionService` passes the client's `where` down, and turns each event into a GraphQL update, sending only the fields the event names.
 - The resolvers hand GraphQL the service's iterator directly, so a client that disconnects closes its database connection at once.
 
@@ -52,13 +55,13 @@ The domain layer. `ViewService` is a pass-through to the database layer for now;
 ## Data Flow
 
 1. **A client subscribes** over SSE, with an optional `where`.
-2. **The filter becomes SQL.** The `where` passes through the view layer to `DatabaseStreamService`, which compiles it to `SELECT … WHERE …` with its values as bind parameters. An invalid filter fails here, before any connection opens.
+2. **The filter becomes SQL.** The `where` passes through the view layer to `DatabaseService`, which compiles it to `SELECT … WHERE …` with its values as bind parameters. An invalid filter fails here, before any connection opens.
 3. **The client gets its own connection and `SUBSCRIBE`.** Materialize sends the matching rows as of one timestamp (the snapshot), then every change after it, with a progress row whenever a timestamp is complete.
 4. **Each complete timestamp becomes events.** Identical rows are netted, then each key's −1 and +1 are paired: a +1 alone is an insert, a −1 alone a delete, both an update of the columns that differ. A row entering or leaving the client's filter arrives as a lone +1 or −1, so it's an insert or a delete.
 5. **The client gets each event** as a GraphQL update. A slow client holds the next `FETCH` back, so its backlog queues in Materialize, which caps it.
 6. **The client disconnects,** and its connection closes, which drops the `SUBSCRIBE` in Materialize.
 
-A database error, or a view whose key turns out not to be unique, ends that one subscription with a GraphQL error. The server keeps running.
+A database error, or a source whose key turns out not to be unique, ends that one subscription with a GraphQL error. The server keeps running.
 
 ## Key Design Decisions
 
@@ -86,7 +89,7 @@ The full list is in [design/hollow-out.md](./design/hollow-out.md#decisions). Th
 
 ## Future Evolution
 
-- **Queries per view** through a connection pool: [design/queries.md](./design/queries.md)
+- **Queries per source** through a connection pool: [design/queries.md](./design/queries.md)
 - **Sharing between clients** with identical or overlapping filters, model-checked
 - **Permissions** in the view layer
 - **Monitoring**: OpenTelemetry instrumentation points

@@ -3,8 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { MATERIALIZE_IMAGE } from './utils/index.js';
 import { DatabaseConnectionService } from '../src/database/connection.service.js';
-import { DatabaseStreamService } from '../src/database/stream.service.js';
-import type { ChangeBatches } from '../src/database/types.js';
+import { DatabaseService } from '../src/database/database.service.js';
+import { materializeDriver } from '../src/database/materialize.js';
+import type { RowUpdateBatches } from '../src/database/types.js';
 import type { DatabaseConfig } from '../src/config/database.config.js';
 import type { SourceDefinition } from '../src/config/source.types.js';
 import type { RowUpdateEvent, WhereClause } from '../src/common/types.js';
@@ -31,7 +32,7 @@ const sleep = (ms: number) =>
 
 // The next batch, or a failure if none arrives in time
 async function nextBatch(
-  batches: ChangeBatches,
+  batches: RowUpdateBatches,
   timeoutMs = 10000,
 ): Promise<RowUpdateEvent[]> {
   const result = await Promise.race([batches.next(), sleep(timeoutMs)]);
@@ -47,11 +48,11 @@ async function nextBatch(
 const byId = (batch: RowUpdateEvent[]) =>
   [...batch].sort((a, b) => (a.row.id as number) - (b.row.id as number));
 
-describe('Database streams on Materialize', () => {
+describe('Database databaseService on Materialize', () => {
   let container: StartedTestContainer;
   let admin: pg.Client;
   let connectionService: DatabaseConnectionService;
-  let streams: DatabaseStreamService;
+  let databaseService: DatabaseService;
 
   const sql = (statement: string) => admin.query(statement);
   const createTable = (name: string) =>
@@ -59,7 +60,7 @@ describe('Database streams on Materialize', () => {
       `CREATE TABLE ${name} (id INT, symbol TEXT, qty NUMERIC, big BIGINT, live BOOLEAN, at TIMESTAMP)`,
     );
   const subscribe = (source: SourceDefinition, where?: WhereClause) =>
-    streams.subscribe(source, where);
+    databaseService.subscribe(source, where);
   const subscriptions = async () => {
     const result = await admin.query<{ n: string }>(
       'SELECT count(*) AS n FROM mz_internal.mz_subscriptions',
@@ -95,7 +96,7 @@ describe('Database streams on Materialize', () => {
       get: () => config,
     } as unknown as ConfigService);
     connectionService.onModuleInit();
-    streams = new DatabaseStreamService(connectionService);
+    databaseService = new DatabaseService(connectionService, materializeDriver);
   }, 180000);
 
   afterAll(async () => {
@@ -345,7 +346,7 @@ describe('Database streams on Materialize', () => {
     await nextBatch(second);
     expect(await subscriptions()).toBe(2);
 
-    await streams.onModuleDestroy();
+    await databaseService.onModuleDestroy();
     expect(await waitForSubscriptions(0)).toBe(0);
     expect((await first.next()).done).toBe(true);
   });

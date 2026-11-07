@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { DatabaseStreamService } from './stream.service.js';
+import { DatabaseService } from './database.service.js';
 import { DatabaseConnectionService } from './connection.service.js';
 import { DatabaseStream } from './stream.js';
-import { MaterializeProtocolHandler } from './materialize.js';
+import { DatabaseDriver } from './types.js';
+import type { SubscriptionProtocol } from './types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import type { Mock } from 'vitest';
@@ -46,9 +47,12 @@ const trades: SourceDefinition = {
   ],
 };
 
-describe('DatabaseStreamService', () => {
-  let service: DatabaseStreamService;
+describe('DatabaseService', () => {
+  let service: DatabaseService;
   const connectionService = {} as DatabaseConnectionService;
+  const driver: DatabaseDriver = {
+    subscriptions: {} as SubscriptionProtocol,
+  };
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -56,22 +60,23 @@ describe('DatabaseStreamService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        DatabaseStreamService,
+        DatabaseService,
         { provide: DatabaseConnectionService, useValue: connectionService },
+        { provide: DatabaseDriver, useValue: driver },
       ],
     }).compile();
 
-    service = module.get<DatabaseStreamService>(DatabaseStreamService);
+    service = module.get<DatabaseService>(DatabaseService);
   });
 
   describe('subscribe', () => {
-    it('should open a stream on the connection service, with a Materialize handler and the compiled filter', () => {
+    it("should open a stream on the connection service, with the source, the driver's subscription protocol and the compiled filter", () => {
       service.subscribe(trades, { symbol: { _eq: 'AAPL' } });
 
       expect(DatabaseStream).toHaveBeenCalledWith(
         connectionService,
-        'trades',
-        expect.any(MaterializeProtocolHandler),
+        trades,
+        driver.subscriptions,
         expect.objectContaining({
           sql: expect.stringContaining('where "symbol" = $1'),
           parameters: ['AAPL'],

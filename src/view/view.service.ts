@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { DatabaseStreamService } from '../database/stream.service.js';
-import type { ChangeBatches } from '../database/types.js';
+import { DatabaseService } from '../database/database.service.js';
+import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { WhereClause } from '../common/types.js';
 
@@ -12,14 +12,14 @@ import type { WhereClause } from '../common/types.js';
  */
 @Injectable()
 export class ViewService {
-  constructor(private readonly streamService: DatabaseStreamService) {}
+  constructor(private readonly databaseService: DatabaseService) {}
 
   /**
    * A view of a source's rows that match the filter: its row events, one
    * complete timestamp at a time, the snapshot first. Ending the iteration
    * closes the view.
    */
-  subscribe(source: SourceDefinition, where?: WhereClause): ChangeBatches {
-    return this.streamService.subscribe(source, where);
+  subscribe(source: SourceDefinition, where?: WhereClause): RowUpdateBatches {
+    return this.databaseService.subscribe(source, where);
   }
 }

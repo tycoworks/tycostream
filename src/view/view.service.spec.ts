@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ViewService } from './view.service.js';
-import { DatabaseStreamService } from '../database/stream.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import type { Mocked } from 'vitest';
@@ -13,18 +13,18 @@ const trades: SourceDefinition = {
 
 describe('ViewService', () => {
   let viewService: ViewService;
-  let streamService: Mocked<DatabaseStreamService>;
+  let databaseService: Mocked<DatabaseService>;
   const changes = { return: vi.fn() };
 
   beforeEach(async () => {
-    streamService = {
+    databaseService = {
       subscribe: vi.fn().mockReturnValue(changes),
-    } as unknown as Mocked<DatabaseStreamService>;
+    } as unknown as Mocked<DatabaseService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ViewService,
-        { provide: DatabaseStreamService, useValue: streamService },
+        { provide: DatabaseService, useValue: databaseService },
       ],
     }).compile();
 
@@ -35,13 +35,13 @@ describe('ViewService', () => {
     const where = { id: { _eq: 1 } };
 
     expect(viewService.subscribe(trades, where)).toBe(changes);
-    expect(streamService.subscribe).toHaveBeenCalledWith(trades, where);
+    expect(databaseService.subscribe).toHaveBeenCalledWith(trades, where);
   });
 
   it('should open a separate database subscription for each view', () => {
     viewService.subscribe(trades);
     viewService.subscribe(trades);
 
-    expect(streamService.subscribe).toHaveBeenCalledTimes(2);
+    expect(databaseService.subscribe).toHaveBeenCalledTimes(2);
   });
 });

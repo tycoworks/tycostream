@@ -7,7 +7,7 @@ import {
 import { ViewService } from '../view/view.service.js';
 import { RowUpdateType } from '../common/types.js';
 import type { RowUpdateEvent } from '../common/types.js';
-import type { ChangeBatches } from '../database/types.js';
+import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import type { Mocked } from 'vitest';
@@ -38,7 +38,7 @@ describe('SubscriptionService', () => {
       await stop;
       closed();
     });
-    viewService.subscribe.mockReturnValue(view as ChangeBatches);
+    viewService.subscribe.mockReturnValue(view as RowUpdateBatches);
     return closed;
   };
 
@@ -72,12 +72,12 @@ describe('SubscriptionService', () => {
     vi.clearAllMocks();
   });
 
-  describe('createSubscription', () => {
+  describe('subscribe', () => {
     it('should pass the source and filter to the view', () => {
       viewOf();
       const where = { name: { _eq: 'test' } };
 
-      subscriptionService.createSubscription(testSourceDefinition, where);
+      subscriptionService.subscribe(testSourceDefinition, where);
 
       expect(viewService.subscribe).toHaveBeenCalledWith(
         testSourceDefinition,
@@ -88,8 +88,7 @@ describe('SubscriptionService', () => {
     it('should send an insert with the whole row', async () => {
       viewOf([{ type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW }]);
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = subscriptionService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
         {
@@ -109,8 +108,7 @@ describe('SubscriptionService', () => {
         },
       ]);
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = subscriptionService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
         {
@@ -126,8 +124,7 @@ describe('SubscriptionService', () => {
         { type: RowUpdateType.Delete, fields: new Set(['id']), row: ROW },
       ]);
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = subscriptionService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
         {
@@ -151,8 +148,7 @@ describe('SubscriptionService', () => {
         [{ type: RowUpdateType.Delete, fields: new Set(['id']), row: ROW }],
       );
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = subscriptionService.subscribe(testSourceDefinition);
 
       expect(
         (
@@ -172,8 +168,7 @@ describe('SubscriptionService', () => {
       const closed = viewOf([
         { type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW },
       ]);
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = subscriptionService.subscribe(testSourceDefinition);
       await take(updates, 1);
 
       // Waiting for an update that never comes
@@ -187,11 +182,10 @@ describe('SubscriptionService', () => {
       viewService.subscribe.mockReturnValue(
         new Repeater<RowUpdateEvent[]>((_push, stop) => {
           void stop(new Error('connection lost'));
-        }) as ChangeBatches,
+        }) as RowUpdateBatches,
       );
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = subscriptionService.subscribe(testSourceDefinition);
 
       await expect(updates.next()).rejects.toThrow('connection lost');
     });
@@ -202,7 +196,7 @@ describe('SubscriptionService', () => {
       });
 
       expect(() =>
-        subscriptionService.createSubscription(testSourceDefinition, {
+        subscriptionService.subscribe(testSourceDefinition, {
           nope: { _eq: 1 },
         }),
       ).toThrow('Unknown field');

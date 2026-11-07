@@ -19,14 +19,14 @@ type SubscriptionResolver = {
  * Acts as a thin pass-through to SubscriptionService
  */
 function createSourceSubscriptionResolver(
-  sourceDefinition: SourceDefinition,
+  source: SourceDefinition,
   subscriptionService: SubscriptionService,
 ): SubscriptionResolver {
   return {
     // Returns the service's iterator itself, not a generator wrapping it, so
     // a client that disconnects closes its subscription at once
     subscribe: (_parent, args) =>
-      subscriptionService.createSubscription(sourceDefinition, args.where),
+      subscriptionService.subscribe(source, args.where),
     resolve: (update) => update,
   };
 }
@@ -41,9 +41,9 @@ export function buildSubscriptionResolvers(
 ): Record<string, SubscriptionResolver> {
   const resolvers: Record<string, SubscriptionResolver> = {};
 
-  sources.forEach((sourceDefinition, sourceName) => {
+  sources.forEach((source, sourceName) => {
     resolvers[sourceName] = createSourceSubscriptionResolver(
-      sourceDefinition,
+      source,
       subscriptionService,
     );
   });

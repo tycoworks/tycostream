@@ -45,15 +45,15 @@ export class SubscriptionService {
    * Transforms row events into GraphQL updates. Throws if the filter is
    * invalid; a database error ends this subscription with that error.
    */
-  createSubscription(
-    sourceDefinition: SourceDefinition,
+  subscribe(
+    source: SourceDefinition,
     where?: WhereClause,
   ): AsyncIterableIterator<GraphQLUpdate> {
     this.logger.log(
-      `Subscription for ${sourceDefinition.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`,
+      `Subscription for ${source.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`,
     );
 
-    const batches = this.viewService.subscribe(sourceDefinition, where);
+    const batches = this.viewService.subscribe(source, where);
 
     return new Repeater<GraphQLUpdate>(async (push, stop) => {
       const forward = async () => {
@@ -61,7 +61,7 @@ export class SubscriptionService {
           for (const event of events) {
             const update = this.transformToGraphQLUpdate(event);
             this.logger.debug(
-              `Sending GraphQL update - source: ${sourceDefinition.name}, operation: ${update.operation}, ` +
+              `Sending GraphQL update - source: ${source.name}, operation: ${update.operation}, ` +
                 `data: ${truncateForLog(update.data)}, fields: [${update.fields.join(', ')}]`,
             );
             await push(update);

@@ -26,7 +26,7 @@ export enum ConnectionType {
  * A connection lent to one caller. close() when finished with it, or let
  * `await using` do it; aborting the signal given to acquire() cancels it.
  */
-export interface Lease extends AsyncDisposable {
+export interface ConnectionLease extends AsyncDisposable {
   readonly client: pg.ClientBase;
   close(): Promise<void>;
 }
@@ -61,7 +61,10 @@ export class DatabaseConnectionService
    * any point, ends the connection at once, even while it's connecting or
    * mid-statement; while connecting, acquire() then rejects.
    */
-  async acquire(type: ConnectionType, signal?: AbortSignal): Promise<Lease> {
+  async acquire(
+    type: ConnectionType,
+    signal?: AbortSignal,
+  ): Promise<ConnectionLease> {
     if (!this.lending) {
       throw new Error("tycostream is shutting down; it's not connecting");
     }
@@ -80,7 +83,7 @@ export class DatabaseConnectionService
     this.lending = false;
   }
 
-  private async connectOwn(signal?: AbortSignal): Promise<Lease> {
+  private async connectOwn(signal?: AbortSignal): Promise<ConnectionLease> {
     const client = new pg.Client({
       ...this.sharedSettings(),
       query_timeout: 0, // A subscription's reads have no time limit

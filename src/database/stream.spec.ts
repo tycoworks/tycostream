@@ -2,12 +2,22 @@ import { EventEmitter } from 'node:events';
 import type pg from 'pg';
 import { DatabaseStream } from './stream.js';
 import { ConnectionType } from './connection.service.js';
-import type { DatabaseConnectionService, Lease } from './connection.service.js';
-import type { ProtocolHandler } from './types.js';
-import { RowUpdateType } from '../common/types.js';
+import type {
+  DatabaseConnectionService,
+  ConnectionLease,
+} from './connection.service.js';
+import type { SubscriptionProtocol } from './types.js';
+import { DataType, RowUpdateType } from '../common/types.js';
+import type { SourceDefinition } from '../config/source.types.js';
 import type { RowUpdateEvent } from '../common/types.js';
 
 const QUERY = { sql: 'select 1', parameters: [] };
+
+const TRADES: SourceDefinition = {
+  name: 'trades',
+  primaryKeyField: 'id',
+  fields: [{ name: 'id', dataType: DataType.Integer }],
+};
 
 const insert = (id: number): RowUpdateEvent => ({
   type: RowUpdateType.Insert,
@@ -24,13 +34,13 @@ const fakeConnectionService = ({ connects = true } = {}) => {
     client.emit('end');
     return Promise.resolve();
   });
-  const lease: Lease = {
+  const lease: ConnectionLease = {
     client,
     close,
     [Symbol.asyncDispose]: close,
   };
   const acquire = vi.fn(
-    (_type: ConnectionType, signal?: AbortSignal): Promise<Lease> =>
+    (_type: ConnectionType, signal?: AbortSignal): Promise<ConnectionLease> =>
       new Promise((resolve, reject) => {
         signal?.addEventListener('abort', () => {
           void close();
@@ -49,9 +59,9 @@ const fakeConnectionService = ({ connects = true } = {}) => {
   };
 };
 
-// A handler that yields these batches, then either ends or, as
+// A protocol that yields these batches, then either ends or, as
 // Materialize's does on an idle view, waits until its connection ends
-const handlerOf = (batches: RowUpdateEvent[][], ends = false) => ({
+const protocolOf = (batches: RowUpdateEvent[][], ends = false) => ({
   read: vi.fn(async function* (client: pg.ClientBase) {
     for (const batch of batches) {
       yield batch;
@@ -66,14 +76,14 @@ const handlerOf = (batches: RowUpdateEvent[][], ends = false) => ({
 
 const streamOf = (
   connectionService: DatabaseConnectionService,
-  handler: ProtocolHandler,
-) => new DatabaseStream(connectionService, 'trades', handler, QUERY);
+  protocol: SubscriptionProtocol,
+) => new DatabaseStream(connectionService, TRADES, protocol, QUERY);
 
 describe('DatabaseStream', () => {
-  it('should borrow a subscription connection, hand it and the query to the handler, and pass on its batches in order', async () => {
+  it('should borrow a subscription connection, hand it, the source and the query to the protocol, and pass on its batches in order', async () => {
     const { connectionService, acquire, client } = fakeConnectionService();
-    const handler = handlerOf([[insert(1)], [insert(2)]]);
-    const changes = streamOf(connectionService, handler).read();
+    const protocol = protocolOf([[insert(1)], [insert(2)]]);
+    const changes = streamOf(connectionService, protocol).read();
 
     expect((await changes.next()).value).toEqual([insert(1)]);
     expect((await changes.next()).value).toEqual([insert(2)]);
@@ -82,7 +92,7 @@ describe('DatabaseStream', () => {
       ConnectionType.Subscription,
       expect.any(AbortSignal),
     );
-    expect(handler.read).toHaveBeenCalledWith(client, QUERY);
+    expect(protocol.read).toHaveBeenCalledWith(client, TRADES, QUERY);
     await changes.return();
   });
 
@@ -90,10 +100,12 @@ describe('DatabaseStream', () => {
     const { connectionService, acquire } = fakeConnectionService();
     const onOpen = vi.fn();
     const onClose = vi.fn();
-    const changes = streamOf(connectionService, handlerOf([[insert(1)]])).read({
-      onOpen,
-      onClose,
-    });
+    const changes = streamOf(connectionService, protocolOf([[insert(1)]])).read(
+      {
+        onOpen,
+        onClose,
+      },
+    );
 
     await changes.return();
 
@@ -106,10 +118,12 @@ describe('DatabaseStream', () => {
     const { connectionService, acquire, close } = fakeConnectionService();
     const onOpen = vi.fn();
     const onClose = vi.fn();
-    const changes = streamOf(connectionService, handlerOf([[insert(1)]])).read({
-      onOpen,
-      onClose,
-    });
+    const changes = streamOf(connectionService, protocolOf([[insert(1)]])).read(
+      {
+        onOpen,
+        onClose,
+      },
+    );
     await changes.next();
 
     // Waiting for a batch that never comes
@@ -127,9 +141,9 @@ describe('DatabaseStream', () => {
     const { connectionService, acquire } = fakeConnectionService({
       connects: false,
     });
-    const handler = handlerOf([[insert(1)]]);
+    const protocol = protocolOf([[insert(1)]]);
     const onClose = vi.fn();
-    const changes = streamOf(connectionService, handler).read({ onClose });
+    const changes = streamOf(connectionService, protocol).read({ onClose });
 
     void changes.next();
     await vi.waitFor(() => expect(acquire).toHaveBeenCalled());
@@ -137,13 +151,13 @@ describe('DatabaseStream', () => {
 
     expect(acquire.mock.calls[0][1]!.aborted).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(handler.read).not.toHaveBeenCalled();
+    expect(protocol.read).not.toHaveBeenCalled();
   });
 
   it('should end with the error, and close, when the connection fails', async () => {
     const { connectionService, client, close } = fakeConnectionService();
     const onClose = vi.fn();
-    const changes = streamOf(connectionService, handlerOf([])).read({
+    const changes = streamOf(connectionService, protocolOf([])).read({
       onClose,
     });
     const next = changes.next();
@@ -161,7 +175,7 @@ describe('DatabaseStream', () => {
     const connectionService = {
       acquire: () => Promise.reject(new Error('ECONNREFUSED')),
     } as unknown as DatabaseConnectionService;
-    const changes = streamOf(connectionService, handlerOf([])).read({
+    const changes = streamOf(connectionService, protocolOf([])).read({
       onClose,
     });
 
@@ -169,28 +183,28 @@ describe('DatabaseStream', () => {
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it('should end with the error, and close, when the handler fails', async () => {
+  it('should end with the error, and close, when the protocol fails', async () => {
     const { connectionService, close } = fakeConnectionService();
-    const handler: ProtocolHandler = {
+    const protocol: SubscriptionProtocol = {
       // eslint-disable-next-line require-yield
       read: async function* () {
         throw new Error("the key isn't unique");
       },
     };
     const onClose = vi.fn();
-    const changes = streamOf(connectionService, handler).read({ onClose });
+    const changes = streamOf(connectionService, protocol).read({ onClose });
 
     await expect(changes.next()).rejects.toThrow("the key isn't unique");
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(close).toHaveBeenCalled();
   });
 
-  it('should end, and close, when the handler finishes by itself', async () => {
+  it('should end, and close, when the protocol finishes by itself', async () => {
     const { connectionService, close } = fakeConnectionService();
     const onClose = vi.fn();
     const changes = streamOf(
       connectionService,
-      handlerOf([[insert(1)]], true),
+      protocolOf([[insert(1)]], true),
     ).read({
       onClose,
     });

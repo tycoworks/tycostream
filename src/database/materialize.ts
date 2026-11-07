@@ -3,7 +3,7 @@ import type { SourceDefinition } from '../config/source.types.js';
 import { DataType, RowUpdateType } from '../common/types.js';
 import type { RowUpdateEvent } from '../common/types.js';
 import type { CompiledQuery } from './query.js';
-import type { ProtocolHandler } from './types.js';
+import type { DatabaseDriver, SubscriptionProtocol } from './types.js';
 
 /**
  * One fetched row as Materialize sends it: every column as text, or null,
@@ -42,14 +42,13 @@ const FETCH_SIZE = 1000;
  * Handles Materialize-specific protocol details: reads
  * SUBSCRIBE (<query>) WITH (SNAPSHOT, PROGRESS) through a cursor
  */
-export class MaterializeProtocolHandler implements ProtocolHandler {
-  constructor(private readonly sourceDefinition: SourceDefinition) {}
-
+export class MaterializeSubscriptionProtocol implements SubscriptionProtocol {
   /**
    * Never ends by itself; it stops when the connection closes
    */
   async *read(
     client: pg.ClientBase,
+    source: SourceDefinition,
     query: CompiledQuery,
   ): AsyncGenerator<RowUpdateEvent[]> {
     // The transaction sits idle while the consumer works through a batch.
@@ -64,8 +63,8 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     );
 
     // FETCH without a timeout returns as soon as rows exist
-    const batcher = new ProgressBatcher(this.sourceDefinition);
-    const { primaryKeyField, fields } = this.sourceDefinition;
+    const batcher = new ProgressBatcher(source);
+    const { primaryKeyField, fields } = source;
     const fieldNames = fields.map((field) => field.name);
     while (true) {
       const { rows } = await client.query<RawRow>(
@@ -81,6 +80,13 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     }
   }
 }
+
+/**
+ * Materialize: its own subscriptions
+ */
+export const materializeDriver: DatabaseDriver = {
+  subscriptions: new MaterializeSubscriptionProtocol(),
+};
 
 /**
  * Holds a subscription's rows until a progress row says their timestamp is
