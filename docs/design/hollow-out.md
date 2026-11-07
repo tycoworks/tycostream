@@ -71,7 +71,7 @@ Three research passes on 6 Nov, with claims marked "verified" run against `mater
 | D3 | Filter values as bind parameters, pinned by an end-to-end test; `escapeLiteral` as the fallback if a Materialize release drops them | Verified but undocumented |
 | D4 | Kysely, compile-only, for the `SELECT … WHERE`; our own `where` walker on top | Safe quoting and parameters without an ORM |
 | D5 | A `Repeater` per subscription, ending with `ROLLBACK` and `client.end()` in its cleanup, in place of today's RxJS `Observable` plus `eachValueFrom` (rxjs-for-await) | `eachValueFrom` only unsubscribes once the next value arrives, so on a quiet view a disconnected client would hold its connection and dataflow open; it also queues values without limit. A `Repeater` cleans up at once and its `push` waits for the client, so a slow client's backlog stays in Materialize, which caps it. RxJS can come back for post 4's sharing, which is what it's good at, with a `Repeater` still at the GraphQL edge |
-| D6 | Change processing is a pure module in the view layer: net a complete timestamp's identical rows, then pair `−1`/`+1` per key. Buffering to progress is the protocol handler's job | No I/O, so it unit-tests well, and it's what post 4's model describes. Pairing works on any `{ diff, row }`, so it isn't Materialize's |
+| D6 | Each database's protocol handler yields tycostream's row events, one complete timestamp at a time. Materialize's turns raw diffs into events with pure functions: buffer to progress, net identical rows, pair `−1`/`+1` per key | The events are the contract every database meets; pairing is how Materialize meets it, since it only sends bare diffs. Pure functions unit-test well, and they're what post 4's model describes |
 | D7 | Drop `pg-copy-streams`, the COPY text parser, `rxjs-for-await` and our own RxJS use | `DECLARE`/`FETCH` returns typed rows; Nest still depends on RxJS itself |
 | D8 | Database errors end the one subscription with a GraphQL error | Requirement 5 |
 | D9 | Keep `schema.yaml` as tycostream's contract: the views it serves, their keys, columns and enums. No discovery from the catalog (Chris, 6 Nov) | It says exactly what's exposed over GraphQL; a gateway expecting one schema should notice when the database differs, not silently follow it; and other streaming databases expose metadata differently |
@@ -116,15 +116,15 @@ The three layers stay, each a Nest module that depends only on the one below. Wh
 
 ```
 ApiModule       resolver ── where ──► ViewService.subscribe(view, where)
-                    ▲                        │
-                    │ GraphQL updates        │ buildSelect (query.ts)
-                    │ (Repeater)             ▼
-ViewModule      ViewService ◄── events ── pairChanges (changes.ts)
-                    ▲                        ▲
-                    │                        │ one complete timestamp of { diff, row }
-DatabaseModule  DatabaseStreamService ──► DatabaseStream ── uses ──► MaterializeProtocolHandler
-                                          own pg.Client,            DECLARE/FETCH statements,
-                                          FETCH loop, cleanup       typed rows, batch by progress
+                    ▲                        │ where
+                    │ GraphQL updates        ▼
+ViewModule      ViewService (pass-through)
+                    ▲                        │ where
+                    │ events per timestamp   ▼
+DatabaseModule  DatabaseStreamService ──► DatabaseStream ── client ──► MaterializeProtocolHandler
+                buildSelect (query.ts)    own pg.Client, Repeater,     DECLARE, the FETCH loop,
+                                          backpressure, cleanup        typed rows, batch by progress,
+                                                                       pair diffs into events
 ```
 
 **How the work divides today:**
@@ -136,14 +136,14 @@ DatabaseModule  DatabaseStreamService ──► DatabaseStream ── uses ─�
 **After the change:**
 
 - **`DatabaseModule`** (connections and protocol):
-  - `DatabaseStream` still owns the connection, now one per subscription: a `pg.Client` built from the database config, the protocol's open statements, a `FETCH` loop, and cleanup (`client.end()`) when the consumer stops. It's database-neutral, and yields one complete timestamp of `{ diff, row }` at a time through a `Repeater`, so its `push` gives backpressure.
-  - `MaterializeProtocolHandler` stays protocol only, and pure: the `BEGIN`/`DECLARE … CURSOR FOR SUBSCRIBE`/`FETCH` statements, typing each column by the schema, and holding a timestamp's rows until a progress row passes it.
-  - `DatabaseStreamService` creates a stream per subscription instead of caching one per view, and closes any still open on shutdown.
-  - `query.ts` (step 2) compiles a `where` filter to SQL, because SQL is the database layer's concern.
+  - **The contract every database meets:** `ProtocolHandler.read(client, query)` yields tycostream's row events (`RowUpdateEvent`: insert, update or delete), one complete timestamp at a time. Nothing above the database layer sees how a database reports changes.
+  - **Inside the layer, the boundary is the connection.** `DatabaseStream` owns it and knows nothing of what's said over it; the protocol handler says everything and owns no connection.
+  - `DatabaseStream` still owns the connection, now one per subscription: a `pg.Client` built from the database config, closed (`client.end()`) when the consumer stops. It hands the open connection to the protocol handler and passes on the handler's batches of events through a `Repeater`, whose `push` gives backpressure. It assumes only the Postgres wire protocol.
+  - `materialize.ts` is the whole Materialize driver. `MaterializeProtocolHandler` does everything over the connection: `BEGIN` and `DECLARE … CURSOR FOR SUBSCRIBE`, the `FETCH` loop, typing each column by the schema, holding a timestamp's rows until a progress row passes it, and pairing them into events (today's `changes.ts`, folded in). The batching and pairing are pure functions, unit-tested without a database. A key violation ends that one subscription.
+  - `DatabaseStreamService.subscribe(view, where)` compiles the `where` with `query.ts` (step 2), picks the protocol handler, and opens a stream per subscription instead of caching one per view. It closes any still open on shutdown. So the layers above never see SQL or Materialize.
   - From step 5, the `pg.Pool` provider for plain queries.
 - **`ViewModule`** (the domain), a pass-through for now:
-  - `ViewService.subscribe(view, where)` looks up the view's definition, compiles the `where`, opens a stream, and turns each timestamp into events with `pairChanges`.
-  - `changes.ts` (step 3) moves here from `src/database/`.
+  - `ViewService.subscribe(view, where)` looks up the view's definition, passes it and the `where` to `DatabaseStreamService`, and returns its events.
   - Keeping the layer means post 4's shared cache goes back where it was, between the stream and the subscribers, without touching the API or the database code.
 - **`ApiModule`:** schema generation unchanged. `SubscriptionService` passes the `where` straight to `ViewService` and maps events to GraphQL updates. The resolver returns a `Repeater`. From step 5, query resolvers.
 - **`src/common/types.ts`** holds what the layers share: the `where` operators and types, and the row events.
@@ -153,9 +153,15 @@ DatabaseModule  DatabaseStreamService ──► DatabaseStream ── uses ─�
 
 tycostream only supports Materialize, but the new code keeps Materialize's specifics in one place, so another streaming database could be added later.
 
-- **Database-neutral:** `query.ts` writes Postgres-dialect SQL, `DatabaseStream` runs whatever statements its protocol handler gives it, and `changes.ts` pairs rows that each carry a +1 or -1 (`{ diff, row }`).
-- **Materialize-specific, all in `MaterializeProtocolHandler`:** `DECLARE … CURSOR FOR SUBSCRIBE`, `FETCH`, the `mz_timestamp`, `mz_progressed` and `mz_diff` columns, and buffering each timestamp until progress passes it. Another database would be another `ProtocolHandler`, as today.
-- **RisingWave, as of the 5 Nov research (to re-check before relying on it):** its subscription cursors mark each row with an `op` (Insert, Delete, UpdateDelete, UpdateInsert), which maps onto +1 and -1, so `changes.ts` would work as it is. But it can't subscribe to an ad hoc query, only to an existing table or materialized view, so a client's `where` couldn't be pushed down; tycostream would have to check it in memory, which is the evaluator post 4 brings back anyway.
+- **Database-neutral:** `query.ts` writes Postgres-dialect SQL, `DatabaseStream` owns a Postgres-protocol connection and nothing else, and every handler yields the same row events.
+- **Materialize-specific, all in `materialize.ts`:** `DECLARE … CURSOR FOR SUBSCRIBE`, the `FETCH` loop, the `mz_timestamp`, `mz_progressed` and `mz_diff` columns, buffering each timestamp until progress passes it, and pairing bare diffs into events. Another database would be another `ProtocolHandler`, as today.
+- **RisingWave, as of the 5 Nov research (to re-check before relying on it):** it speaks the Postgres protocol and reads subscriptions through cursors, so it would be a second protocol handler, with no change to `DatabaseStream`. That handler would differ in ways the boundary allows for:
+  - it creates a subscription object first, and drops it at the end, because closing the connection doesn't;
+  - `FETCH` without a timeout returns at once, so it fetches `WITH (timeout = …)`;
+  - there are no progress rows, so it decides when a timestamp is complete some other way;
+  - each row carries an `op` (Insert, Delete, UpdateDelete, UpdateInsert), so it could build the events straight from those, without Materialize's pairing.
+- **What RisingWave can't do:** subscribe to an ad hoc query, only to an existing table or materialized view. So a client's `where` couldn't be pushed down; tycostream would have to check it in memory, which is the evaluator post 4 brings back anyway.
+- **A database without the Postgres protocol** would need its own stream class too.
 
 ## Sequence
 
@@ -166,8 +172,9 @@ One commit per step, merged without squashing. Tests for each step are agreed wi
 2. **The SQL compiler,** beside today's JavaScript one, with unit tests: quoting hostile names, parameters, every operator, nesting, `_not`, empty `_in`/`_nin`, enum values. Nothing uses it yet. (Done.)
 3. **The change processor,** with unit tests: insert, update with changed fields, delete, netting, several keys in one timestamp, rows in any order, entering and leaving a filter, key violations. (Done.)
 4. **The swap, in one commit.** Replace the old subscribe path with the new one, layer by layer as above:
-   - `MaterializeProtocolHandler` becomes the `DECLARE`/`FETCH` protocol, `DatabaseStream` the `FETCH` loop, `DatabaseStreamService` one stream per subscription;
-   - `ViewService` becomes the pass-through, and `changes.ts` moves into `src/view/`;
+   - `MaterializeProtocolHandler` becomes the `DECLARE`/`FETCH` protocol, `DatabaseStream` a connection per subscription, `DatabaseStreamService` the place a `where` becomes SQL;
+   - `changes.ts` folds into `materialize.ts`, so the handler yields events;
+   - `ViewService` becomes the pass-through;
    - the API passes `where` through and returns a `Repeater`;
    - delete everything listed as gone above;
    - a database error ends one subscription, not the server.
