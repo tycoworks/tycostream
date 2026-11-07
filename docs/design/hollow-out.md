@@ -1,6 +1,6 @@
 # Plan: hollow out tycostream
 
-Status: agreed with Chris, 6 Nov 2026; architecture and sequence revised 7 Nov. Branch: `hollow-out`. Steps 0–3 done.
+Status: agreed with Chris, 6 Nov 2026; architecture and sequence revised 7 Nov. Branch: `hollow-out`. Steps 0–4 done; the branch ends with step 5. Queries per view moved to their own plan, `queries.md` (Chris, 7 Nov).
 
 ## Summary
 
@@ -111,7 +111,7 @@ Found by reading the code on 5 Nov; only the first gets its own test (step 1).
 ### Also carried over
 
 - **The custom end-to-end harness stays for post 2,** because it tests through GraphQL clients against a real Materialize, which is what shows the change is invisible to clients. It goes in post 4.
-- **Queries per view (step 5)** share their subscription's name, as Hasura's do; GraphQL allows a query and a subscription with the same name.
+- **Queries per view (`queries.md`)** share their subscription's name, as Hasura's do; GraphQL allows a query and a subscription with the same name.
 - **`docs/design/calculated_states.md` and `timestamp_propagation.md`** mention triggers; Chris keeps them until the Restate work is done.
 
 ## Architecture after the change
@@ -145,11 +145,11 @@ DatabaseModule  DatabaseStreamService ──► DatabaseStream ── client ─
   - `DatabaseStream` still owns the connection, now one per subscription: a `pg.Client` built from the database config, closed (`client.end()`) when the consumer stops. It hands the open connection to the protocol handler and passes on the handler's batches of events through a `Repeater`, whose `push` gives backpressure. It assumes only the Postgres wire protocol.
   - `materialize.ts` is the whole Materialize driver. `MaterializeProtocolHandler` does everything over the connection: `BEGIN` and `DECLARE … CURSOR FOR SUBSCRIBE`, the `FETCH` loop, typing each column by the schema, holding a timestamp's rows until a progress row passes it, and pairing them into events (today's `changes.ts`, folded in). The batching and pairing are pure functions, unit-tested without a database. A key violation ends that one subscription.
   - `DatabaseStreamService.subscribe(view, where)` compiles the `where` with `query.ts` (step 2), picks the protocol handler, and opens a stream per subscription instead of caching one per view. It closes any still open on shutdown. So the layers above never see SQL or Materialize.
-  - From step 5, the `pg.Pool` provider for plain queries.
+  - Later, the `pg.Pool` provider for plain queries (`queries.md`).
 - **`ViewModule`** (the domain), a pass-through for now:
   - `ViewService.subscribe(view, where)` takes the view's definition from the API, which already has it, passes it and the `where` to `DatabaseStreamService`, and returns its events.
   - Keeping the layer means post 4's shared cache goes back where it was, between the stream and the subscribers, without touching the API or the database code.
-- **`ApiModule`:** schema generation unchanged. `SubscriptionService` passes the `where` straight to `ViewService` and maps events to GraphQL updates. The resolver returns a `Repeater`. From step 5, query resolvers.
+- **`ApiModule`:** schema generation unchanged. `SubscriptionService` passes the `where` straight to `ViewService` and maps events to GraphQL updates. The resolver returns a `Repeater`. Later, query resolvers (`queries.md`).
 - **`src/common/types.ts`** holds what the layers share: the `where` operators and types, and the row events.
 - **Gone:** `Source`, `SourceService`, `View`, the cache and `Filter` from `src/view/`; `expressions.ts`; `buffer.ts` and the COPY line parser; `pg-copy-streams` and `rxjs-for-await`.
 
@@ -183,10 +183,14 @@ One commit per step, merged without squashing. Tests for each step are agreed wi
    - delete everything listed as gone above;
    - a database error ends one subscription, not the server.
 
-   Tests: integration tests for the stream against Materialize in Testcontainers (rows arrive typed, each timestamp whole, parameters bind, an idle view stays open, `mz_internal.mz_subscriptions` empties after cleanup, a missing view fails only its own subscription). The end-to-end harness passes unchanged, and the late-joiner test becomes a normal `it`.
-5. **Queries per view:** `trades(where: …)` returns the current rows through the pool, as a plain `SELECT`. Then remove the placeholder `ping` query.
-6. **Lint:** type the remaining `any` boundaries and make the `no-unsafe-*` rules errors again.
-7. **Docs and release.** README, `architecture.md`, `roadmap.md`, a pass over `docs/design/`, then release `v0.3.0`.
+   Tests: integration tests for the stream against Materialize in Testcontainers (rows arrive typed, each timestamp whole, parameters bind, an idle view stays open, `mz_internal.mz_subscriptions` empties after cleanup, a missing view fails only its own subscription). The end-to-end harness passes unchanged, and the late-joiner test becomes a normal `it`. (Done, with the independent review's fixes.)
+5. **Docs.** `architecture.md`, `implementation.md` and `roadmap.md` describe the new design, not the shared cache and RxJS; the README if anything in it is stale. Then the branch merges.
+
+After this branch, each separately:
+
+- **Queries per view:** `queries.md`.
+- **Lint:** type the remaining `any` boundaries and make the `no-unsafe-*` rules errors again.
+- **Release `v0.3.0`** from `main`.
 
 ## Enums
 
