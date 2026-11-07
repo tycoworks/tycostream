@@ -31,6 +31,7 @@
 ## Backlog
 
 - [Queries per view](./design/queries.md)
+- `limit`, `offset` and `order_by` for queries
 - [Calculated states](./design/calculated_states.md)
 - Row-level security
 - [Observability](./design/observability.md)
