@@ -30,6 +30,10 @@ async function bootstrap() {
       logger: getLogLevels(process.env.LOG_LEVEL),
     });
 
+    // Run Nest's shutdown hooks on SIGTERM and SIGINT, so open database
+    // connections are closed before the process exits
+    app.enableShutdownHooks();
+
     logger.log('=== tycostream starting ===');
 
     // Start the HTTP server on the configured port

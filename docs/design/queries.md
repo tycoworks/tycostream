@@ -37,8 +37,8 @@ Checked on 7 Nov against `materialize/materialized:v26.49.0`, node-postgres 8 an
 DatabaseModule   (exports DatabaseService only)
   DatabaseService        subscribe(view, where), query(view, where): compiles the SQL,
                          uses the driver, tracks open subscriptions
-  DatabaseConnections    acquire(purpose, signal?) → Lease: makes every connection,
-                         with each purpose's limits, and closes them in order on shutdown
+  DatabaseConnectionService  acquire(type, signal?) → Lease: makes every connection,
+                             with each type's limits, and stops lending at shutdown
   DatabaseStream         one subscription: a lease on first read, the driver's read, closed on stop
   DatabaseDriver         subscriptions: SubscriptionProtocol, queries: QueryProtocol
     materialize.ts       MaterializeSubscriptions: DECLARE … SUBSCRIBE, FETCH, progress, pairing
@@ -65,17 +65,17 @@ abstract class DatabaseDriver {
 
 ### Connections
 
-`DatabaseConnections` is the one place connections are made. Callers say what a connection is for, and get back the same kind of lease either way:
+`DatabaseConnectionService` is the one place connections are made. Callers say what a connection is for, and get back the same kind of lease either way:
 
 ```ts
-enum ConnectionPurpose { Subscription, Query }
+enum ConnectionType { Subscription, Query }
 
 interface Lease extends AsyncDisposable {
   readonly client: pg.ClientBase;
   close(): Promise<void>; // finished with it
 }
 
-acquire(purpose: ConnectionPurpose, signal?: AbortSignal): Promise<Lease>
+acquire(type: ConnectionType, signal?: AbortSignal): Promise<Lease>
 ```
 
 - **`close()` is finishing normally:** a subscription's connection is ended, which drops its `SUBSCRIBE`; a query's goes back to the pool, unless it hit an error or the timeout, when it's discarded. `await using` calls it at the end of a scope.
@@ -91,9 +91,9 @@ acquire(purpose: ConnectionPurpose, signal?: AbortSignal): Promise<Lease>
 - **Shared settings,** for every connection: host, credentials, the connect timeout, keep-alive, and reading every value as text, since tycostream types values by `schema.yaml` (D9).
 - **Errors:** the pool always has an `'error'` listener, and a lease carries one while it's out, so a dropped connection can't crash the process. A stream adds its own, to end its subscription.
 - **Shutdown,** in Nest's order:
-  1. Destroy hooks: `DatabaseService` closes the open subscriptions, so SSE responses finish and the HTTP server can close; `DatabaseConnections` stops lending, so a request arriving mid-shutdown fails rather than slipping through.
+  1. Destroy hooks: `DatabaseService` closes the open subscriptions, so SSE responses finish and the HTTP server can close; `DatabaseConnectionService` stops lending, so a request arriving mid-shutdown fails rather than slipping through.
   2. The HTTP server closes, so no query is in flight.
-  3. Application-shutdown hooks: the pool ends, and any subscription connection still open is ended as a safety net.
+  3. Application-shutdown hooks: the pool ends.
 - **`main.ts` calls `app.enableShutdownHooks()`.**
 
 ### Up through the layers
@@ -126,16 +126,18 @@ The fetch size, connect timeout and keep-alive stay constants until someone need
 
 ## Sequence
 
-One commit each, shown before committing:
+One commit each, shown before committing. Each builds and passes every test on its own (Chris, 7 Nov).
 
-1. **Connections and drivers, for subscriptions:** `DatabaseConnections` with the subscription purpose (leases, cancelling, the shutdown order), the shared settings, `DatabaseDriver` with its subscription part, `DatabaseService`, the stream on leases, and the shutdown hook. No change clients can see, apart from a clean shutdown.
-2. **Queries:** the query purpose and its settings, `PostgresQueries` and the shared typing in `postgres.ts`, `ViewService.query`, the schema and resolvers; `ping` removed.
+1. **`DatabaseConnectionService`:** the subscription type, leases and cancelling, the shared settings, the shutdown order and `app.enableShutdownHooks()`; the stream borrows its connection instead of making one.
+2. **Drivers:** `DatabaseDriver` with `MaterializeSubscriptions`; `DatabaseStreamService` becomes `DatabaseService`; the wiring in `DatabaseModule` and `ViewService`. Commits 1 and 2 change nothing clients can see, apart from a clean shutdown.
+3. **Queries in the database layer:** the query type and the pool with its two settings, `PostgresQueries` and the shared typing in `postgres.ts`, `DatabaseService.query`; tested against Materialize directly. Nothing reaches GraphQL yet.
+4. **Queries through GraphQL:** `ViewService.query`, the schema's query fields and the resolvers, cancelling when the client leaves; `ping` removed; the end-to-end tests.
 
 ## Tests
 
 - **Unit:**
-  - `DatabaseConnections`, against a fake pg: each purpose's settings, `close()` against cancelling, refusing to lend once shutdown starts, the pool's `'error'` listener;
-  - the stream against a fake `DatabaseConnections`, instead of mocking pg;
+  - `DatabaseConnectionService`, against a fake pg: each type's settings, `close()` against cancelling, refusing to lend once shutdown starts, the pool's `'error'` listener;
+  - the stream against a fake `DatabaseConnectionService`, instead of mocking pg;
   - `PostgresQueries` and its typing; the settings' validation; the schema's query fields; the resolvers.
 - **End-to-end:**
   - a filtered query through GraphQL returns the same typed rows as a subscription's snapshot;

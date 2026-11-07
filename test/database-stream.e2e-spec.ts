@@ -2,6 +2,7 @@ import pg from 'pg';
 import { ConfigService } from '@nestjs/config';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { MATERIALIZE_IMAGE } from './utils/index.js';
+import { DatabaseConnectionService } from '../src/database/connection.service.js';
 import { DatabaseStreamService } from '../src/database/stream.service.js';
 import type { ChangeBatches } from '../src/database/types.js';
 import type { DatabaseConfig } from '../src/config/database.config.js';
@@ -49,6 +50,7 @@ const byId = (batch: RowUpdateEvent[]) =>
 describe('Database streams on Materialize', () => {
   let container: StartedTestContainer;
   let admin: pg.Client;
+  let connectionService: DatabaseConnectionService;
   let streams: DatabaseStreamService;
 
   const sql = (statement: string) => admin.query(statement);
@@ -89,10 +91,11 @@ describe('Database streams on Materialize', () => {
     };
     admin = new pg.Client(config);
     await admin.connect();
-    streams = new DatabaseStreamService({
+    connectionService = new DatabaseConnectionService({
       get: () => config,
     } as unknown as ConfigService);
-    await streams.onModuleInit();
+    connectionService.onModuleInit();
+    streams = new DatabaseStreamService(connectionService);
   }, 180000);
 
   afterAll(async () => {
@@ -318,6 +321,18 @@ describe('Database streams on Materialize', () => {
     expect(await subscriptions()).toBe(1);
 
     await batches.return();
+    expect(await waitForSubscriptions(0)).toBe(0);
+  });
+
+  it('should close at once for a subscriber that leaves while still connecting', async () => {
+    await createTable('early');
+    const batches = subscribe(tradesTable('early'));
+    void batches.next().catch(() => {});
+
+    // A connection ended this early never finishes connecting
+    const started = Date.now();
+    await batches.return();
+    expect(Date.now() - started).toBeLessThan(1000);
     expect(await waitForSubscriptions(0)).toBe(0);
   });
 

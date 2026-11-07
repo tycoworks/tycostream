@@ -1,18 +1,14 @@
 import { Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
-import pg from 'pg';
-import type { DatabaseConfig } from '../config/database.config.js';
+import { ConnectionType } from './connection.service.js';
+import type { DatabaseConnectionService } from './connection.service.js';
 import type { CompiledQuery } from './query.js';
 import type { RowUpdateEvent } from '../common/types.js';
 import type { ChangeBatches, ProtocolHandler } from './types.js';
 
-// Component-specific database configuration
-const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
-const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
-
 /**
- * Called when a stream's connection is created, on the first pull, and
- * when it's closed. A stream that's never pulled opens nothing.
+ * Called when a stream starts, on the first pull, and once it has closed.
+ * A stream that's never pulled opens nothing.
  */
 export interface StreamLifecycle {
   onOpen?: () => void;
@@ -20,14 +16,15 @@ export interface StreamLifecycle {
 }
 
 /**
- * One subscription on its own connection. The protocol handler does all the
- * talking over it; this owns the connection and hands on what it reads.
+ * One subscription on a connection of its own. The protocol handler does
+ * all the talking over it; this holds the connection for as long as the
+ * subscriber stays, and hands on what the handler reads.
  */
 export class DatabaseStream {
   private readonly logger = new Logger(DatabaseStream.name);
 
   constructor(
-    private readonly config: DatabaseConfig,
+    private readonly connectionService: DatabaseConnectionService,
     private readonly sourceName: string,
     private readonly protocolHandler: ProtocolHandler,
     private readonly query: CompiledQuery,
@@ -43,19 +40,25 @@ export class DatabaseStream {
    */
   read(lifecycle: StreamLifecycle = {}): ChangeBatches {
     return new Repeater<RowUpdateEvent[]>(async (push, stop) => {
-      const client = this.createClient();
-      client.on('error', (error) => void stop(error));
+      // Stopping cancels the connection, which ends the subscription in the
+      // database at once, even mid-read or while still connecting
+      const cancel = new AbortController();
       let stopped = false;
       void stop.then(() => {
         stopped = true;
+        cancel.abort();
       });
       lifecycle.onOpen?.();
 
       const readUntilStopped = async () => {
-        await client.connect();
+        await using lease = await this.connectionService.acquire(
+          ConnectionType.Subscription,
+          cancel.signal,
+        );
+        lease.client.on('error', (error) => void stop(error));
         this.logger.debug(`Subscribing to ${this.sourceName}`);
         for await (const batch of this.protocolHandler.read(
-          client,
+          lease.client,
           this.query,
         )) {
           await push(batch);
@@ -67,32 +70,17 @@ export class DatabaseStream {
         void stop();
       };
 
-      readUntilStopped().catch((error: unknown) => {
+      const reading = readUntilStopped().catch((error: unknown) => {
         if (!stopped) {
           void stop(error);
         }
       });
 
       await stop;
-      // Ending the connection ends the subscription at once, mid-read or not
-      await client.end().catch(() => {});
+      // Returns once the connection is closed
+      await reading;
       this.logger.debug(`Closed the subscription to ${this.sourceName}`);
       lifecycle.onClose?.();
-    });
-  }
-
-  private createClient(): pg.Client {
-    return new pg.Client({
-      host: this.config.host,
-      port: this.config.port,
-      database: this.config.database,
-      user: this.config.user,
-      password: this.config.password,
-      // Connection timeout and keep-alive settings
-      connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
-      query_timeout: 0, // No timeout for streaming queries
-      keepAlive: true,
-      keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
     });
   }
 }

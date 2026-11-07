@@ -26,7 +26,8 @@ Three layers, each a Nest module that depends only on the one below.
 Connections and the Materialize protocol. Nothing above it sees SQL or how Materialize reports changes.
 
 - **`DatabaseStreamService`** opens one stream per subscription. It compiles the client's `where` to SQL (`query.ts`), picks the protocol handler, and closes any open streams on shutdown.
-- **`DatabaseStream`** (`stream.ts`) owns one connection: it opens it on the first read, hands it to the protocol handler, passes on what the handler yields, and closes it when the client stops. It assumes only the Postgres wire protocol.
+- **`DatabaseConnectionService`** (`connection.service.ts`) is the one place connections are made. A caller says what a connection is for (`ConnectionType`) and gets a lease: a subscription gets a connection of its own. Closing a lease, or aborting the signal it was lent with, ends the connection at once, even mid-statement. It stops lending once shutdown starts.
+- **`DatabaseStream`** (`stream.ts`) is one subscription: it borrows a connection on the first read, hands it to the protocol handler, passes on what the handler yields, and cancels the connection when the client stops. It assumes only the Postgres wire protocol.
 - **`MaterializeProtocolHandler`** (`materialize.ts`) says everything that's said over that connection: `DECLARE … CURSOR FOR SUBSCRIBE (…) WITH (SNAPSHOT, PROGRESS)`, the `FETCH` loop, typing each column as the schema says, holding a timestamp's rows until a progress row passes it, and pairing them into insert, update and delete events.
 
 The contract between this layer and the next is `ProtocolHandler.read`: tycostream's row events, one complete timestamp at a time. Another database would be another protocol handler.

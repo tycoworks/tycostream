@@ -46,8 +46,7 @@ describe('MaterializeProtocolHandler', () => {
     const client = {
       query: vi.fn((...args: unknown[]) => {
         queries.push(args);
-        const config = args[0] as { text?: string };
-        if (config.text?.startsWith('FETCH')) {
+        if ((args[0] as string).startsWith('FETCH')) {
           const rows = fetches.shift();
           return rows ? Promise.resolve({ rows }) : new Promise(() => {});
         }
@@ -81,20 +80,7 @@ describe('MaterializeProtocolHandler', () => {
         'DECLARE c CURSOR FOR SUBSCRIBE (select "id" from "test" where "id" = $1) WITH (SNAPSHOT, PROGRESS)',
         [7],
       ]);
-      expect(queries[3]).toEqual([
-        expect.objectContaining({ text: 'FETCH 1000 c' }),
-      ]);
-    });
-
-    it('should fetch every column as text, so the schema decides the types', async () => {
-      const { client, queries } = fakeClient([]);
-      void readAll(client).next();
-      await vi.waitFor(() => expect(queries.length).toBe(4));
-
-      const { types } = queries[3][0] as {
-        types: { getTypeParser: () => (value: string) => unknown };
-      };
-      expect(types.getTypeParser()('2026-01-01')).toBe('2026-01-01');
+      expect(queries[3]).toEqual(['FETCH 1000 c']);
     });
 
     it('should yield each complete timestamp across fetches as row events', async () => {

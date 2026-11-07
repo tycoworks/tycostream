@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { DatabaseStreamService } from './stream.service.js';
+import { DatabaseConnectionService } from './connection.service.js';
 import { DatabaseStream } from './stream.js';
 import { MaterializeProtocolHandler } from './materialize.js';
 import type { SourceDefinition } from '../config/source.types.js';
@@ -37,14 +37,6 @@ vi.mock('./stream.js', () => {
 // Lets the mock streams open
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-const DB_CONFIG = {
-  host: 'localhost',
-  port: 6875,
-  database: 'materialize',
-  user: 'test',
-  password: 'test',
-};
-
 const trades: SourceDefinition = {
   name: 'trades',
   primaryKeyField: 'id',
@@ -56,7 +48,7 @@ const trades: SourceDefinition = {
 
 describe('DatabaseStreamService', () => {
   let service: DatabaseStreamService;
-  let configService: ConfigService;
+  const connectionService = {} as DatabaseConnectionService;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -65,33 +57,19 @@ describe('DatabaseStreamService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DatabaseStreamService,
-        {
-          provide: ConfigService,
-          useValue: { get: vi.fn().mockReturnValue(DB_CONFIG) },
-        },
+        { provide: DatabaseConnectionService, useValue: connectionService },
       ],
     }).compile();
 
     service = module.get<DatabaseStreamService>(DatabaseStreamService);
-    configService = module.get<ConfigService>(ConfigService);
-
-    // Config is read in onModuleInit, which compile() doesn't run
-    await service.onModuleInit();
-  });
-
-  it('should throw on init when database configuration is missing', async () => {
-    (configService.get as Mock).mockReturnValue(undefined);
-    await expect(service.onModuleInit()).rejects.toThrow(
-      'Database configuration not found',
-    );
   });
 
   describe('subscribe', () => {
-    it('should open a stream with the config, a Materialize handler and the compiled filter', () => {
+    it('should open a stream on the connection service, with a Materialize handler and the compiled filter', () => {
       service.subscribe(trades, { symbol: { _eq: 'AAPL' } });
 
       expect(DatabaseStream).toHaveBeenCalledWith(
-        DB_CONFIG,
+        connectionService,
         'trades',
         expect.any(MaterializeProtocolHandler),
         expect.objectContaining({

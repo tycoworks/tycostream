@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DatabaseConnectionService } from './connection.service.js';
 import { DatabaseStreamService } from './stream.service.js';
 
 /**
@@ -6,7 +7,7 @@ import { DatabaseStreamService } from './stream.service.js';
  * Exports DatabaseStreamService for use by streaming module
  */
 @Module({
-  providers: [DatabaseStreamService],
+  providers: [DatabaseConnectionService, DatabaseStreamService],
   exports: [DatabaseStreamService],
 })
 export class DatabaseModule {}

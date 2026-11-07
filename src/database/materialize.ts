@@ -6,7 +6,8 @@ import type { CompiledQuery } from './query.js';
 import type { ProtocolHandler } from './types.js';
 
 /**
- * One fetched row as Materialize sends it: every column as text, or null
+ * One fetched row as Materialize sends it: every column as text, or null,
+ * since tycostream's connections read every value as text
  */
 export type RawRow = Record<string, string | null>;
 
@@ -36,9 +37,6 @@ const VALUE_SEPARATOR = '\u0000';
 
 // FETCH waits until rows exist, so a bigger batch only helps a busy view
 const FETCH_SIZE = 1000;
-
-// Every column arrives as text; parseValue types it as the schema says
-const TEXT_ONLY = { getTypeParser: () => (value: string) => value };
 
 /**
  * Handles Materialize-specific protocol details: reads
@@ -70,10 +68,9 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     const { primaryKeyField, fields } = this.sourceDefinition;
     const fieldNames = fields.map((field) => field.name);
     while (true) {
-      const { rows } = await client.query<RawRow>({
-        text: `FETCH ${FETCH_SIZE} ${CURSOR}`,
-        types: TEXT_ONLY,
-      });
+      const { rows } = await client.query<RawRow>(
+        `FETCH ${FETCH_SIZE} ${CURSOR}`,
+      );
       for (const batch of batcher.take(rows)) {
         const events = pairChanges(batch, primaryKeyField, fieldNames);
         // A timestamp whose changes cancel out has nothing to send
