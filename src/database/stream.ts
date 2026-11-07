@@ -11,6 +11,15 @@ const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network lat
 const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
 
 /**
+ * Called when a stream's connection is created, on the first pull, and
+ * when it's closed. A stream that's never pulled opens nothing.
+ */
+export interface StreamLifecycle {
+  onOpen?: () => void;
+  onClose?: () => void;
+}
+
+/**
  * One subscription on its own connection. The protocol handler does all the
  * talking over it; this owns the connection and hands on what it reads.
  */
@@ -32,11 +41,15 @@ export class DatabaseStream {
    * so a slow consumer's rows queue in the database. Ending the iteration
    * closes the connection, which ends the subscription in the database.
    */
-  read(onClosed: () => void = () => {}): ChangeBatches {
+  read(lifecycle: StreamLifecycle = {}): ChangeBatches {
     return new Repeater<RowUpdateEvent[]>(async (push, stop) => {
       const client = this.createClient();
       client.on('error', (error) => void stop(error));
       let stopped = false;
+      void stop.then(() => {
+        stopped = true;
+      });
+      lifecycle.onOpen?.();
 
       const readUntilStopped = async () => {
         await client.connect();
@@ -61,11 +74,10 @@ export class DatabaseStream {
       });
 
       await stop;
-      stopped = true;
       // Ending the connection ends the subscription at once, mid-read or not
       await client.end().catch(() => {});
       this.logger.debug(`Closed the subscription to ${this.sourceName}`);
-      onClosed();
+      lifecycle.onClose?.();
     });
   }
 

@@ -200,6 +200,20 @@ describe('buildSelect', () => {
       );
     });
 
+    it('should reject null as a value to compare with, pointing to _is_null', () => {
+      for (const comparison of [
+        { _eq: null },
+        { _neq: null },
+        { _gt: null },
+        { _in: ['a', null] },
+        { _nin: [null] },
+      ]) {
+        expect(() => buildSelect(users, { name: comparison })).toThrow(
+          "can't compare with null; use '_is_null'",
+        );
+      }
+    });
+
     it('should reject unknown operators', () => {
       expect(() =>
         buildSelect(users, { id: { _like: 'a' } } as unknown as WhereClause),

@@ -7,21 +7,35 @@ import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import type { Mock } from 'vitest';
 
-// Mock DatabaseStream: each read() is a subscription that records its close
+// Mock DatabaseStream: each read() is a subscription whose connection opens
+// just after, as on a first pull (unless a test says otherwise), and that
+// records its close
+const streamState = vi.hoisted(() => ({ opens: true }));
+
 vi.mock('./stream.js', () => {
   return {
     DatabaseStream: vi.fn().mockImplementation(function () {
       return {
-        read: vi.fn((onClosed: () => void) => ({
-          return: vi.fn(() => {
-            onClosed();
-            return Promise.resolve({ done: true, value: undefined });
-          }),
-        })),
+        read: vi.fn(
+          (lifecycle: { onOpen: () => void; onClose: () => void }) => {
+            if (streamState.opens) {
+              queueMicrotask(lifecycle.onOpen);
+            }
+            return {
+              return: vi.fn(() => {
+                lifecycle.onClose();
+                return Promise.resolve({ done: true, value: undefined });
+              }),
+            };
+          },
+        ),
       };
     }),
   };
 });
+
+// Lets the mock streams open
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const DB_CONFIG = {
   host: 'localhost',
@@ -46,6 +60,7 @@ describe('DatabaseStreamService', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    streamState.opens = true;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -106,6 +121,7 @@ describe('DatabaseStreamService', () => {
     it('should close every open subscription', async () => {
       const first = service.subscribe(trades);
       const second = service.subscribe(trades);
+      await flush();
 
       await service.onModuleDestroy();
 
@@ -115,12 +131,23 @@ describe('DatabaseStreamService', () => {
 
     it('should not close a subscription twice once it has closed itself', async () => {
       const closed = service.subscribe(trades);
+      await flush();
       await closed.return();
       (closed.return as Mock).mockClear();
 
       await service.onModuleDestroy();
 
       expect(closed.return).not.toHaveBeenCalled();
+    });
+
+    it('should leave alone a subscription that never opened a connection', async () => {
+      streamState.opens = false;
+      const neverPulled = service.subscribe(trades);
+      await flush();
+
+      await service.onModuleDestroy();
+
+      expect(neverPulled.return).not.toHaveBeenCalled();
     });
 
     it('should handle no open subscriptions', async () => {

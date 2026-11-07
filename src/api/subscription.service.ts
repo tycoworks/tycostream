@@ -73,8 +73,9 @@ export class SubscriptionService {
       forward().catch((error: unknown) => void stop(error));
 
       await stop;
-      // Closes the view at once, even on a view that's idle
-      await batches.return();
+      // Closes the view at once, even on a view that's idle. If the view
+      // failed, forward already reported its error.
+      await batches.return().catch(() => {});
     });
   }
 

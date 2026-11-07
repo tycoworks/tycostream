@@ -166,6 +166,16 @@ export class TestEnvironment {
   }
 
   /**
+   * Run a SQL query and return its rows
+   */
+  async querySql<T extends Record<string, unknown>>(
+    query: string,
+  ): Promise<T[]> {
+    const result = await this.databaseClient.query<T>(query);
+    return result.rows;
+  }
+
+  /**
    * Get the application port
    */
   get port(): number {

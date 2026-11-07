@@ -8,6 +8,13 @@ const shared = {
 
 export default defineConfig({
   test: {
+    // Measured on the unit tests: npm run coverage
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.spec.ts'],
+      reporter: ['text'],
+    },
     projects: [
       {
         ...shared,

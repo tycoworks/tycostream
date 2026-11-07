@@ -21,6 +21,19 @@ export interface DiffRow {
 
 const CURSOR = 'c';
 
+// The columns SUBSCRIBE adds to each row, before the row's own
+enum SubscribeColumn {
+  Timestamp = 'mz_timestamp',
+  Progressed = 'mz_progressed',
+  Diff = 'mz_diff',
+}
+
+// How Postgres writes a true boolean as text
+const TEXT_TRUE = 't';
+
+// Joins a row's values into one key; no value's text can contain it
+const VALUE_SEPARATOR = '\u0000';
+
 // FETCH waits until rows exist, so a bigger batch only helps a busy view
 const FETCH_SIZE = 1000;
 
@@ -41,6 +54,10 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     client: pg.ClientBase,
     query: CompiledQuery,
   ): AsyncGenerator<RowUpdateEvent[]> {
+    // The transaction sits idle while the consumer works through a batch.
+    // Materialize's cap on a subscription's backlog limits a slow consumer,
+    // so its idle timeout shouldn't
+    await client.query('SET idle_in_transaction_session_timeout = 0');
     // A cursor only lives inside a transaction
     await client.query('BEGIN');
     await client.query(
@@ -85,8 +102,8 @@ export class ProgressBatcher {
   take(rows: RawRow[]): DiffRow[][] {
     const complete: DiffRow[][] = [];
     for (const raw of rows) {
-      const timestamp = BigInt(raw.mz_timestamp!);
-      if (raw.mz_progressed === 't') {
+      const timestamp = BigInt(raw[SubscribeColumn.Timestamp]!);
+      if (raw[SubscribeColumn.Progressed] === TEXT_TRUE) {
         for (const done of [...this.pending.keys()]
           .filter((t) => t < timestamp)
           .sort((a, b) => (a < b ? -1 : 1))) {
@@ -95,7 +112,10 @@ export class ProgressBatcher {
         }
       } else {
         const batch = this.pending.get(timestamp) ?? [];
-        batch.push({ diff: Number(raw.mz_diff), row: this.parseRow(raw) });
+        batch.push({
+          diff: Number(raw[SubscribeColumn.Diff]),
+          row: this.parseRow(raw),
+        });
         this.pending.set(timestamp, batch);
       }
     }
@@ -199,7 +219,9 @@ function toEvent(
 function netIdenticalRows(rows: DiffRow[], fieldNames: string[]): DiffRow[] {
   const netted = new Map<string, DiffRow>();
   for (const { diff, row } of rows) {
-    const id = fieldNames.map((field) => valueKey(row[field])).join('\u0000');
+    const id = fieldNames
+      .map((field) => valueKey(row[field]))
+      .join(VALUE_SEPARATOR);
     const existing = netted.get(id);
     netted.set(id, { diff: (existing?.diff ?? 0) + diff, row });
   }
@@ -224,7 +246,7 @@ function valueKey(value: unknown): string {
 function parseValue(value: string, dataType: DataType): unknown {
   switch (dataType) {
     case DataType.Boolean:
-      return value === 't' || value === 'true';
+      return value === TEXT_TRUE;
 
     case DataType.Integer:
       return parseInt(value, 10);

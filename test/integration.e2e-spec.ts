@@ -230,4 +230,34 @@ describe('Integration Test', () => {
     // The test passes if we converged to expectedState
     // No need for individual assertions - the framework handles state comparison
   }, 120000); // 2 minute timeout for comprehensive test
+
+  it('should drop the Materialize subscription as soon as an SSE client disconnects', async () => {
+    const subscriptions = async () => {
+      const [{ n }] = await testEnv.querySql<{ n: string }>(
+        'SELECT count(*) AS n FROM mz_internal.mz_subscriptions',
+      );
+      return Number(n);
+    };
+    const before = await subscriptions();
+
+    // A browser-style SSE subscription to a view that stays idle
+    const controller = new AbortController();
+    const response = await fetch(`http://localhost:${testEnv.port}/graphql`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        query: 'subscription { users { operation } }',
+      }),
+      signal: controller.signal,
+    });
+    expect(response.status).toBe(200);
+    await testEnv.waitUntil(async () => (await subscriptions()) > before);
+
+    controller.abort();
+
+    await testEnv.waitUntil(async () => (await subscriptions()) === before);
+  }, 30000);
 });

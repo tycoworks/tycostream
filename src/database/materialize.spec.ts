@@ -57,34 +57,41 @@ describe('MaterializeProtocolHandler', () => {
     return { client: client as unknown as pg.ClientBase, queries };
   };
 
+  const readAll = (client: pg.ClientBase) =>
+    new MaterializeProtocolHandler(idAndName).read(client, {
+      sql: 'select 1',
+      parameters: [],
+    });
+
   describe('read', () => {
-    it('should declare a cursor for the query inside a transaction, keeping its parameters', async () => {
+    it('should turn off the idle timeout, then declare a cursor for the query inside a transaction, keeping its parameters', async () => {
       const { client, queries } = fakeClient([[progress(1)]]);
       const batches = new MaterializeProtocolHandler(idAndName).read(client, {
         sql: 'select "id" from "test" where "id" = $1',
         parameters: [7],
       });
       void batches.next();
-      await vi.waitFor(() => expect(queries.length).toBeGreaterThan(2));
+      await vi.waitFor(() => expect(queries.length).toBeGreaterThan(3));
 
-      expect(queries[0]).toEqual(['BEGIN']);
-      expect(queries[1]).toEqual([
+      expect(queries[0]).toEqual([
+        'SET idle_in_transaction_session_timeout = 0',
+      ]);
+      expect(queries[1]).toEqual(['BEGIN']);
+      expect(queries[2]).toEqual([
         'DECLARE c CURSOR FOR SUBSCRIBE (select "id" from "test" where "id" = $1) WITH (SNAPSHOT, PROGRESS)',
         [7],
       ]);
-      expect(queries[2]).toEqual([
+      expect(queries[3]).toEqual([
         expect.objectContaining({ text: 'FETCH 1000 c' }),
       ]);
     });
 
     it('should fetch every column as text, so the schema decides the types', async () => {
       const { client, queries } = fakeClient([]);
-      void new MaterializeProtocolHandler(idAndName)
-        .read(client, { sql: 'select 1', parameters: [] })
-        .next();
-      await vi.waitFor(() => expect(queries.length).toBe(3));
+      void readAll(client).next();
+      await vi.waitFor(() => expect(queries.length).toBe(4));
 
-      const { types } = queries[2][0] as {
+      const { types } = queries[3][0] as {
         types: { getTypeParser: () => (value: string) => unknown };
       };
       expect(types.getTypeParser()('2026-01-01')).toBe('2026-01-01');
@@ -101,10 +108,7 @@ describe('MaterializeProtocolHandler', () => {
           progress(3),
         ],
       ]);
-      const batches = new MaterializeProtocolHandler(idAndName).read(client, {
-        sql: 'select 1',
-        parameters: [],
-      });
+      const batches = readAll(client);
 
       expect((await batches.next()).value).toEqual([
         {
@@ -141,10 +145,7 @@ describe('MaterializeProtocolHandler', () => {
         ],
         [change(2, 1, { id: '2', name: 'b' }), progress(3)],
       ]);
-      const batches = new MaterializeProtocolHandler(idAndName).read(client, {
-        sql: 'select 1',
-        parameters: [],
-      });
+      const batches = readAll(client);
 
       expect((await batches.next()).value).toEqual([
         {
@@ -163,10 +164,7 @@ describe('MaterializeProtocolHandler', () => {
           progress(2),
         ],
       ]);
-      const batches = new MaterializeProtocolHandler(idAndName).read(client, {
-        sql: 'select 1',
-        parameters: [],
-      });
+      const batches = readAll(client);
 
       await expect(batches.next()).rejects.toThrow(KeyViolationError);
     });

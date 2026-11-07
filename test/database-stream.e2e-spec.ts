@@ -268,6 +268,46 @@ describe('Database streams on Materialize', () => {
     expect(await waitForSubscriptions(0)).toBe(0);
   });
 
+  it('should outlast the idle-in-transaction timeout while the consumer is slow', async () => {
+    await createTable('slow');
+    await sql(`INSERT INTO slow (id) VALUES (1)`);
+    // New sessions would be ended after a second idle in their transaction
+    await sql(
+      `ALTER ROLE materialize SET idle_in_transaction_session_timeout = '1s'`,
+    );
+    const batches = subscribe(tradesTable('slow'));
+    try {
+      await nextBatch(batches);
+      // The consumer takes a while before it asks for more
+      await sleep(3000);
+      await sql(`INSERT INTO slow (id) VALUES (2)`);
+      expect((await nextBatch(batches)).map((e) => e.row.id)).toEqual([2]);
+    } finally {
+      await batches.return();
+      await sql(
+        `ALTER ROLE materialize RESET idle_in_transaction_session_timeout`,
+      );
+    }
+  });
+
+  it('should leave out rows whose column is null, as SQL does, and reject null as a value', async () => {
+    await createTable('nulls');
+    await sql(
+      `INSERT INTO nulls (id, symbol) VALUES (1, 'AAPL'), (2, 'MSFT'), (3, NULL)`,
+    );
+    const batches = subscribe(tradesTable('nulls'), {
+      symbol: { _neq: 'AAPL' },
+    });
+    try {
+      expect((await nextBatch(batches)).map((e) => e.row.id)).toEqual([2]);
+    } finally {
+      await batches.return();
+    }
+    expect(() =>
+      subscribe(tradesTable('nulls'), { symbol: { _eq: null } }),
+    ).toThrow("use '_is_null'");
+  });
+
   it('should drop the subscription in Materialize when the consumer stops', async () => {
     await createTable('cleanup');
     await sql(`INSERT INTO cleanup (id) VALUES (1)`);

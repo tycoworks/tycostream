@@ -12,7 +12,7 @@ It's the code behind post 2 ("Can a view server be built with GraphQL?"). The sh
 
 What must hold when the branch merges:
 
-1. **Same API.** The generated schema, the `where` operators, and the update events (`operation`, `data`, `fields`) are unchanged. An `INSERT` carries every column, an `UPDATE` the key plus the changed columns, a `DELETE` the key only.
+1. **Same API, apart from three deliberate changes (D10–D12).** The generated schema, the `where` operators, and the update events (`operation`, `data`, `fields`) are unchanged otherwise. An `INSERT` carries every column, an `UPDATE` the key plus the changed columns, a `DELETE` the key only.
 2. **Snapshot, then changes.** A new subscription gets the current rows, then every change after them, with nothing missed or repeated. This includes clients that join while another client's snapshot is loading (the late-joiner bug below).
 3. **Whole timestamps.** All the changes at one Materialize timestamp reach the client together, never half a timestamp.
 4. **Keyed views only.** Each view declares a key. If Materialize sends something the key can't explain (two rows for one key), that subscription ends with an error.
@@ -41,7 +41,7 @@ Three research passes on 6 Nov, with claims marked "verified" run against `mater
 - **Cleanup:** `ROLLBACK` (or ending the connection) drops the dataflow at once. `CLOSE` alone leaves it running (verified through `mz_internal.mz_subscriptions`).
 - **Slow consumers:** if tycostream stops fetching, rows queue inside Materialize, up to 128 MiB per subscription (`subscribe_max_buffered_bytes`, since v26.39). Past that, Materialize ends the subscribe with error 53200. So backpressure is safe: pausing `FETCH` can't run Materialize out of memory, and a hopelessly slow client gets an error.
 - **Ordering:** rows within a timestamp come in no useful order (retractions don't come first), so buffering each timestamp until progress passes it, then pairing, is right.
-- **`idle_in_transaction_session_timeout` is 2 minutes,** so the `FETCH` loop must never sit idle between fetches that long. With progress rows every second, it doesn't.
+- **`idle_in_transaction_session_timeout` is 2 minutes.** The `FETCH` loop sits idle while a client works through a batch, so a slow client would hit it long before the 128 MiB backlog cap. Each subscription's connection turns it off (D13), leaving the backlog cap as the limit on a slow client.
 - **The old antennas demo** (2022) used the same `DECLARE`/`FETCH` approach, wrapped in Node streams with a hand-rolled backpressure counter. That counter is buggy and never engages. Its idea is superseded: Materialize's own SDK design (Nov 2026) fetches continuously into a bounded buffer and fails fast when the consumer falls behind. That's the design below.
 
 ### NestJS data access and SQL
@@ -75,6 +75,10 @@ Three research passes on 6 Nov, with claims marked "verified" run against `mater
 | D7 | Drop `pg-copy-streams`, the COPY text parser, `rxjs-for-await` and our own RxJS use | `DECLARE`/`FETCH` returns typed rows; Nest still depends on RxJS itself |
 | D8 | Database errors end the one subscription with a GraphQL error | Requirement 5 |
 | D9 | Keep `schema.yaml` as tycostream's contract: the views it serves, their keys, columns and enums. No discovery from the catalog (Chris, 6 Nov) | It says exactly what's exposed over GraphQL; a gateway expecting one schema should notice when the database differs, not silently follow it; and other streaming databases expose metadata differently |
+| D10 | An update event's `fields` names exactly the values `data` carries: every column for an `INSERT`, the key plus the changed columns for an `UPDATE`, the key alone for a `DELETE`, whether a row changed or entered or left the client's `where` (Chris, 7 Nov). Before, an `UPDATE` left out the key, a `DELETE` listed every column, and a row entering or leaving the filter listed the changed columns | GraphQL returns every selected column in `data`, null when not sent, so `fields` is how a client tells "changed to null" from "not sent". One rule for every event is the least surprising. Rows entering or leaving the filter can't be told apart from real inserts and deletes anyway, since Materialize sends both as a lone +1 or −1 |
+| D11 | Filters treat nulls as SQL does, which is also Hasura's behaviour: `_neq`, `_nin`, `_not` and the orderings never match a null. A null value in a comparison is rejected, pointing to `_is_null` (Chris, 7 Nov) | The JavaScript filter matched nulls in some of these; SQL can't without rewriting every comparison. A comparison with null would silently match nothing |
+| D12 | Names in `schema.yaml` must match the database exactly, including case (Chris, 7 Nov) | The SQL quotes every name so no name can break it, and quoted names match exactly. The old unquoted SQL let Materialize lower-case them, so `liveTrades` happened to find `livetrades`. Matching exactly is the least surprising |
+| D13 | Each subscription's connection turns off `idle_in_transaction_session_timeout` (Chris, 7 Nov) | See the research finding; the backlog cap, which Materialize's operator sets, is the right limit on a slow client |
 
 ## The change rules
 

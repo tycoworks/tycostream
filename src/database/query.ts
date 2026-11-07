@@ -114,6 +114,7 @@ function buildComparisons(
 
   return Object.entries(comparison).map(([key, value]) => {
     const operator = key as ComparisonOperator;
+    checkNotNull(field, operator, value);
     if (enumValues) {
       checkEnumValues(field, operator, value);
     }
@@ -173,6 +174,24 @@ function enumValuesOnSide(
       return enumValues.slice(0, index);
     case ComparisonOperator.Lte:
       return enumValues.slice(0, index + 1);
+  }
+}
+
+// SQL compares nothing equal to null, so a null value would silently match
+// no rows; _is_null is how to match nulls
+function checkNotNull(
+  field: SourceField,
+  operator: ComparisonOperator,
+  value: unknown,
+): void {
+  if (operator === ComparisonOperator.IsNull) {
+    return;
+  }
+  const values = Array.isArray(value) ? value : [value];
+  if (values.some((v) => v === null || v === undefined)) {
+    throw new Error(
+      `'${operator}' on '${field.name}' can't compare with null; use '${ComparisonOperator.IsNull}'`,
+    );
   }
 }
 

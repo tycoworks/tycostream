@@ -51,8 +51,10 @@ export class DatabaseStreamService implements OnModuleInit, OnModuleDestroy {
       new MaterializeProtocolHandler(source),
       buildSelect(source, where),
     );
-    const changes = stream.read(() => this.open.delete(changes));
-    this.open.add(changes);
+    const changes = stream.read({
+      onOpen: () => this.open.add(changes),
+      onClose: () => this.open.delete(changes),
+    });
     return changes;
   }
 

@@ -1,9 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DatabaseStreamService } from '../database/stream.service.js';
 import type { ChangeBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { WhereClause } from '../common/types.js';
-import { truncateForLog } from '../common/logging.utils.js';
 
 /**
  * ViewService manages views of streaming data
@@ -13,8 +12,6 @@ import { truncateForLog } from '../common/logging.utils.js';
  */
 @Injectable()
 export class ViewService {
-  private readonly logger = new Logger(ViewService.name);
-
   constructor(private readonly streamService: DatabaseStreamService) {}
 
   /**
@@ -23,9 +20,6 @@ export class ViewService {
    * closes the view.
    */
   subscribe(source: SourceDefinition, where?: WhereClause): ChangeBatches {
-    this.logger.debug(
-      `Created new view for source: ${source.name}${where ? `, where: ${truncateForLog(where)}` : ' (unfiltered)'}`,
-    );
     return this.streamService.subscribe(source, where);
   }
 }

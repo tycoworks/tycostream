@@ -13,6 +13,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "vitest run --project unit",
     "test:utils": "vitest run --project utils",
+    "coverage": "vitest run --project unit --coverage",
     "e2e": "vitest run --project e2e",
     "prepare": "husky"
   },
@@ -50,6 +51,7 @@
     "@types/node": "^24.1.0",
     "@types/pg": "^8.15.4",
     "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
