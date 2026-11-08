@@ -4,7 +4,7 @@ import type { DatabaseConnectionService } from './connection.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { CompiledSelect } from './select.js';
 import { StreamMode } from '../common/types.js';
-import type { RowUpdateEvent } from '../common/types.js';
+import type { RowUpdateBatch } from '../common/types.js';
 import type { DatabaseAdapter, RowUpdateBatches } from './types.js';
 
 /**
@@ -34,15 +34,15 @@ export class DatabaseStream {
 
   /**
    * The stream's row events, one complete timestamp at a time, the snapshot
-   * first. A snapshot then ends; a live stream goes on until it's stopped.
-   * Nothing connects until the first pull.
+   * first, even when it's empty. A snapshot then ends; a live stream goes on
+   * until it's stopped. Nothing connects until the first pull.
    *
    * The adapter reads on only once the consumer has taken the last batch,
    * so a slow consumer's rows queue in the database. Ending the iteration
    * cancels the connection, which ends the stream in the database.
    */
   read(lifecycle: StreamLifecycle = {}): RowUpdateBatches {
-    return new Repeater<RowUpdateEvent[]>(async (push, stop) => {
+    return new Repeater<RowUpdateBatch>(async (push, stop) => {
       // Stopping cancels the connection, which ends the stream in the
       // database at once, even mid-read or while still connecting
       const cancel = new AbortController();

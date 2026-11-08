@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
-import type { Row, RowUpdateEvent } from '../common/types.js';
+import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import { insertOf, parseRow, readSnapshot, TEXT_TRUE } from './postgres.js';
 import type { RawRow } from './postgres.js';
 import type { CompiledSelect } from './select.js';
@@ -15,6 +15,14 @@ import { DatabaseAdapter } from './types.js';
 export interface DiffRow {
   diff: number;
   row: Row;
+}
+
+/**
+ * The rows of one complete timestamp
+ */
+export interface TimestampRows {
+  timestamp: bigint;
+  rows: DiffRow[];
 }
 
 const CURSOR = 'c';
@@ -43,7 +51,7 @@ export class MaterializeAdapter extends DatabaseAdapter {
     source: SourceDefinition,
     select: CompiledSelect,
     mode: StreamMode,
-  ): AsyncIterable<RowUpdateEvent[]> {
+  ): AsyncIterable<RowUpdateBatch> {
     return mode === StreamMode.Snapshot
       ? readSnapshot(client, source, select)
       : this.readLive(client, source, select);
@@ -57,7 +65,7 @@ export class MaterializeAdapter extends DatabaseAdapter {
     client: pg.ClientBase,
     source: SourceDefinition,
     select: CompiledSelect,
-  ): AsyncGenerator<RowUpdateEvent[]> {
+  ): AsyncGenerator<RowUpdateBatch> {
     // The transaction sits idle while the consumer works through a batch.
     // Materialize's cap on a subscription's backlog limits a slow consumer,
     // so its idle timeout shouldn't
@@ -73,16 +81,19 @@ export class MaterializeAdapter extends DatabaseAdapter {
     const batcher = new ProgressBatcher(source);
     const { primaryKeyField, fields } = source;
     const fieldNames = fields.map((field) => field.name);
+    let snapshot = true;
     while (true) {
       const { rows } = await client.query<RawRow>(
         `FETCH ${FETCH_SIZE} ${CURSOR}`,
       );
-      for (const batch of batcher.take(rows)) {
-        const events = pairChanges(batch, primaryKeyField, fieldNames);
-        // A timestamp whose changes cancel out has nothing to send
-        if (events.length > 0) {
-          yield events;
+      for (const { timestamp, rows: changes } of batcher.take(rows)) {
+        const events = pairChanges(changes, primaryKeyField, fieldNames);
+        // The snapshot is sent even when empty; after it, a timestamp whose
+        // changes cancel out has nothing to send
+        if (snapshot || events.length > 0) {
+          yield { timestamp, events };
         }
+        snapshot = false;
       }
     }
   }
@@ -94,23 +105,30 @@ export class MaterializeAdapter extends DatabaseAdapter {
  */
 export class ProgressBatcher {
   private readonly pending = new Map<bigint, DiffRow[]>();
+  private started = false;
 
   constructor(private readonly sourceDefinition: SourceDefinition) {}
 
   /**
    * Takes fetched rows and returns each timestamp they complete, oldest
    * first. A progress row at timestamp t means every timestamp before t is
-   * complete; the snapshot is the first complete timestamp.
+   * complete. The snapshot is at the first timestamp the subscription gives,
+   * which Materialize sends first as a progress row, so it's returned even
+   * when it has no rows.
    */
-  take(rows: RawRow[]): DiffRow[][] {
-    const complete: DiffRow[][] = [];
+  take(rows: RawRow[]): TimestampRows[] {
+    const complete: TimestampRows[] = [];
     for (const raw of rows) {
       const timestamp = BigInt(raw[SubscribeColumn.Timestamp]!);
+      if (!this.started) {
+        this.pending.set(timestamp, []);
+        this.started = true;
+      }
       if (raw[SubscribeColumn.Progressed] === TEXT_TRUE) {
         for (const done of [...this.pending.keys()]
           .filter((t) => t < timestamp)
           .sort((a, b) => (a < b ? -1 : 1))) {
-          complete.push(this.pending.get(done)!);
+          complete.push({ timestamp: done, rows: this.pending.get(done)! });
           this.pending.delete(done);
         }
       } else {

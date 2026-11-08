@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType, RowUpdateType } from '../common/types.js';
-import type { Row, RowUpdateEvent } from '../common/types.js';
+import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import type { CompiledSelect } from './select.js';
 
 /**
@@ -46,22 +46,21 @@ export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
 
 /**
  * A snapshot, as every Postgres-compatible database gives one: the SELECT's
- * rows, typed, as one batch of inserts. Any adapter can read snapshots this
- * way.
+ * rows, typed, as one batch of inserts, even when there are none. A plain
+ * SELECT doesn't give its timestamp. Any adapter can read snapshots this way.
  */
 export async function* readSnapshot(
   client: pg.ClientBase,
   source: SourceDefinition,
   select: CompiledSelect,
-): AsyncGenerator<RowUpdateEvent[]> {
+): AsyncGenerator<RowUpdateBatch> {
   const { rows } = await client.query<RawRow>(select.sql, [
     ...select.parameters,
   ]);
   const fieldNames = source.fields.map((field) => field.name);
-  // An empty source has nothing to send, as a live stream's snapshot doesn't
-  if (rows.length > 0) {
-    yield rows.map((raw) => insertOf(parseRow(source, raw), fieldNames));
-  }
+  yield {
+    events: rows.map((raw) => insertOf(parseRow(source, raw), fieldNames)),
+  };
 }
 
 /**

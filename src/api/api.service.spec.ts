@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repeater } from '@repeaterjs/repeater';
 import { ApiService, GraphQLRowOperation } from './api.service.js';
+import type { GraphQLUpdate } from './api.service.js';
 import { ViewService } from '../view/view.service.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
-import type { Row, RowUpdateEvent } from '../common/types.js';
+import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
@@ -25,12 +26,13 @@ describe('ApiService', () => {
   const ALL_FIELDS = new Set(['id', 'name', 'value']);
   const ROW = { id: '1', name: 'test', value: 7 };
 
-  // A view that sends these batches, then stays open; records when it's closed
+  // A view that sends these timestamps' events, then stays open; records
+  // when it's closed
   const viewOf = (...batches: RowUpdateEvent[][]) => {
     const closed = vi.fn();
-    const view = new Repeater<RowUpdateEvent[]>(async (push, stop) => {
-      for (const batch of batches) {
-        await push(batch);
+    const view = new Repeater<RowUpdateBatch>(async (push, stop) => {
+      for (const [i, events] of batches.entries()) {
+        await push({ timestamp: BigInt(i + 1), events });
       }
       await stop;
       closed();
@@ -39,12 +41,12 @@ describe('ApiService', () => {
     return closed;
   };
 
-  // A snapshot: these batches, then the stream ends
+  // A snapshot: these events, then the stream ends
   const snapshotOf = (...batches: RowUpdateEvent[][]) => {
     viewService.stream.mockReturnValue(
-      new Repeater<RowUpdateEvent[]>(async (push, stop) => {
-        for (const batch of batches) {
-          await push(batch);
+      new Repeater<RowUpdateBatch>(async (push, stop) => {
+        for (const events of batches) {
+          await push({ events });
         }
         stop();
       }) as RowUpdateBatches,
@@ -108,14 +110,14 @@ describe('ApiService', () => {
     });
 
     it('should return no rows for an empty source', async () => {
-      snapshotOf();
+      snapshotOf([]);
 
       expect(await apiService.query(testSourceDefinition)).toEqual([]);
     });
 
     it('should fail with the error when the view fails', async () => {
       viewService.stream.mockReturnValue(
-        new Repeater<RowUpdateEvent[]>((_push, stop) => {
+        new Repeater<RowUpdateBatch>((_push, stop) => {
           void stop(new Error('unknown catalog item'));
         }) as RowUpdateBatches,
       );
@@ -172,11 +174,13 @@ describe('ApiService', () => {
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
-        {
-          operation: GraphQLRowOperation.Insert,
-          data: ROW,
-          fields: ['id', 'name', 'value'],
-        },
+        [
+          {
+            operation: GraphQLRowOperation.Insert,
+            data: ROW,
+            fields: ['id', 'name', 'value'],
+          },
+        ],
       ]);
     });
 
@@ -192,11 +196,13 @@ describe('ApiService', () => {
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
-        {
-          operation: GraphQLRowOperation.Update,
-          data: { id: '1', value: 7 },
-          fields: ['id', 'value'],
-        },
+        [
+          {
+            operation: GraphQLRowOperation.Update,
+            data: { id: '1', value: 7 },
+            fields: ['id', 'value'],
+          },
+        ],
       ]);
     });
 
@@ -208,15 +214,17 @@ describe('ApiService', () => {
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
-        {
-          operation: GraphQLRowOperation.Delete,
-          data: { id: '1' },
-          fields: ['id'],
-        },
+        [
+          {
+            operation: GraphQLRowOperation.Delete,
+            data: { id: '1' },
+            fields: ['id'],
+          },
+        ],
       ]);
     });
 
-    it('should send every event of every timestamp, in order', async () => {
+    it("should send each timestamp's updates together, as one list, in order", async () => {
       viewOf(
         [
           { type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW },
@@ -232,17 +240,24 @@ describe('ApiService', () => {
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(
-        (
-          (await take(updates, 3)) as {
-            operation: GraphQLRowOperation;
-            data: { id: string };
-          }[]
-        ).map((u) => [u.operation, u.data.id]),
+        ((await take(updates, 2)) as GraphQLUpdate[][]).map((list) =>
+          list.map((u) => [u.operation, u.data.id]),
+        ),
       ).toEqual([
-        [GraphQLRowOperation.Insert, '1'],
-        [GraphQLRowOperation.Insert, '2'],
-        [GraphQLRowOperation.Delete, '1'],
+        [
+          [GraphQLRowOperation.Insert, '1'],
+          [GraphQLRowOperation.Insert, '2'],
+        ],
+        [[GraphQLRowOperation.Delete, '1']],
       ]);
+    });
+
+    it('should send an empty snapshot as an empty list', async () => {
+      viewOf([]);
+
+      const updates = apiService.subscribe(testSourceDefinition);
+
+      expect(await take(updates, 1)).toEqual([[]]);
     });
 
     it('should close the view as soon as the client stops, even while the view is idle', async () => {
@@ -261,7 +276,7 @@ describe('ApiService', () => {
 
     it('should end with the error when the view fails', async () => {
       viewService.stream.mockReturnValue(
-        new Repeater<RowUpdateEvent[]>((_push, stop) => {
+        new Repeater<RowUpdateBatch>((_push, stop) => {
           void stop(new Error('connection lost'));
         }) as RowUpdateBatches,
       );

@@ -45,14 +45,14 @@ describe('buildResolvers', () => {
     );
   });
 
-  it("should hand GraphQL a source's subscription itself, and each update as the field's value", () => {
+  it("should hand GraphQL a source's subscription itself, and each timestamp's updates as the field's value", () => {
     expect(Subscription.prices.subscribe(undefined, { where })).toBe(updates);
     expect(apiService.subscribe).toHaveBeenCalledWith(
       sources.get('prices'),
       where,
     );
 
-    const update = { operation: 'INSERT', data: {}, fields: [] } as never;
-    expect(Subscription.prices.resolve(update)).toBe(update);
+    const sent = [{ operation: 'INSERT', data: {}, fields: [] }] as never;
+    expect(Subscription.prices.resolve(sent)).toBe(sent);
   });
 });

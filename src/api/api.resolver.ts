@@ -22,14 +22,15 @@ type QueryResolver = (
 
 /**
  * GraphQL subscription resolver type
- * subscribe returns the updates; resolve gives each one as the field's value
+ * subscribe returns each timestamp's updates; resolve gives each list as the
+ * field's value
  */
 type SubscriptionResolver = {
   subscribe: (
     parent: unknown,
     args: Args,
-  ) => AsyncIterableIterator<GraphQLUpdate>;
-  resolve: (update: GraphQLUpdate) => GraphQLUpdate;
+  ) => AsyncIterableIterator<GraphQLUpdate[]>;
+  resolve: (updates: GraphQLUpdate[]) => GraphQLUpdate[];
 };
 
 /**
@@ -57,7 +58,7 @@ function createSubscriptionResolver(
     // Returns the service's iterator itself, not a generator wrapping it, so
     // a client that disconnects closes its subscription at once
     subscribe: (_parent, args) => apiService.subscribe(source, args.where),
-    resolve: (update) => update,
+    resolve: (updates) => updates,
   };
 }
 

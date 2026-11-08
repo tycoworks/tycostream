@@ -4,7 +4,7 @@ import type { RawRow } from './postgres.js';
 import type { SourceDefinition, EnumType } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import { RowUpdateType } from '../common/types.js';
-import type { RowUpdateEvent } from '../common/types.js';
+import type { RowUpdateBatch } from '../common/types.js';
 
 const idAndName: SourceDefinition = {
   name: 'test',
@@ -21,7 +21,7 @@ describe('readSnapshot', () => {
     return { client: { query } as unknown as pg.ClientBase, query };
   };
   const readAll = async (client: pg.ClientBase) => {
-    const batches: RowUpdateEvent[][] = [];
+    const batches: RowUpdateBatch[] = [];
     for await (const batch of readSnapshot(client, idAndName, {
       sql: 'select "id" from "test" where "id" = $1',
       parameters: [7],
@@ -42,32 +42,34 @@ describe('readSnapshot', () => {
     );
   });
 
-  it('should yield the rows, typed, as one batch of inserts, then end', async () => {
+  it('should yield the rows, typed, as one batch of inserts with no timestamp, then end', async () => {
     const { client } = clientReturning([
       { id: '1', name: 'a' },
       { id: '2', name: null },
     ]);
 
     expect(await readAll(client)).toEqual([
-      [
-        {
-          type: RowUpdateType.Insert,
-          fields: new Set(['id', 'name']),
-          row: { id: 1, name: 'a' },
-        },
-        {
-          type: RowUpdateType.Insert,
-          fields: new Set(['id', 'name']),
-          row: { id: 2, name: null },
-        },
-      ],
+      {
+        events: [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id', 'name']),
+            row: { id: 1, name: 'a' },
+          },
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id', 'name']),
+            row: { id: 2, name: null },
+          },
+        ],
+      },
     ]);
   });
 
-  it('should yield nothing for an empty source, as a live stream would not', async () => {
+  it('should yield the snapshot even for an empty source, as a live stream does', async () => {
     const { client } = clientReturning([]);
 
-    expect(await readAll(client)).toEqual([]);
+    expect(await readAll(client)).toEqual([{ events: [] }]);
   });
 });
 

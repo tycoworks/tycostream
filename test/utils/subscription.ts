@@ -78,8 +78,8 @@ class SubscriptionStream implements EventStream<any> {
 }
 
 /**
- * Processes subscription events by maintaining a state map
- * Handles INSERT/UPDATE/DELETE operations
+ * Processes subscription events by maintaining a state map. Each event is
+ * one timestamp's list of INSERT/UPDATE/DELETE updates.
  */
 export class SubscriptionProcessor<
   TData = any,
@@ -93,15 +93,21 @@ export class SubscriptionProcessor<
   ) {}
 
   processEvent(data: any): void {
-    // Extract operation and data from standard GraphQL response structure
-    const responseData = data[this.dataPath];
-    if (!responseData) {
+    // Extract the timestamp's updates from standard GraphQL response structure
+    const updates = data[this.dataPath] as unknown[] | undefined;
+    if (!updates) {
       throw new Error(
         `No data found at path '${this.dataPath}' in GraphQL response`,
       );
     }
 
-    const { operation, data: rowData, fields } = responseData;
+    for (const update of updates) {
+      this.applyUpdate(update);
+    }
+  }
+
+  private applyUpdate(update: any): void {
+    const { operation, data: rowData, fields } = update;
 
     if (!rowData) {
       console.error(`Received ${operation} operation without data`);
