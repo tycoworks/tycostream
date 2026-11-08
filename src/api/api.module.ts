@@ -4,14 +4,13 @@ import { YogaDriver, YogaDriverConfig } from '@graphql-yoga/nestjs';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { generateSchema } from './schema.js';
 import type { SourceConfiguration } from '../config/source.types.js';
-import { buildSubscriptionResolvers } from './subscription.resolver.js';
+import { buildResolvers } from './api.resolver.js';
 import { ViewModule } from '../view/view.module.js';
 import { ViewService } from '../view/view.service.js';
-import { SubscriptionService } from './subscription.service.js';
+import { ApiService } from './api.service.js';
 
 /**
- * API module provides GraphQL subscriptions
- * Handles real-time data streaming
+ * API module provides each source's GraphQL query and subscription
  */
 @Module({
   imports: [
@@ -37,13 +36,10 @@ import { SubscriptionService } from './subscription.service.js';
         // Log the generated SDL
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
 
-        // Create service instances for resolvers
-        const subscriptionService = new SubscriptionService(viewService);
-
-        // Build resolvers
-        const subscriptionResolvers = buildSubscriptionResolvers(
+        const apiService = new ApiService(viewService);
+        const { Query, Subscription } = buildResolvers(
           sourceConfig.sources,
-          subscriptionService,
+          apiService,
         );
 
         const graphqlConfig = configService.get('graphql');
@@ -56,12 +52,7 @@ import { SubscriptionService } from './subscription.service.js';
         return {
           typeDefs,
           graphiql: graphqlConfig.playground, // GRAPHQL_UI turns on the GraphiQL UI
-          resolvers: {
-            Query: {
-              ping: () => 'pong',
-            },
-            Subscription: subscriptionResolvers,
-          },
+          resolvers: { Query, Subscription },
         };
       },
       inject: [ConfigService, ViewService],

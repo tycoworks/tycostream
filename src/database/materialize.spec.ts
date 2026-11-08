@@ -1,13 +1,16 @@
 import type pg from 'pg';
 import {
   KeyViolationError,
-  MaterializeProtocolHandler,
+  MaterializeAdapter,
   pairChanges,
   ProgressBatcher,
 } from './materialize.js';
-import type { DiffRow, RawRow } from './materialize.js';
-import { RowUpdateType } from '../common/types.js';
-import type { SourceDefinition, EnumType } from '../config/source.types.js';
+import type { DiffRow } from './materialize.js';
+import type { RawRow } from './postgres.js';
+import type { CompiledSelect } from './select.js';
+import { RowUpdateType, StreamMode } from '../common/types.js';
+import type { Row, RowUpdateEvent } from '../common/types.js';
+import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 
 const source = (fields: SourceDefinition['fields']): SourceDefinition => ({
@@ -33,7 +36,7 @@ const progress = (timestamp: number): RawRow => ({
   mz_diff: null,
 });
 
-describe('MaterializeProtocolHandler', () => {
+describe('MaterializeAdapter', () => {
   const idAndName = source([
     { name: 'id', dataType: DataType.Integer },
     { name: 'name', dataType: DataType.String },
@@ -46,8 +49,7 @@ describe('MaterializeProtocolHandler', () => {
     const client = {
       query: vi.fn((...args: unknown[]) => {
         queries.push(args);
-        const config = args[0] as { text?: string };
-        if (config.text?.startsWith('FETCH')) {
+        if ((args[0] as string).startsWith('FETCH')) {
           const rows = fetches.shift();
           return rows ? Promise.resolve({ rows }) : new Promise(() => {});
         }
@@ -57,16 +59,51 @@ describe('MaterializeProtocolHandler', () => {
     return { client: client as unknown as pg.ClientBase, queries };
   };
 
+  const adapter = new MaterializeAdapter();
+  // A live read, as an iterator the tests can step through
+  const readLive = (
+    client: pg.ClientBase,
+    source: SourceDefinition,
+    select: CompiledSelect,
+  ) =>
+    adapter
+      .read(client, source, select, StreamMode.Live)
+      [Symbol.asyncIterator]();
   const readAll = (client: pg.ClientBase) =>
-    new MaterializeProtocolHandler(idAndName).read(client, {
-      sql: 'select 1',
-      parameters: [],
-    });
+    readLive(client, idAndName, { sql: 'select 1', parameters: [] });
 
-  describe('read', () => {
+  describe('read, as a snapshot', () => {
+    it('should run the SELECT alone, with no SUBSCRIBE, and yield its rows as inserts', async () => {
+      const query = vi.fn(() =>
+        Promise.resolve({ rows: [{ id: '1', name: 'a' }] }),
+      );
+      const batches: RowUpdateEvent[][] = [];
+      for await (const batch of adapter.read(
+        { query } as unknown as pg.ClientBase,
+        idAndName,
+        { sql: 'select 1', parameters: [] },
+        StreamMode.Snapshot,
+      )) {
+        batches.push(batch);
+      }
+
+      expect(query.mock.calls).toEqual([['select 1', []]]);
+      expect(batches).toEqual([
+        [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id', 'name']),
+            row: { id: 1, name: 'a' },
+          },
+        ],
+      ]);
+    });
+  });
+
+  describe('read, live', () => {
     it('should turn off the idle timeout, then declare a cursor for the query inside a transaction, keeping its parameters', async () => {
       const { client, queries } = fakeClient([[progress(1)]]);
-      const batches = new MaterializeProtocolHandler(idAndName).read(client, {
+      const batches = readLive(client, idAndName, {
         sql: 'select "id" from "test" where "id" = $1',
         parameters: [7],
       });
@@ -81,20 +118,7 @@ describe('MaterializeProtocolHandler', () => {
         'DECLARE c CURSOR FOR SUBSCRIBE (select "id" from "test" where "id" = $1) WITH (SNAPSHOT, PROGRESS)',
         [7],
       ]);
-      expect(queries[3]).toEqual([
-        expect.objectContaining({ text: 'FETCH 1000 c' }),
-      ]);
-    });
-
-    it('should fetch every column as text, so the schema decides the types', async () => {
-      const { client, queries } = fakeClient([]);
-      void readAll(client).next();
-      await vi.waitFor(() => expect(queries.length).toBe(4));
-
-      const { types } = queries[3][0] as {
-        types: { getTypeParser: () => (value: string) => unknown };
-      };
-      expect(types.getTypeParser()('2026-01-01')).toBe('2026-01-01');
+      expect(queries[3]).toEqual(['FETCH 1000 c']);
     });
 
     it('should yield each complete timestamp across fetches as row events', async () => {
@@ -132,6 +156,49 @@ describe('MaterializeProtocolHandler', () => {
           type: RowUpdateType.Delete,
           fields: new Set(['id']),
           row: { id: 2, name: 'b' },
+        },
+      ]);
+    });
+
+    it('should keep two live streams on the one adapter apart, each with its own source and rows', async () => {
+      const prices = source([
+        { name: 'symbol', dataType: DataType.String },
+        { name: 'price', dataType: DataType.Float },
+      ]);
+      const first = fakeClient([
+        [change(1, 1, { id: '1', name: 'a' })],
+        [progress(2)],
+      ]);
+      const second = fakeClient([
+        [change(1, 1, { symbol: 'AAPL', price: '1.5' })],
+        [progress(2)],
+      ]);
+      const firstBatches = readLive(first.client, idAndName, {
+        sql: 'select 1',
+        parameters: [],
+      });
+      const secondBatches = readLive(second.client, prices, {
+        sql: 'select 2',
+        parameters: [],
+      });
+
+      // Interleaved, so a batcher shared between them would mix their rows
+      const [firstEvents, secondEvents] = await Promise.all([
+        firstBatches.next(),
+        secondBatches.next(),
+      ]);
+      expect(firstEvents.value).toEqual([
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['id', 'name']),
+          row: { id: 1, name: 'a' },
+        },
+      ]);
+      expect(secondEvents.value).toEqual([
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['symbol', 'price']),
+          row: { symbol: 'AAPL', price: 1.5 },
         },
       ]);
     });
@@ -242,127 +309,10 @@ describe('ProgressBatcher', () => {
     });
   });
 
-  describe('typing values by the schema', () => {
-    const typed = (
-      fields: SourceDefinition['fields'],
-      row: Record<string, string | null>,
-    ) => {
-      const batcher = new ProgressBatcher(source(fields));
-      batcher.take([change(1, 1, row)]);
-      return batcher.take([progress(2)])[0][0].row;
-    };
-
-    it('should parse booleans', () => {
-      expect(
-        typed(
-          [
-            { name: 'id', dataType: DataType.String },
-            { name: 'yes', dataType: DataType.Boolean },
-            { name: 'no', dataType: DataType.Boolean },
-          ],
-          { id: '1', yes: 't', no: 'f' },
-        ),
-      ).toEqual({ id: '1', yes: true, no: false });
-    });
-
-    it('should parse integers and floats, including scientific notation', () => {
-      expect(
-        typed(
-          [
-            { name: 'id', dataType: DataType.Integer },
-            { name: 'price', dataType: DataType.Float },
-            { name: 'rate', dataType: DataType.Float },
-          ],
-          { id: '42', price: '99.99', rate: '-4.56e-3' },
-        ),
-      ).toEqual({ id: 42, price: 99.99, rate: -4.56e-3 });
-    });
-
-    it('should keep bigints as strings to preserve precision', () => {
-      expect(
-        typed(
-          [
-            { name: 'id', dataType: DataType.String },
-            { name: 'big', dataType: DataType.BigInt },
-          ],
-          { id: '1', big: '9223372036854775807' },
-        ),
-      ).toEqual({ id: '1', big: '9223372036854775807' });
-    });
-
-    it('should keep timestamps, dates, times, UUIDs and JSON as strings', () => {
-      const row = {
-        id: '550e8400-e29b-41d4-a716-446655440000',
-        at: '2023-01-15 14:30:00',
-        day: '1990-05-20',
-        time: '09:15:30',
-        meta: '{"key":"value","num":42}',
-      };
-      expect(
-        typed(
-          [
-            { name: 'id', dataType: DataType.UUID },
-            { name: 'at', dataType: DataType.Timestamp },
-            { name: 'day', dataType: DataType.Date },
-            { name: 'time', dataType: DataType.Time },
-            { name: 'meta', dataType: DataType.JSON },
-          ],
-          row,
-        ),
-      ).toEqual(row);
-    });
-
-    it('should keep nulls as nulls whatever the type', () => {
-      expect(
-        typed(
-          [
-            { name: 'id', dataType: DataType.Integer },
-            { name: 'flag', dataType: DataType.Boolean },
-            { name: 'qty', dataType: DataType.Float },
-            { name: 'name', dataType: DataType.String },
-          ],
-          { id: '1', flag: null, qty: null, name: null },
-        ),
-      ).toEqual({ id: 1, flag: null, qty: null, name: null });
-    });
-
-    it('should give NaN for numbers that do not parse', () => {
-      const row = typed(
-        [
-          { name: 'id', dataType: DataType.String },
-          { name: 'int', dataType: DataType.Integer },
-          { name: 'float', dataType: DataType.Float },
-        ],
-        { id: '1', int: 'not_a_number', float: 'invalid' },
-      );
-      expect(row.int).toBeNaN();
-      expect(row.float).toBeNaN();
-    });
-
-    it('should keep enum values as their strings', () => {
-      const status: EnumType = {
-        name: 'order_status',
-        values: ['pending', 'shipped', 'delivered'],
-      };
-      expect(
-        typed(
-          [
-            { name: 'id', dataType: DataType.Integer },
-            { name: 'status', dataType: DataType.String, enumType: status },
-            { name: 'other', dataType: DataType.String, enumType: status },
-          ],
-          { id: '1', status: 'shipped', other: null },
-        ),
-      ).toEqual({ id: 1, status: 'shipped', other: null });
-    });
-
-    it('should take only the schema columns, not the SUBSCRIBE columns', () => {
-      expect(
-        Object.keys(
-          typed([{ name: 'id', dataType: DataType.Integer }], { id: '1' }),
-        ),
-      ).toEqual(['id']);
-    });
+  it('should type each row as the schema says, keeping only its columns', () => {
+    batcher.take([change(1, 1, { id: '7', name: 'a' })]);
+    const [[{ row }]] = batcher.take([progress(2)]);
+    expect(row).toEqual({ id: 7, name: 'a' });
   });
 });
 
@@ -375,8 +325,8 @@ describe('pairChanges', () => {
     qty,
     traded_at: at,
   });
-  const add = (r: Record<string, unknown>): DiffRow => ({ diff: 1, row: r });
-  const remove = (r: Record<string, unknown>): DiffRow => ({
+  const add = (r: Row): DiffRow => ({ diff: 1, row: r });
+  const remove = (r: Row): DiffRow => ({
     diff: -1,
     row: r,
   });

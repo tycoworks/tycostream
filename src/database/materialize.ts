@@ -1,22 +1,20 @@
+import { Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType, RowUpdateType } from '../common/types.js';
-import type { RowUpdateEvent } from '../common/types.js';
-import type { CompiledQuery } from './query.js';
-import type { ProtocolHandler } from './types.js';
+import { RowUpdateType, StreamMode } from '../common/types.js';
+import type { Row, RowUpdateEvent } from '../common/types.js';
+import { insertOf, parseRow, readSnapshot, TEXT_TRUE } from './postgres.js';
+import type { RawRow } from './postgres.js';
+import type { CompiledSelect } from './select.js';
+import { DatabaseAdapter } from './types.js';
 
 /**
- * One fetched row as Materialize sends it: every column as text, or null
- */
-export type RawRow = Record<string, string | null>;
-
-/**
- * One row of a subscription's changes: +1 when it was added, -1 when it was
+ * One row of a live stream's changes: +1 when it was added, -1 when it was
  * removed, and the row's values
  */
 export interface DiffRow {
   diff: number;
-  row: Record<string, unknown>;
+  row: Row;
 }
 
 const CURSOR = 'c';
@@ -28,31 +26,37 @@ enum SubscribeColumn {
   Diff = 'mz_diff',
 }
 
-// How Postgres writes a true boolean as text
-const TEXT_TRUE = 't';
-
 // Joins a row's values into one key; no value's text can contain it
 const VALUE_SEPARATOR = '\u0000';
 
 // FETCH waits until rows exist, so a bigger batch only helps a busy view
 const FETCH_SIZE = 1000;
 
-// Every column arrives as text; parseValue types it as the schema says
-const TEXT_ONLY = { getTypeParser: () => (value: string) => value };
-
 /**
- * Handles Materialize-specific protocol details: reads
- * SUBSCRIBE (<query>) WITH (SNAPSHOT, PROGRESS) through a cursor
+ * Materialize: snapshots as any Postgres-compatible database gives them, and
+ * live streams through SUBSCRIBE
  */
-export class MaterializeProtocolHandler implements ProtocolHandler {
-  constructor(private readonly sourceDefinition: SourceDefinition) {}
+@Injectable()
+export class MaterializeAdapter extends DatabaseAdapter {
+  read(
+    client: pg.ClientBase,
+    source: SourceDefinition,
+    select: CompiledSelect,
+    mode: StreamMode,
+  ): AsyncIterable<RowUpdateEvent[]> {
+    return mode === StreamMode.Snapshot
+      ? readSnapshot(client, source, select)
+      : this.readLive(client, source, select);
+  }
 
   /**
-   * Never ends by itself; it stops when the connection closes
+   * Reads SUBSCRIBE (<select>) WITH (SNAPSHOT, PROGRESS) through a cursor.
+   * Never ends by itself; it stops when the connection closes.
    */
-  async *read(
+  private async *readLive(
     client: pg.ClientBase,
-    query: CompiledQuery,
+    source: SourceDefinition,
+    select: CompiledSelect,
   ): AsyncGenerator<RowUpdateEvent[]> {
     // The transaction sits idle while the consumer works through a batch.
     // Materialize's cap on a subscription's backlog limits a slow consumer,
@@ -61,19 +65,18 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
     // A cursor only lives inside a transaction
     await client.query('BEGIN');
     await client.query(
-      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${query.sql}) WITH (SNAPSHOT, PROGRESS)`,
-      [...query.parameters],
+      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${select.sql}) WITH (SNAPSHOT, PROGRESS)`,
+      [...select.parameters],
     );
 
     // FETCH without a timeout returns as soon as rows exist
-    const batcher = new ProgressBatcher(this.sourceDefinition);
-    const { primaryKeyField, fields } = this.sourceDefinition;
+    const batcher = new ProgressBatcher(source);
+    const { primaryKeyField, fields } = source;
     const fieldNames = fields.map((field) => field.name);
     while (true) {
-      const { rows } = await client.query<RawRow>({
-        text: `FETCH ${FETCH_SIZE} ${CURSOR}`,
-        types: TEXT_ONLY,
-      });
+      const { rows } = await client.query<RawRow>(
+        `FETCH ${FETCH_SIZE} ${CURSOR}`,
+      );
       for (const batch of batcher.take(rows)) {
         const events = pairChanges(batch, primaryKeyField, fieldNames);
         // A timestamp whose changes cancel out has nothing to send
@@ -86,7 +89,7 @@ export class MaterializeProtocolHandler implements ProtocolHandler {
 }
 
 /**
- * Holds a subscription's rows until a progress row says their timestamp is
+ * Holds a live stream's rows until a progress row says their timestamp is
  * complete, typing each value as the schema says
  */
 export class ProgressBatcher {
@@ -114,24 +117,12 @@ export class ProgressBatcher {
         const batch = this.pending.get(timestamp) ?? [];
         batch.push({
           diff: Number(raw[SubscribeColumn.Diff]),
-          row: this.parseRow(raw),
+          row: parseRow(this.sourceDefinition, raw),
         });
         this.pending.set(timestamp, batch);
       }
     }
     return complete;
-  }
-
-  private parseRow(raw: RawRow): Record<string, unknown> {
-    return Object.fromEntries(
-      this.sourceDefinition.fields.map((field) => {
-        const value = raw[field.name];
-        return [
-          field.name,
-          value === null ? null : parseValue(value, field.dataType),
-        ];
-      }),
-    );
   }
 }
 
@@ -189,11 +180,7 @@ function toEvent(
   const key = forKey[0].row[primaryKeyField];
 
   if (forKey.length === 1 && added) {
-    return {
-      type: RowUpdateType.Insert,
-      fields: new Set(fieldNames),
-      row: added.row,
-    };
+    return insertOf(added.row, fieldNames);
   }
   if (forKey.length === 1 && removed) {
     return {
@@ -238,37 +225,4 @@ function valueKey(value: unknown): string {
     return `n:${value.toString()}`;
   }
   return `j:${JSON.stringify(value) ?? 'undefined'}`;
-}
-
-/**
- * Parse a column's text value into the type the GraphQL schema serves
- */
-function parseValue(value: string, dataType: DataType): unknown {
-  switch (dataType) {
-    case DataType.Boolean:
-      return value === TEXT_TRUE;
-
-    case DataType.Integer:
-      return parseInt(value, 10);
-
-    case DataType.Float:
-      return parseFloat(value);
-
-    case DataType.BigInt:
-      // Keep as string to preserve precision
-      return value;
-
-    // All string-based types
-    case DataType.String:
-    case DataType.UUID:
-    case DataType.Timestamp:
-    case DataType.Date:
-    case DataType.Time:
-    case DataType.JSON:
-    case DataType.Array:
-      return value;
-
-    default:
-      return value;
-  }
 }

@@ -1,6 +1,6 @@
 # tycostream
 
-tycostream turns [Materialize](https://materialize.com/) views into GraphQL subscriptions over server-sent events (SSE), so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
+tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions over server-sent events (SSE), so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
 
 For an example app, see [positions-app](https://github.com/tycoworks/positions-app), which streams live positions and trades from Materialize through tycostream.
 
@@ -25,6 +25,10 @@ SCHEMA_PATH=./schema.yaml
 LOG_LEVEL=debug" > .env
 
 # LOG_LEVEL can be trace, debug, info, warn or error
+# Optional: DATABASE_MAX_CONNECTIONS caps tycostream's database connections
+# (default 1000); each subscription holds one, each query borrows one
+# Optional: DATABASE_QUERY_TIMEOUT_MS is the time limit on a query
+# (default 30000)
 ```
 
 ### 2. Create a schema file

@@ -82,6 +82,11 @@ export enum RowUpdateType {
 }
 
 /**
+ * One row of a source, its values typed as the schema says
+ */
+export type Row = Record<string, unknown>;
+
+/**
  * Row update event sent to GraphQL subscriptions
  * fields: set of field names that are relevant for this event
  *   - INSERT: all field names
@@ -92,5 +97,16 @@ export enum RowUpdateType {
 export interface RowUpdateEvent {
   type: RowUpdateType;
   fields: Set<string>; // Field names relevant to this event
-  row: Record<string, any>; // Complete row data
+  row: Row; // Complete row data
+}
+
+/**
+ * How a stream on a source runs. Both start with the snapshot: the source's
+ * current rows that match the filter, as one batch of inserts.
+ */
+export enum StreamMode {
+  // The snapshot, then the stream ends: a GraphQL query
+  Snapshot,
+  // The snapshot, then every change: a GraphQL subscription
+  Live,
 }

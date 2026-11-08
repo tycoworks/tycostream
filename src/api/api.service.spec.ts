@@ -1,19 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repeater } from '@repeaterjs/repeater';
-import {
-  SubscriptionService,
-  GraphQLRowOperation,
-} from './subscription.service.js';
+import { ApiService, GraphQLRowOperation } from './api.service.js';
 import { ViewService } from '../view/view.service.js';
-import { RowUpdateType } from '../common/types.js';
-import type { RowUpdateEvent } from '../common/types.js';
-import type { ChangeBatches } from '../database/types.js';
+import { RowUpdateType, StreamMode } from '../common/types.js';
+import type { Row, RowUpdateEvent } from '../common/types.js';
+import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import type { Mocked } from 'vitest';
 
-describe('SubscriptionService', () => {
-  let subscriptionService: SubscriptionService;
+describe('ApiService', () => {
+  let apiService: ApiService;
   let viewService: Mocked<ViewService>;
 
   const testSourceDefinition: SourceDefinition = {
@@ -38,8 +35,20 @@ describe('SubscriptionService', () => {
       await stop;
       closed();
     });
-    viewService.subscribe.mockReturnValue(view as ChangeBatches);
+    viewService.stream.mockReturnValue(view as RowUpdateBatches);
     return closed;
+  };
+
+  // A snapshot: these batches, then the stream ends
+  const snapshotOf = (...batches: RowUpdateEvent[][]) => {
+    viewService.stream.mockReturnValue(
+      new Repeater<RowUpdateEvent[]>(async (push, stop) => {
+        for (const batch of batches) {
+          await push(batch);
+        }
+        stop();
+      }) as RowUpdateBatches,
+    );
   };
 
   const take = async (
@@ -55,41 +64,112 @@ describe('SubscriptionService', () => {
 
   beforeEach(async () => {
     viewService = {
-      subscribe: vi.fn(),
+      stream: vi.fn(),
     } as unknown as Mocked<ViewService>;
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        SubscriptionService,
-        { provide: ViewService, useValue: viewService },
-      ],
+      providers: [ApiService, { provide: ViewService, useValue: viewService }],
     }).compile();
 
-    subscriptionService = module.get<SubscriptionService>(SubscriptionService);
+    apiService = module.get<ApiService>(ApiService);
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('createSubscription', () => {
-    it('should pass the source and filter to the view', () => {
+  describe('query', () => {
+    const insert = (row: Row) => ({
+      type: RowUpdateType.Insert,
+      fields: ALL_FIELDS,
+      row,
+    });
+
+    it('should open a snapshot stream on the source and filter', async () => {
+      snapshotOf();
+      const where = { name: { _eq: 'test' } };
+
+      await apiService.query(testSourceDefinition, where);
+
+      expect(viewService.stream).toHaveBeenCalledWith(
+        testSourceDefinition,
+        where,
+        StreamMode.Snapshot,
+      );
+    });
+
+    it('should return every row of the snapshot, whole, as GraphQL resolves the fields asked for', async () => {
+      snapshotOf([insert(ROW), insert({ ...ROW, id: '2' })]);
+
+      expect(await apiService.query(testSourceDefinition)).toEqual([
+        ROW,
+        { ...ROW, id: '2' },
+      ]);
+    });
+
+    it('should return no rows for an empty source', async () => {
+      snapshotOf();
+
+      expect(await apiService.query(testSourceDefinition)).toEqual([]);
+    });
+
+    it('should fail with the error when the view fails', async () => {
+      viewService.stream.mockReturnValue(
+        new Repeater<RowUpdateEvent[]>((_push, stop) => {
+          void stop(new Error('unknown catalog item'));
+        }) as RowUpdateBatches,
+      );
+
+      await expect(apiService.query(testSourceDefinition)).rejects.toThrow(
+        'unknown catalog item',
+      );
+    });
+
+    it('should stop the stream, and fail with why, when the signal aborts', async () => {
+      // A snapshot that hasn't arrived yet
+      const closed = viewOf();
+      const cancel = new AbortController();
+      const querying = apiService.query(
+        testSourceDefinition,
+        undefined,
+        cancel.signal,
+      );
+
+      cancel.abort(new Error('the client left'));
+
+      await expect(querying).rejects.toThrow('the client left');
+      expect(closed).toHaveBeenCalled();
+    });
+
+    it('should fail when the view rejects the filter', async () => {
+      viewService.stream.mockImplementation(() => {
+        throw new Error('Unknown field');
+      });
+
+      await expect(
+        apiService.query(testSourceDefinition, { nope: { _eq: 1 } }),
+      ).rejects.toThrow('Unknown field');
+    });
+  });
+
+  describe('subscribe', () => {
+    it('should open a live stream on the source and filter', () => {
       viewOf();
       const where = { name: { _eq: 'test' } };
 
-      subscriptionService.createSubscription(testSourceDefinition, where);
+      apiService.subscribe(testSourceDefinition, where);
 
-      expect(viewService.subscribe).toHaveBeenCalledWith(
+      expect(viewService.stream).toHaveBeenCalledWith(
         testSourceDefinition,
         where,
+        StreamMode.Live,
       );
     });
 
     it('should send an insert with the whole row', async () => {
       viewOf([{ type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW }]);
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
         {
@@ -109,8 +189,7 @@ describe('SubscriptionService', () => {
         },
       ]);
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
         {
@@ -126,8 +205,7 @@ describe('SubscriptionService', () => {
         { type: RowUpdateType.Delete, fields: new Set(['id']), row: ROW },
       ]);
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
         {
@@ -151,8 +229,7 @@ describe('SubscriptionService', () => {
         [{ type: RowUpdateType.Delete, fields: new Set(['id']), row: ROW }],
       );
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = apiService.subscribe(testSourceDefinition);
 
       expect(
         (
@@ -172,8 +249,7 @@ describe('SubscriptionService', () => {
       const closed = viewOf([
         { type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW },
       ]);
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = apiService.subscribe(testSourceDefinition);
       await take(updates, 1);
 
       // Waiting for an update that never comes
@@ -184,25 +260,24 @@ describe('SubscriptionService', () => {
     });
 
     it('should end with the error when the view fails', async () => {
-      viewService.subscribe.mockReturnValue(
+      viewService.stream.mockReturnValue(
         new Repeater<RowUpdateEvent[]>((_push, stop) => {
           void stop(new Error('connection lost'));
-        }) as ChangeBatches,
+        }) as RowUpdateBatches,
       );
 
-      const updates =
-        subscriptionService.createSubscription(testSourceDefinition);
+      const updates = apiService.subscribe(testSourceDefinition);
 
       await expect(updates.next()).rejects.toThrow('connection lost');
     });
 
     it('should throw at once when the view rejects the filter', () => {
-      viewService.subscribe.mockImplementation(() => {
+      viewService.stream.mockImplementation(() => {
         throw new Error('Unknown field');
       });
 
       expect(() =>
-        subscriptionService.createSubscription(testSourceDefinition, {
+        apiService.subscribe(testSourceDefinition, {
           nope: { _eq: 1 },
         }),
       ).toThrow('Unknown field');

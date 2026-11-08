@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
 import { ViewService } from '../view/view.service.js';
-import { RowUpdateType } from '../common/types.js';
-import type { RowUpdateEvent, WhereClause } from '../common/types.js';
+import { RowUpdateType, StreamMode } from '../common/types.js';
+import type { Row, RowUpdateEvent, WhereClause } from '../common/types.js';
 import { truncateForLog } from '../common/logging.utils.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
@@ -21,7 +21,7 @@ export enum GraphQLRowOperation {
  */
 export interface GraphQLUpdate {
   operation: GraphQLRowOperation;
-  data: Record<string, any>;
+  data: Row;
   fields: string[];
 }
 
@@ -34,26 +34,57 @@ const ROW_UPDATE_TYPE_MAP = {
   [RowUpdateType.Delete]: GraphQLRowOperation.Delete,
 } as const;
 
+/**
+ * The API layer's one service: GraphQL's operations on a source, each a
+ * stream on a view of it
+ */
 @Injectable()
-export class SubscriptionService {
-  private readonly logger = new Logger(SubscriptionService.name);
+export class ApiService {
+  private readonly logger = new Logger(ApiService.name);
 
   constructor(private readonly viewService: ViewService) {}
 
   /**
-   * Creates a subscription stream for a data source
-   * Transforms row events into GraphQL updates. Throws if the filter is
-   * invalid; a database error ends this subscription with that error.
+   * A GraphQL query: a snapshot stream on the view, its rows returned once.
+   * Throws if the filter is invalid; a database error, or the time limit,
+   * fails the query. Aborting the signal, as the client leaving does, stops
+   * the stream, which ends the query in the database.
    */
-  createSubscription(
-    sourceDefinition: SourceDefinition,
+  async query(
+    source: SourceDefinition,
+    where?: WhereClause,
+    signal?: AbortSignal,
+  ): Promise<Row[]> {
+    this.logger.log(`Query for ${describe(source, where)}`);
+
+    const batches = this.viewService.stream(source, where, StreamMode.Snapshot);
+    const stop = () => void batches.return();
+    signal?.addEventListener('abort', stop, { once: true });
+    try {
+      const rows: Row[] = [];
+      for await (const events of batches) {
+        rows.push(...events.map((event) => event.row));
+      }
+      // A stopped stream just ends, so say why it stopped
+      signal?.throwIfAborted();
+      return rows;
+    } finally {
+      signal?.removeEventListener('abort', stop);
+    }
+  }
+
+  /**
+   * A GraphQL subscription: a live stream on the view, its row events sent
+   * as GraphQL updates. Throws if the filter is invalid; a database error
+   * ends the subscription with that error.
+   */
+  subscribe(
+    source: SourceDefinition,
     where?: WhereClause,
   ): AsyncIterableIterator<GraphQLUpdate> {
-    this.logger.log(
-      `Subscription for ${sourceDefinition.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`,
-    );
+    this.logger.log(`Subscription for ${describe(source, where)}`);
 
-    const batches = this.viewService.subscribe(sourceDefinition, where);
+    const batches = this.viewService.stream(source, where, StreamMode.Live);
 
     return new Repeater<GraphQLUpdate>(async (push, stop) => {
       const forward = async () => {
@@ -61,7 +92,7 @@ export class SubscriptionService {
           for (const event of events) {
             const update = this.transformToGraphQLUpdate(event);
             this.logger.debug(
-              `Sending GraphQL update - source: ${sourceDefinition.name}, operation: ${update.operation}, ` +
+              `Sending GraphQL update - source: ${source.name}, operation: ${update.operation}, ` +
                 `data: ${truncateForLog(update.data)}, fields: [${update.fields.join(', ')}]`,
             );
             await push(update);
@@ -95,4 +126,9 @@ export class SubscriptionService {
 
     return { operation, data, fields };
   }
+}
+
+// A source and its filter, for the logs
+function describe(source: SourceDefinition, where?: WhereClause): string {
+  return `${source.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`;
 }

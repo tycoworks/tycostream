@@ -1,25 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import { DatabaseStreamService } from '../database/stream.service.js';
-import type { ChangeBatches } from '../database/types.js';
+import { DatabaseService } from '../database/database.service.js';
+import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import type { WhereClause } from '../common/types.js';
+import type { StreamMode, WhereClause } from '../common/types.js';
 
 /**
- * ViewService manages views of streaming data
- * This is the main interface for GraphQL subscriptions. For now each view
- * passes straight through to its own database subscription; a shared cache
- * would go here.
+ * ViewService manages views of streaming data: a source plus a client's
+ * filter. For now each view passes straight through to its own database
+ * stream; a shared cache, or permissions, would go here.
  */
 @Injectable()
 export class ViewService {
-  constructor(private readonly streamService: DatabaseStreamService) {}
+  constructor(private readonly databaseService: DatabaseService) {}
 
   /**
-   * A view of a source's rows that match the filter: its row events, one
-   * complete timestamp at a time, the snapshot first. Ending the iteration
-   * closes the view.
+   * A stream on a view of a source's rows that match the filter: its row
+   * events, one complete timestamp at a time, the snapshot first. A
+   * snapshot then ends; a live stream goes on. Ending the iteration closes
+   * the stream.
    */
-  subscribe(source: SourceDefinition, where?: WhereClause): ChangeBatches {
-    return this.streamService.subscribe(source, where);
+  stream(
+    source: SourceDefinition,
+    where: WhereClause | undefined,
+    mode: StreamMode,
+  ): RowUpdateBatches {
+    return this.databaseService.stream(source, where, mode);
   }
 }

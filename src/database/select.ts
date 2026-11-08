@@ -11,7 +11,7 @@ import { ComparisonOperator, LogicalOperator } from '../common/types.js';
 import type { FieldComparison, WhereClause } from '../common/types.js';
 import type { SourceDefinition, SourceField } from '../config/source.types.js';
 
-export interface CompiledQuery {
+export interface CompiledSelect {
   sql: string;
   parameters: readonly unknown[];
 }
@@ -58,7 +58,7 @@ type Condition = Expression<SqlBool>;
 export function buildSelect(
   source: SourceDefinition,
   where?: WhereClause,
-): CompiledQuery {
+): CompiledSelect {
   let query = db
     .selectFrom(sql.id(source.name).as(source.name))
     .select(source.fields.map((field) => sql.id(field.name).as(field.name)));

@@ -1,18 +1,15 @@
 import { Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
-import pg from 'pg';
-import type { DatabaseConfig } from '../config/database.config.js';
-import type { CompiledQuery } from './query.js';
+import type { DatabaseConnectionService } from './connection.service.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import type { CompiledSelect } from './select.js';
+import { StreamMode } from '../common/types.js';
 import type { RowUpdateEvent } from '../common/types.js';
-import type { ChangeBatches, ProtocolHandler } from './types.js';
-
-// Component-specific database configuration
-const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
-const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
+import type { DatabaseAdapter, RowUpdateBatches } from './types.js';
 
 /**
- * Called when a stream's connection is created, on the first pull, and
- * when it's closed. A stream that's never pulled opens nothing.
+ * Called when a stream starts, on the first pull, and once it has closed.
+ * A stream that's never pulled opens nothing.
  */
 export interface StreamLifecycle {
   onOpen?: () => void;
@@ -20,79 +17,90 @@ export interface StreamLifecycle {
 }
 
 /**
- * One subscription on its own connection. The protocol handler does all the
- * talking over it; this owns the connection and hands on what it reads.
+ * One stream on a source, in either mode. The adapter does all the talking
+ * over the connection; this borrows it for as long as the stream runs, and
+ * hands on what the adapter reads.
  */
 export class DatabaseStream {
   private readonly logger = new Logger(DatabaseStream.name);
 
   constructor(
-    private readonly config: DatabaseConfig,
-    private readonly sourceName: string,
-    private readonly protocolHandler: ProtocolHandler,
-    private readonly query: CompiledQuery,
+    private readonly connectionService: DatabaseConnectionService,
+    private readonly source: SourceDefinition,
+    private readonly mode: StreamMode,
+    private readonly adapter: DatabaseAdapter,
+    private readonly select: CompiledSelect,
   ) {}
 
   /**
-   * The subscription's row events, one complete timestamp at a time, the
-   * snapshot first. The connection opens on the first pull.
+   * The stream's row events, one complete timestamp at a time, the snapshot
+   * first. A snapshot then ends; a live stream goes on until it's stopped.
+   * Nothing connects until the first pull.
    *
-   * The handler reads on only once the consumer has taken the last batch,
+   * The adapter reads on only once the consumer has taken the last batch,
    * so a slow consumer's rows queue in the database. Ending the iteration
-   * closes the connection, which ends the subscription in the database.
+   * cancels the connection, which ends the stream in the database.
    */
-  read(lifecycle: StreamLifecycle = {}): ChangeBatches {
+  read(lifecycle: StreamLifecycle = {}): RowUpdateBatches {
     return new Repeater<RowUpdateEvent[]>(async (push, stop) => {
-      const client = this.createClient();
-      client.on('error', (error) => void stop(error));
+      // Stopping cancels the connection, which ends the stream in the
+      // database at once, even mid-read or while still connecting
+      const cancel = new AbortController();
       let stopped = false;
       void stop.then(() => {
         stopped = true;
+        cancel.abort();
       });
       lifecycle.onOpen?.();
 
       const readUntilStopped = async () => {
-        await client.connect();
-        this.logger.debug(`Subscribing to ${this.sourceName}`);
-        for await (const batch of this.protocolHandler.read(
-          client,
-          this.query,
-        )) {
-          await push(batch);
-          if (stopped) {
-            return;
+        const lease = await this.connectionService.acquire(
+          this.mode,
+          cancel.signal,
+        );
+        const onError = (error: Error) => void stop(error);
+        lease.client.on('error', onError);
+        let failure: unknown;
+        try {
+          this.logger.debug(
+            `Streaming ${this.source.name} (${StreamMode[this.mode]})`,
+          );
+          for await (const batch of this.adapter.read(
+            lease.client,
+            this.source,
+            this.select,
+            this.mode,
+          )) {
+            await push(batch);
+            if (stopped) {
+              return;
+            }
           }
+        } catch (error) {
+          // A cancelled stream fails with why it was cancelled, a timeout
+          // say, rather than with its connection being ended
+          failure = lease.signal.aborted ? lease.signal.reason : error;
+          throw failure;
+        } finally {
+          // A reused connection mustn't keep this stream's listener
+          lease.client.removeListener('error', onError);
+          await lease.close(failure);
         }
-        // The handler finished by itself, so the subscription is over
+        // The adapter finished reading by itself, as a snapshot does
         void stop();
       };
 
-      readUntilStopped().catch((error: unknown) => {
+      const reading = readUntilStopped().catch((error: unknown) => {
         if (!stopped) {
           void stop(error);
         }
       });
 
       await stop;
-      // Ending the connection ends the subscription at once, mid-read or not
-      await client.end().catch(() => {});
-      this.logger.debug(`Closed the subscription to ${this.sourceName}`);
+      // Returns once the connection is given back
+      await reading;
+      this.logger.debug(`Closed the stream on ${this.source.name}`);
       lifecycle.onClose?.();
-    });
-  }
-
-  private createClient(): pg.Client {
-    return new pg.Client({
-      host: this.config.host,
-      port: this.config.port,
-      database: this.config.database,
-      user: this.config.user,
-      password: this.config.password,
-      // Connection timeout and keep-alive settings
-      connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
-      query_timeout: 0, // No timeout for streaming queries
-      keepAlive: true,
-      keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
     });
   }
 }

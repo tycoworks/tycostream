@@ -1,27 +1,33 @@
 import type pg from 'pg';
-import type { RowUpdateEvent } from '../common/types.js';
-import type { CompiledQuery } from './query.js';
+import type { RowUpdateEvent, StreamMode } from '../common/types.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import type { CompiledSelect } from './select.js';
 
 /**
- * A subscription's row events, one complete timestamp at a time. Ending the
- * iteration closes the subscription.
+ * A stream's row events, one complete timestamp at a time, the snapshot
+ * first. Ending the iteration closes the stream.
  */
-export interface ChangeBatches extends AsyncIterableIterator<RowUpdateEvent[]> {
+export interface RowUpdateBatches extends AsyncIterableIterator<
+  RowUpdateEvent[]
+> {
   return(): Promise<IteratorResult<RowUpdateEvent[]>>;
 }
 
 /**
- * Interface for database-specific protocol implementations
- * Says everything that's said over a subscription's connection, but opens
- * and closes no connections
+ * The database: how it reads a stream in either mode, over a connection it
+ * neither opens nor closes. Holds no state, so one serves every stream. An
+ * abstract class, so it can be injected.
  */
-export interface ProtocolHandler {
+export abstract class DatabaseAdapter {
   /**
-   * Subscribes to the query over an open connection and yields its row
-   * events, one complete timestamp at a time, the snapshot first
+   * Runs the source's SELECT over an open connection and yields its row
+   * events, one complete timestamp at a time, the snapshot first as inserts.
+   * A snapshot then ends; a live read goes on until the connection closes.
    */
-  read(
+  abstract read(
     client: pg.ClientBase,
-    query: CompiledQuery,
+    source: SourceDefinition,
+    select: CompiledSelect,
+    mode: StreamMode,
   ): AsyncIterable<RowUpdateEvent[]>;
 }

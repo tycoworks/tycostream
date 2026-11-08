@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ViewService } from './view.service.js';
-import { DatabaseStreamService } from '../database/stream.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
+import { StreamMode } from '../common/types.js';
 import type { Mocked } from 'vitest';
 
 const trades: SourceDefinition = {
@@ -13,35 +14,39 @@ const trades: SourceDefinition = {
 
 describe('ViewService', () => {
   let viewService: ViewService;
-  let streamService: Mocked<DatabaseStreamService>;
+  let databaseService: Mocked<DatabaseService>;
   const changes = { return: vi.fn() };
 
   beforeEach(async () => {
-    streamService = {
-      subscribe: vi.fn().mockReturnValue(changes),
-    } as unknown as Mocked<DatabaseStreamService>;
+    databaseService = {
+      stream: vi.fn().mockReturnValue(changes),
+    } as unknown as Mocked<DatabaseService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ViewService,
-        { provide: DatabaseStreamService, useValue: streamService },
+        { provide: DatabaseService, useValue: databaseService },
       ],
     }).compile();
 
     viewService = module.get<ViewService>(ViewService);
   });
 
-  it('should pass the source and filter to the database and return its events', () => {
+  it('should open a stream of the mode on the source and filter, and return its events', () => {
     const where = { id: { _eq: 1 } };
 
-    expect(viewService.subscribe(trades, where)).toBe(changes);
-    expect(streamService.subscribe).toHaveBeenCalledWith(trades, where);
+    expect(viewService.stream(trades, where, StreamMode.Live)).toBe(changes);
+    expect(databaseService.stream).toHaveBeenCalledWith(
+      trades,
+      where,
+      StreamMode.Live,
+    );
   });
 
-  it('should open a separate database subscription for each view', () => {
-    viewService.subscribe(trades);
-    viewService.subscribe(trades);
+  it('should open a separate stream for each view', () => {
+    viewService.stream(trades, undefined, StreamMode.Live);
+    viewService.stream(trades, undefined, StreamMode.Snapshot);
 
-    expect(streamService.subscribe).toHaveBeenCalledTimes(2);
+    expect(databaseService.stream).toHaveBeenCalledTimes(2);
   });
 });

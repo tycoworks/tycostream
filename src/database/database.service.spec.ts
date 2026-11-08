@@ -1,13 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
-import { DatabaseStreamService } from './stream.service.js';
+import { DatabaseService } from './database.service.js';
+import { DatabaseConnectionService } from './connection.service.js';
 import { DatabaseStream } from './stream.js';
-import { MaterializeProtocolHandler } from './materialize.js';
+import { DatabaseAdapter } from './types.js';
+import { StreamMode } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import type { Mock } from 'vitest';
 
-// Mock DatabaseStream: each read() is a subscription whose connection opens
+// Mock DatabaseStream: each read() is a stream whose connection opens
 // just after, as on a first pull (unless a test says otherwise), and that
 // records its close
 const streamState = vi.hoisted(() => ({ opens: true }));
@@ -37,14 +38,6 @@ vi.mock('./stream.js', () => {
 // Lets the mock streams open
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-const DB_CONFIG = {
-  host: 'localhost',
-  port: 6875,
-  database: 'materialize',
-  user: 'test',
-  password: 'test',
-};
-
 const trades: SourceDefinition = {
   name: 'trades',
   primaryKeyField: 'id',
@@ -54,9 +47,10 @@ const trades: SourceDefinition = {
   ],
 };
 
-describe('DatabaseStreamService', () => {
-  let service: DatabaseStreamService;
-  let configService: ConfigService;
+describe('DatabaseService', () => {
+  let service: DatabaseService;
+  const connectionService = {} as DatabaseConnectionService;
+  const adapter = { read: vi.fn() } as unknown as DatabaseAdapter;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -64,46 +58,37 @@ describe('DatabaseStreamService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        DatabaseStreamService,
-        {
-          provide: ConfigService,
-          useValue: { get: vi.fn().mockReturnValue(DB_CONFIG) },
-        },
+        DatabaseService,
+        { provide: DatabaseConnectionService, useValue: connectionService },
+        { provide: DatabaseAdapter, useValue: adapter },
       ],
     }).compile();
 
-    service = module.get<DatabaseStreamService>(DatabaseStreamService);
-    configService = module.get<ConfigService>(ConfigService);
-
-    // Config is read in onModuleInit, which compile() doesn't run
-    await service.onModuleInit();
+    service = module.get<DatabaseService>(DatabaseService);
   });
 
-  it('should throw on init when database configuration is missing', async () => {
-    (configService.get as Mock).mockReturnValue(undefined);
-    await expect(service.onModuleInit()).rejects.toThrow(
-      'Database configuration not found',
+  describe('stream', () => {
+    it.each([StreamMode.Snapshot, StreamMode.Live])(
+      'should open a stream of the mode (%s) on the connection service, with the source, the adapter and the compiled filter',
+      (mode) => {
+        service.stream(trades, { symbol: { _eq: 'AAPL' } }, mode);
+
+        expect(DatabaseStream).toHaveBeenCalledWith(
+          connectionService,
+          trades,
+          mode,
+          adapter,
+          expect.objectContaining({
+            sql: expect.stringContaining('where "symbol" = $1'),
+            parameters: ['AAPL'],
+          }),
+        );
+      },
     );
-  });
 
-  describe('subscribe', () => {
-    it('should open a stream with the config, a Materialize handler and the compiled filter', () => {
-      service.subscribe(trades, { symbol: { _eq: 'AAPL' } });
-
-      expect(DatabaseStream).toHaveBeenCalledWith(
-        DB_CONFIG,
-        'trades',
-        expect.any(MaterializeProtocolHandler),
-        expect.objectContaining({
-          sql: expect.stringContaining('where "symbol" = $1'),
-          parameters: ['AAPL'],
-        }),
-      );
-    });
-
-    it('should open a separate stream for each subscription', () => {
-      const first = service.subscribe(trades);
-      const second = service.subscribe(trades);
+    it('should open a separate stream each time', () => {
+      const first = service.stream(trades, undefined, StreamMode.Live);
+      const second = service.stream(trades, undefined, StreamMode.Live);
 
       expect(DatabaseStream).toHaveBeenCalledTimes(2);
       expect(first).not.toBe(second);
@@ -111,7 +96,11 @@ describe('DatabaseStreamService', () => {
 
     it('should reject an invalid filter without opening a stream', () => {
       expect(() =>
-        service.subscribe(trades, { no_such_field: { _eq: 1 } }),
+        service.stream(
+          trades,
+          { no_such_field: { _eq: 1 } },
+          StreamMode.Snapshot,
+        ),
       ).toThrow();
       expect(DatabaseStream).not.toHaveBeenCalled();
     });
@@ -119,8 +108,8 @@ describe('DatabaseStreamService', () => {
 
   describe('onModuleDestroy', () => {
     it('should close every open subscription', async () => {
-      const first = service.subscribe(trades);
-      const second = service.subscribe(trades);
+      const first = service.stream(trades, undefined, StreamMode.Live);
+      const second = service.stream(trades, undefined, StreamMode.Live);
       await flush();
 
       await service.onModuleDestroy();
@@ -130,7 +119,7 @@ describe('DatabaseStreamService', () => {
     });
 
     it('should not close a subscription twice once it has closed itself', async () => {
-      const closed = service.subscribe(trades);
+      const closed = service.stream(trades, undefined, StreamMode.Live);
       await flush();
       await closed.return();
       (closed.return as Mock).mockClear();
@@ -142,7 +131,7 @@ describe('DatabaseStreamService', () => {
 
     it('should leave alone a subscription that never opened a connection', async () => {
       streamState.opens = false;
-      const neverPulled = service.subscribe(trades);
+      const neverPulled = service.stream(trades, undefined, StreamMode.Live);
       await flush();
 
       await service.onModuleDestroy();

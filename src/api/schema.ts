@@ -9,7 +9,7 @@ import {
   DataType,
   LogicalOperator,
 } from '../common/types.js';
-import { GraphQLRowOperation } from './subscription.service.js';
+import { GraphQLRowOperation } from './api.service.js';
 import {
   GraphQLString,
   GraphQLInt,
@@ -90,7 +90,14 @@ export function generateSchema(config: SourceConfiguration): string {
   const comparisonTypes = buildComparisonTypes();
   const expressionInputTypes = buildExpressionInputTypes(sources);
   const sourceTypes = buildSourceTypes(sources);
-  const subscriptionFields = buildSubscriptionFields(sources);
+  const queryFields = buildRootFields(
+    sources,
+    (sourceName) => `[${sourceName}!]!`,
+  );
+  const subscriptionFields = buildRootFields(
+    sources,
+    (sourceName) => `${sourceName}Update!`,
+  );
 
   const schema = `
     # ================== ENUMS & BASE TYPES ==================
@@ -118,12 +125,12 @@ ${sourceTypes}
     
     # ================== ROOT TYPES ==================
     
-    # Basic query (required by GraphQL)
+    # Queries: each source's current rows, once
     type Query {
-      ping: ${GraphQLString.name}
+${queryFields}
     }
     
-    # Subscriptions
+    # Subscriptions: each source's current rows, then every change
     type Subscription {
 ${subscriptionFields}
     }`;
@@ -235,16 +242,17 @@ ${fields}
 }
 
 /**
- * Build subscription fields for all sources
- * Creates a subscription field for each source that returns its update type
+ * Build a root type's fields: one per source, named after it, filtered by
+ * its expression, and returning the given type
  */
-function buildSubscriptionFields(
+function buildRootFields(
   sources: Map<string, SourceDefinition>,
+  returnType: (sourceName: string) => string,
 ): string {
   return Array.from(sources.keys())
     .map(
       (sourceName) =>
-        `      ${sourceName}(where: ${sourceName}Expression): ${sourceName}Update!`,
+        `      ${sourceName}(where: ${sourceName}Expression): ${returnType(sourceName)}`,
     )
     .join('\n');
 }

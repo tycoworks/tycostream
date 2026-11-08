@@ -48,6 +48,16 @@ async function createApp(graphqlUI: boolean): Promise<INestApplication<App>> {
   return app;
 }
 
+// Whether the server still answers GraphQL, with a request that needs no
+// database
+async function stillServing(app: INestApplication<App>): Promise<boolean> {
+  const response = await request(app.getHttpServer())
+    .post('/graphql')
+    .send({ query: '{ __typename }' });
+  const body = response.body as { data?: { __typename?: string } };
+  return body.data?.__typename === 'Query';
+}
+
 describe('HTTP', () => {
   describe('with the GraphQL UI on', () => {
     let app: INestApplication<App>;
@@ -103,10 +113,18 @@ describe('HTTP', () => {
       expect(subscription.text).toContain('"errors"');
       expect(subscription.text).toContain('event: complete');
 
-      const ping = await request(app.getHttpServer())
+      expect(await stillServing(app)).toBe(true);
+    });
+
+    it('fails a query whose database connection fails with a GraphQL error, and keeps serving', async () => {
+      const query = await request(app.getHttpServer())
         .post('/graphql')
-        .send({ query: '{ ping }' });
-      expect(ping.body).toEqual({ data: { ping: 'pong' } });
+        .send({ query: '{ users { user_id } }' });
+
+      const body = query.body as { data: unknown; errors?: unknown[] };
+      expect(body.errors).toHaveLength(1);
+      expect(body.data).toBeNull();
+      expect(await stillServing(app)).toBe(true);
     });
 
     it('refuses to serve GraphiQL', async () => {
