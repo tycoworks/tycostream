@@ -99,3 +99,14 @@ export interface RowUpdateEvent {
   fields: Set<string>; // Field names relevant to this event
   row: Row; // Complete row data
 }
+
+/**
+ * How a stream on a source runs. Both start with the snapshot: the source's
+ * current rows that match the filter, as one batch of inserts.
+ */
+export enum StreamMode {
+  // The snapshot, then the stream ends: a GraphQL query
+  Snapshot,
+  // The snapshot, then every change: a GraphQL subscription
+  Live,
+}

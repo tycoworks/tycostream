@@ -29,6 +29,20 @@ export class DatabaseConfig {
   @IsString()
   @IsNotEmpty()
   database: string;
+
+  // Most connections at once: each subscription holds one, each query
+  // borrows one
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxConnections: number;
+
+  // Time limit on a query, waiting for a connection included. Enforced on
+  // tycostream's side: Materialize's statement_timeout doesn't apply to SELECT
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  queryTimeoutMs: number;
 }
 
 /**
@@ -42,6 +56,14 @@ export default registerAs('database', (): DatabaseConfig => {
     user: process.env.DATABASE_USER || 'materialize',
     password: process.env.DATABASE_PASSWORD || 'materialize',
     database: process.env.DATABASE_NAME || 'materialize',
+    maxConnections: parseInt(
+      process.env.DATABASE_MAX_CONNECTIONS || '1000',
+      10,
+    ),
+    queryTimeoutMs: parseInt(
+      process.env.DATABASE_QUERY_TIMEOUT_MS || '30000',
+      10,
+    ),
   };
 
   return validateConfig(rawConfig, 'database', DatabaseConfig);

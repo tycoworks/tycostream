@@ -1,13 +1,12 @@
 import { EventEmitter } from 'node:events';
 import type pg from 'pg';
 import { DatabaseStream } from './stream.js';
-import { ConnectionType } from './connection.service.js';
 import type {
   DatabaseConnectionService,
   ConnectionLease,
 } from './connection.service.js';
 import type { SubscriptionProtocol } from './types.js';
-import { DataType, RowUpdateType } from '../common/types.js';
+import { DataType, RowUpdateType, StreamMode } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { RowUpdateEvent } from '../common/types.js';
 
@@ -25,8 +24,8 @@ const insert = (id: number): RowUpdateEvent => ({
   row: { id },
 });
 
-// A connection service that lends a fake client, or waits to connect until the signal
-// aborts, as the real ones do; and record each lease's closing
+// A connection service that lends a fake client, or waits to connect until
+// the signal aborts, as the real one does; and records each lease's closing
 const fakeConnectionService = ({ connects = true } = {}) => {
   const client = new EventEmitter() as unknown as pg.ClientBase;
   // Closing ends the connection, which fails a statement in flight
@@ -34,20 +33,20 @@ const fakeConnectionService = ({ connects = true } = {}) => {
     client.emit('end');
     return Promise.resolve();
   });
-  const lease: ConnectionLease = {
-    client,
-    close,
-    [Symbol.asyncDispose]: close,
-  };
   const acquire = vi.fn(
-    (_type: ConnectionType, signal?: AbortSignal): Promise<ConnectionLease> =>
+    (_mode: StreamMode, signal: AbortSignal): Promise<ConnectionLease> =>
       new Promise((resolve, reject) => {
-        signal?.addEventListener('abort', () => {
+        signal.addEventListener('abort', () => {
           void close();
           reject(signal.reason as Error);
         });
         if (connects) {
-          resolve(lease);
+          resolve({
+            client,
+            signal,
+            close,
+            [Symbol.asyncDispose]: () => close(),
+          });
         }
       }),
   );
@@ -89,7 +88,7 @@ describe('DatabaseStream', () => {
     expect((await changes.next()).value).toEqual([insert(2)]);
 
     expect(acquire).toHaveBeenCalledWith(
-      ConnectionType.Subscription,
+      StreamMode.Live,
       expect.any(AbortSignal),
     );
     expect(protocol.read).toHaveBeenCalledWith(client, TRADES, QUERY);
@@ -130,7 +129,7 @@ describe('DatabaseStream', () => {
     void changes.next();
     await changes.return();
 
-    const signal = acquire.mock.calls[0][1]!;
+    const signal = acquire.mock.calls[0][1];
     expect(signal.aborted).toBe(true);
     expect(close).toHaveBeenCalled();
     expect(onOpen).toHaveBeenCalledTimes(1);
@@ -149,7 +148,7 @@ describe('DatabaseStream', () => {
     await vi.waitFor(() => expect(acquire).toHaveBeenCalled());
     await changes.return();
 
-    expect(acquire.mock.calls[0][1]!.aborted).toBe(true);
+    expect(acquire.mock.calls[0][1].aborted).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(protocol.read).not.toHaveBeenCalled();
   });

@@ -1,9 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
-import { ConnectionType } from './connection.service.js';
 import type { DatabaseConnectionService } from './connection.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { CompiledSelect } from './select.js';
+import { StreamMode } from '../common/types.js';
 import type { RowUpdateEvent } from '../common/types.js';
 import type { RowUpdateBatches, SubscriptionProtocol } from './types.js';
 
@@ -53,7 +53,7 @@ export class DatabaseStream {
 
       const readUntilStopped = async () => {
         await using lease = await this.connectionService.acquire(
-          ConnectionType.Subscription,
+          StreamMode.Live,
           cancel.signal,
         );
         lease.client.on('error', (error) => void stop(error));

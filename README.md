@@ -25,6 +25,8 @@ SCHEMA_PATH=./schema.yaml
 LOG_LEVEL=debug" > .env
 
 # LOG_LEVEL can be trace, debug, info, warn or error
+# Optional: DATABASE_MAX_CONNECTIONS caps tycostream's database connections
+# (default 1000); each subscription holds one
 ```
 
 ### 2. Create a schema file

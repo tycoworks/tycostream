@@ -89,6 +89,8 @@ describe('Database databaseService on Materialize', () => {
       user: 'materialize',
       password: 'materialize',
       database: 'materialize',
+      maxConnections: 20,
+      queryTimeoutMs: 30000,
     };
     admin = new pg.Client(config);
     await admin.connect();
