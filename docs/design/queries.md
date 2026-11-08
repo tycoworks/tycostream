@@ -56,12 +56,13 @@ DatabaseModule   (exports DatabaseService only)
   DatabaseService            stream(source, where, mode) → RowUpdateBatches: compiles the
                              SELECT, opens a DatabaseStream, closes open streams at shutdown
   DatabaseStream             one stream: borrows a connection for its mode on first read,
-                             runs the driver's protocol for the mode, gives it back on stop
+                             has the adapter read it in its mode, gives it back on stop
   DatabaseConnectionService  acquire(mode, signal?) → ConnectionLease: one pool, a policy per mode
-  DatabaseDriver             protocols: Record<StreamMode, StreamProtocol>
-    postgres.ts              PostgresSnapshotProtocol: one SELECT, one batch of inserts
-    materialize.ts           MaterializeLiveProtocol: DECLARE … SUBSCRIBE, FETCH, progress, pairing
-  rows.ts                    reading values as text, and typing them by the schema
+  DatabaseAdapter            read(client, source, select, mode): the database
+    materialize.ts           MaterializeAdapter: snapshots by readSnapshot; live by
+                             DECLARE … SUBSCRIBE, FETCH, progress, pairing
+    postgres.ts              what Postgres-compatible databases do alike: values as text,
+                             typing them by the schema, readSnapshot (one SELECT)
   select.ts                  buildSelect(source, where) → CompiledSelect
 ```
 
@@ -74,29 +75,33 @@ DatabaseService.stream(source, where, mode): RowUpdateBatches
 ```
 
 - Both modes yield the snapshot first, as one batch of insert events. `Snapshot` then ends; `Live` goes on with a batch per timestamp.
-- **`DatabaseStream` serves both:** borrow a connection for the mode on the first read, run the driver's protocol for the mode, pass on its batches, and give the connection back when it ends, or with the error if it failed, so a pooled connection that failed is discarded. Stopping cancels the connection, even mid-statement or while it's connecting.
+- **`DatabaseStream` serves both:** borrow a connection for the mode on the first read, have the adapter read the stream in its mode, pass on its batches, and give the connection back when it ends, or with the error if it failed, so a pooled connection that failed is discarded. Stopping cancels the connection, even mid-statement or while it's connecting.
 - **`DatabaseService.stream`** compiles the `where` (throwing on an invalid filter, before any connection), opens a `DatabaseStream`, and tracks it until it closes. It's the database layer's only export.
 
-### Drivers
+### Adapters
+
+An adapter is the database: one class, with one method that reads a stream in either mode. "Adapter", not "driver": node-postgres is the driver (Chris, 8 Nov).
 
 ```ts
-interface StreamProtocol {
-  read(client, source, select): AsyncIterable<RowUpdateEvent[]>; // the snapshot first
+abstract class DatabaseAdapter {           // abstract, so it can be a Nest provider token
+  abstract read(client, source, select, mode): AsyncIterable<RowUpdateEvent[]>; // the snapshot first
 }
 
-abstract class DatabaseDriver {           // abstract, so it can be a Nest provider token
-  abstract readonly protocols: Readonly<Record<StreamMode, StreamProtocol>>;
+class MaterializeAdapter extends DatabaseAdapter {
+  read(client, source, select, mode) {
+    return mode === StreamMode.Snapshot
+      ? readSnapshot(client, source, select)   // postgres.ts, shared
+      : this.readLive(client, source, select); // SUBSCRIBE, FETCH, progress, pairing
+  }
 }
-
-// Materialize: { [Snapshot]: PostgresSnapshotProtocol, [Live]: MaterializeLiveProtocol }
-// RisingWave, later: { [Snapshot]: PostgresSnapshotProtocol, [Live]: RisingWaveLiveProtocol }
+// RisingWave, later: a RisingWaveAdapter, with readSnapshot for snapshots and its own live read
 ```
 
-- **A snapshot is the same for every Postgres-compatible database:** one `SELECT`, its rows typed and yielded as one batch of inserts. `PostgresSnapshotProtocol`, in `postgres.ts`, serves every driver; a database that answers differently gets its own.
-- **Live is what differs,** so each database has its own live protocol. Today's `MaterializeSubscriptionProtocol` becomes `MaterializeLiveProtocol`.
-- **An implementation is named after its database, its mode and `Protocol`.** Protocols are stateless: the source comes with each call, and a live stream's batching state lives inside its `read`.
-- **`rows.ts` holds the text format both use:** every connection reads values as text, and `parseRow` types a row by the schema (`'t'` is true, bigints stay strings, …). Both protocols import it; neither protocol imports the other.
-- **`DatabaseModule` provides the Materialize driver;** choosing another database later is that one provider. Tests swap in a fake.
+- **Only live reading differs between databases,** so it's each adapter's own code. Today's `MaterializeSubscriptionProtocol` becomes `MaterializeAdapter`.
+- **A snapshot is the same for every Postgres-compatible database:** one `SELECT`, its rows typed and yielded as one batch of inserts. `readSnapshot`, a function in `postgres.ts`, serves every adapter that wants it (Chris's idea of sharing the query part, kept as a function).
+- **An adapter is stateless:** the source comes with each call, and a live stream's batching state lives inside its read.
+- **`postgres.ts` holds everything Postgres-compatible databases do alike:** values sent as text (every connection asks for text), `parseRow` typing a row by the schema (`'t'` is true, bigints stay strings, …), `insertOf`, and `readSnapshot`. One file rather than two (Chris, 8 Nov).
+- **`DatabaseModule` provides `MaterializeAdapter` as the `DatabaseAdapter`;** choosing another database later is that one provider. Tests swap in a fake.
 
 ### Connections
 
@@ -119,7 +124,7 @@ acquire(mode: StreamMode, signal?: AbortSignal): Promise<ConnectionLease>
 
 - **Cancelling, by the caller or by the time limit, is one path:** the connection is discarded at once, even mid-statement, and Materialize stops what it was running. If the connection is still being made, acquire stops waiting, and gives back the one the pool hands over later. The time limit is a timed cancel (`AbortSignal.timeout`), so a query over it fails with a timeout error; the lease's `signal` says which it was, so the stream can report it.
 - **Waiting for a free connection** is bounded by the 10 s connect timeout, for both modes.
-- **Shared settings,** for every connection: host, credentials, the connect timeout, keep-alive, and reading values as text (`rows.ts`).
+- **Shared settings,** for every connection: host, credentials, the connect timeout, keep-alive, and reading values as text (`postgres.ts`).
 - **Errors:** the pool always has an `'error'` listener, and a lease carries one while it's out, so a dropped connection can't crash the process. A stream adds its own, to end itself.
 - **Shutdown,** in Nest's order:
   1. Destroy hooks: `DatabaseService` closes the open streams, so SSE responses finish and the HTTP server can close; `DatabaseConnectionService` stops lending, so a request arriving mid-shutdown fails rather than slipping through.
@@ -129,22 +134,26 @@ acquire(mode: StreamMode, signal?: AbortSignal): Promise<ConnectionLease>
 ### Up through the layers
 
 - **View:** `ViewService.stream(source, where, mode)`, a pass-through. A view, a source plus a `where`, can be streamed either way; permissions, later, apply to both.
-- **API:** a service and a resolver per GraphQL operation:
-  - `SubscriptionService.subscribe` opens a `Live` stream and sends each event as a GraphQL update, as today;
-  - `QueryService.query` opens a `Snapshot` stream and returns its events' rows. The schema gets `Query.<source>(where: <source>Expression): [<source>!]!` per source, with resolvers in `query.resolver.ts`. When the GraphQL request is aborted, the query stops reading, which cancels its stream.
+- **API:** one service and one resolver file for both GraphQL operations, since they differ only in mode and in how the result is shaped (Chris, 7 Nov). Each layer is a module with one main service named after it: `DatabaseModule` and `DatabaseService`, `ViewModule` and `ViewService`, `ApiModule` and `ApiService`.
+  - `ApiService` (`api.service.ts`, replacing `SubscriptionService`): `subscribe(source, where)` opens a `Live` stream and sends each event as a GraphQL update, as today; `query(source, where)` opens a `Snapshot` stream and returns its events' rows. When the GraphQL request is aborted, the query stops reading, which cancels its stream.
+  - `api.resolver.ts` (replacing `subscription.resolver.ts`) builds both the `Query` and `Subscription` resolvers per source. The schema gets `Query.<source>(where: <source>Expression): [<source>!]!` beside each subscription.
+  - These are the only places the words "query" and "subscription" name operations; below the API, it's a stream and its mode.
 - **`ping` goes;** the HTTP test uses a real query instead.
 
 ### Names
 
 | Was | Now |
 |---|---|
-| `SubscriptionProtocol` | `StreamProtocol` |
-| `MaterializeSubscriptionProtocol` | `MaterializeLiveProtocol` |
+| `SubscriptionProtocol`, and `DatabaseAdapter.subscriptions` | `DatabaseAdapter.read(client, source, select, mode)` |
+| `MaterializeSubscriptionProtocol` | `MaterializeAdapter` |
+| `DatabaseDriver` (commit 2) | `DatabaseAdapter` |
 | `ConnectionType` | `StreamMode`, used for connections too |
 | `DatabaseService.subscribe` | `DatabaseService.stream` |
 | `ViewService.subscribe` | `ViewService.stream` |
 | `query.ts`: `buildSelect` → `CompiledQuery` | `select.ts`: `buildSelect` → `CompiledSelect`; "query" now means a GraphQL query |
 | `Record<string, any>` for a row | `Row`, in `common/types.ts`, which `RowUpdateEvent.row` uses |
+| `SubscriptionService` (`subscription.service.ts`) | `ApiService` (`api.service.ts`), with `subscribe` and `query` |
+| `subscription.resolver.ts` | `api.resolver.ts`, building both `Query` and `Subscription` resolvers |
 
 ### Settings
 
@@ -161,6 +170,7 @@ Both defaults are starting points, not measurements. The fetch size, connect tim
 
 - **Queries and subscriptions as separate mechanisms** (this plan's first version): two paths to keep in step, and a query's rows and a snapshot only equal by test, not by construction.
 - **A snapshot by `SUBSCRIBE`, taking its first batch:** it builds a dataflow per query, where a `SELECT` on an indexed view is a cheap lookup.
+- **A protocol per mode on each driver, as it was then called** (`StreamProtocol`, `PostgresSnapshotProtocol`, `MaterializeLiveProtocol`, this plan's second version): many names for little, since only live reading differs between databases; a shared function covers snapshots.
 - **Reusing live connections:** see the research findings.
 - **A pool per mode, so neither can take the other's connections:** when the database's budget is used up, a query failing is no worse than a subscription failing (Chris, 7 Nov). One pool means one number to set, lets a live stream reuse a connection a query has finished with, and turns the query time limit into a timed cancel instead of a second mechanism.
 - **A new connection per query, no pool:** every query pays to connect, and nothing bounds how many run at once.
@@ -170,20 +180,23 @@ Both defaults are starting points, not measurements. The fetch size, connect tim
 
 ## Sequence
 
-One commit each, shown before committing. Each builds and passes every test on its own (Chris, 7 Nov).
+One commit each, shown before committing. Each builds and passes every test on its own, and each reviewed piece is its own commit (Chris, 7 Nov).
 
 1. **`DatabaseConnectionService`:** leases and cancelling, the shared settings, the shutdown order and `app.enableShutdownHooks()`; the stream borrows its connection. (Done.)
-2. **Drivers:** `DatabaseDriver`, `DatabaseService`, and the renames that went with them. (Done.)
-3. **Streams with two modes,** in the database layer: `StreamMode`; the pool, capped, with the policy per mode and the time limit on snapshots; `rows.ts`, `select.ts`, `Row`; `StreamProtocol`, with `PostgresSnapshotProtocol` and `MaterializeLiveProtocol`; `DatabaseService.stream`; the settings. Tested against Materialize. Subscriptions work as before; nothing new reaches GraphQL yet.
-4. **Queries through GraphQL:** `ViewService.stream`, `QueryService` and the resolvers, cancelling when the request is aborted; `ping` removed; the end-to-end tests.
+2. **Drivers:** `DatabaseDriver` (now `DatabaseAdapter`), `DatabaseService`, and the renames that went with them. (Done.)
+3. **Names and the text format:** `Row`; `query.ts` becomes `select.ts`; `rows.ts`, merged into `postgres.ts` in step 5. No change in behaviour. (Done.)
+4. **One pool, and `StreamMode`:** the capped pool with the policy per mode and the time limit; the two settings; subscriptions borrow live connections from it. (Done.)
+5. **Snapshot streams:** `DatabaseAdapter.read` with its mode, `MaterializeAdapter`, and `readSnapshot`, with `rows.ts` merged into `postgres.ts`; `DatabaseStream` in both modes; `DatabaseService.stream`; the snapshot tests against Materialize. Nothing new reaches GraphQL yet.
+6. **The connection cap, tested against Materialize, and the docs.**
+7. **Queries through GraphQL:** `ViewService.stream`; `ApiService` with `subscribe` and `query`, and `api.resolver.ts`, replacing `SubscriptionService` and `subscription.resolver.ts`; cancelling when the request is aborted; `ping` removed; `DATABASE_QUERY_TIMEOUT_MS` in the README; the end-to-end tests.
 
 ## Tests
 
 - **Unit:**
   - `DatabaseConnectionService`, against a fake pg: the pool's settings, each mode's policy (giving back against discarding, the time limit), cancelling while waiting and while lent, refusing to lend once shutdown starts, the pool's `'error'` listener, ending the pool;
   - `DatabaseStream` in both modes, against a fake connection service; `DatabaseService.stream`;
-  - `PostgresSnapshotProtocol`, `MaterializeLiveProtocol`, and `parseRow`; the settings' validation;
-  - the schema's query fields, `QueryService` and the resolvers.
+  - `MaterializeAdapter` in both modes, `readSnapshot`, and `parseRow`; the settings' validation;
+  - the schema's query fields, `ApiService` and the resolvers.
 - **Against Materialize:**
   - a snapshot returns the same typed rows as a live stream's snapshot;
   - a snapshot over the time limit fails, and Materialize stops it; a cancelled one ends, and Materialize stops it;

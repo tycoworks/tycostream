@@ -31,6 +31,7 @@
 ## Backlog
 
 - [Queries per source](./design/queries.md)
+- **Relationships between sources:** nested GraphQL fields, such as a position's trades, each pushed down to Materialize as one `SUBSCRIBE` of a join, so every level of the result stays at one timestamp. The main reason for the hollow-out.
 - `limit`, `offset` and `order_by` for queries
 - [Calculated states](./design/calculated_states.md)
 - Row-level security
