@@ -1,6 +1,6 @@
 # Plan: a Hasura-compatible API
 
-Status: draft, 8 Nov 2026; not yet agreed. Branch: `hasura-compatibility`. Breaks clients, so it's released as `v0.4.0`. Follows one message per timestamp, a separate change; comes before relationships ([relationships.md](./relationships.md)).
+Status: draft, 8 Nov 2026; not yet agreed. Branch: `hasura-compatibility`. Breaks clients, so it's released as `v0.4.0`. Follows one message per timestamp ([#18](https://github.com/tycoworks/tycostream/pull/18)); comes before relationships ([relationships.md](./relationships.md)).
 
 ## Summary
 
@@ -32,7 +32,7 @@ Checked on 8 Nov: nothing of Hasura's can be plugged in.
 | An enum's comparisons | `sideComparison` | `side_comparison_exp` |
 | Root types | `Query`, `Subscription` | `query_root`, `subscription_root` |
 
-tycostream's own types take the same style: `row_operation`, `trades_batch`, `trades_change`.
+tycostream's own types take the same style: `row_operation` for `RowOperation`, `trades_update` for `tradesUpdate`.
 
 ### Scalars
 
@@ -87,7 +87,7 @@ type query_root {
 
 Hasura's subscriptions send the whole result again on every change, or, for `_stream`, the new rows of an append-only table. tycostream's send what changed, keyed by row, so a client knows what moved (Chris, 8 Nov).
 
-- **Hasura's root fields and arguments, our own return type:** `trades(where, order_by, limit, offset)` and `trades_by_pk(id)`, each returning the changes. This plan only renames that type in Hasura's style; one message per timestamp, the change before this one, defines it.
+- **Hasura's root fields and arguments, our own return type:** `trades(where, order_by, limit, offset)` and `trades_by_pk(id)`, each returning `[trades_update!]!`, one list of updates per timestamp, as since [#18](https://github.com/tycoworks/tycostream/pull/18). The update type itself only takes Hasura's style of name.
 - **A whole result on every change is a live query,** which is what Hasura's subscriptions are. If tycostream offers one, it's The Guild's way: `@live` on a query, `query @live { trades { … } }`, not a subscription (Chris, 8 Nov).
 - **`order_by`, `limit` and `offset`** choose which rows the subscription covers: rows entering and leaving the window arrive as inserts and deletes. A client sorts the changes itself.
 
