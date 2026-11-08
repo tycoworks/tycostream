@@ -1,16 +1,14 @@
 import type pg from 'pg';
-import type { RowUpdateEvent, StreamMode } from '../common/types.js';
+import type { RowUpdateBatch, StreamMode } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { CompiledSelect } from './select.js';
 
 /**
  * A stream's row events, one complete timestamp at a time, the snapshot
- * first. Ending the iteration closes the stream.
+ * first, even when it's empty. Ending the iteration closes the stream.
  */
-export interface RowUpdateBatches extends AsyncIterableIterator<
-  RowUpdateEvent[]
-> {
-  return(): Promise<IteratorResult<RowUpdateEvent[]>>;
+export interface RowUpdateBatches extends AsyncIterableIterator<RowUpdateBatch> {
+  return(): Promise<IteratorResult<RowUpdateBatch>>;
 }
 
 /**
@@ -21,13 +19,14 @@ export interface RowUpdateBatches extends AsyncIterableIterator<
 export abstract class DatabaseAdapter {
   /**
    * Runs the source's SELECT over an open connection and yields its row
-   * events, one complete timestamp at a time, the snapshot first as inserts.
-   * A snapshot then ends; a live read goes on until the connection closes.
+   * events, one complete timestamp at a time, the snapshot first as inserts,
+   * even when it's empty. A snapshot then ends; a live read goes on until
+   * the connection closes.
    */
   abstract read(
     client: pg.ClientBase,
     source: SourceDefinition,
     select: CompiledSelect,
     mode: StreamMode,
-  ): AsyncIterable<RowUpdateEvent[]>;
+  ): AsyncIterable<RowUpdateBatch>;
 }

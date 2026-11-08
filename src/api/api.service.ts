@@ -62,7 +62,7 @@ export class ApiService {
     signal?.addEventListener('abort', stop, { once: true });
     try {
       const rows: Row[] = [];
-      for await (const events of batches) {
+      for await (const { events } of batches) {
         rows.push(...events.map((event) => event.row));
       }
       // A stopped stream just ends, so say why it stopped
@@ -88,7 +88,7 @@ export class ApiService {
 
     return new Repeater<GraphQLUpdate>(async (push, stop) => {
       const forward = async () => {
-        for await (const events of batches) {
+        for await (const { events } of batches) {
           for (const event of events) {
             const update = this.transformToGraphQLUpdate(event);
             this.logger.debug(

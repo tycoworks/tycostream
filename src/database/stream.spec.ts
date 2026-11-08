@@ -8,7 +8,7 @@ import type {
 import type { DatabaseAdapter } from './types.js';
 import { DataType, RowUpdateType, StreamMode } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import type { RowUpdateEvent } from '../common/types.js';
+import type { RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 
 const SELECT = { sql: 'select 1', parameters: [] };
 
@@ -23,6 +23,12 @@ const insert = (id: number): RowUpdateEvent => ({
   fields: new Set(['id']),
   row: { id },
 });
+
+// One complete timestamp's events, as a live stream gives them
+const batchAt = (
+  timestamp: number,
+  ...events: RowUpdateEvent[]
+): RowUpdateBatch => ({ timestamp: BigInt(timestamp), events });
 
 // A connection service that lends a fake client, or waits to connect until
 // the signal aborts, as the real one does; and records each lease's closing.
@@ -64,7 +70,7 @@ const fakeConnectionService = ({ connects = true } = {}) => {
 
 // An adapter that yields these batches, then either ends or, as
 // Materialize's does on an idle view, waits until its connection ends
-const adapterOf = (batches: RowUpdateEvent[][], ends = false) => ({
+const adapterOf = (batches: RowUpdateBatch[], ends = false) => ({
   read: vi.fn(async function* (client: pg.ClientBase) {
     for (const batch of batches) {
       yield batch;
@@ -86,11 +92,11 @@ const streamOf = (
 describe('DatabaseStream', () => {
   it('should borrow a subscription connection, hand it, the source, the query and the mode to the adapter, and pass on its batches in order', async () => {
     const { connectionService, acquire, client } = fakeConnectionService();
-    const adapter = adapterOf([[insert(1)], [insert(2)]]);
+    const adapter = adapterOf([batchAt(1, insert(1)), batchAt(2, insert(2))]);
     const changes = streamOf(connectionService, adapter).read();
 
-    expect((await changes.next()).value).toEqual([insert(1)]);
-    expect((await changes.next()).value).toEqual([insert(2)]);
+    expect((await changes.next()).value).toEqual(batchAt(1, insert(1)));
+    expect((await changes.next()).value).toEqual(batchAt(2, insert(2)));
 
     expect(acquire).toHaveBeenCalledWith(
       StreamMode.Live,
@@ -109,7 +115,10 @@ describe('DatabaseStream', () => {
     const { connectionService, acquire } = fakeConnectionService();
     const onOpen = vi.fn();
     const onClose = vi.fn();
-    const changes = streamOf(connectionService, adapterOf([[insert(1)]])).read({
+    const changes = streamOf(
+      connectionService,
+      adapterOf([batchAt(1, insert(1))]),
+    ).read({
       onOpen,
       onClose,
     });
@@ -125,7 +134,10 @@ describe('DatabaseStream', () => {
     const { connectionService, acquire, close } = fakeConnectionService();
     const onOpen = vi.fn();
     const onClose = vi.fn();
-    const changes = streamOf(connectionService, adapterOf([[insert(1)]])).read({
+    const changes = streamOf(
+      connectionService,
+      adapterOf([batchAt(1, insert(1))]),
+    ).read({
       onOpen,
       onClose,
     });
@@ -146,7 +158,7 @@ describe('DatabaseStream', () => {
     const { connectionService, acquire } = fakeConnectionService({
       connects: false,
     });
-    const adapter = adapterOf([[insert(1)]]);
+    const adapter = adapterOf([batchAt(1, insert(1))]);
     const onClose = vi.fn();
     const changes = streamOf(connectionService, adapter).read({ onClose });
 
@@ -209,12 +221,12 @@ describe('DatabaseStream', () => {
     const onClose = vi.fn();
     const changes = streamOf(
       connectionService,
-      adapterOf([[insert(1)]], true),
+      adapterOf([batchAt(1, insert(1))], true),
     ).read({
       onClose,
     });
 
-    expect((await changes.next()).value).toEqual([insert(1)]);
+    expect((await changes.next()).value).toEqual(batchAt(1, insert(1)));
     expect((await changes.next()).done).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalled();
@@ -226,11 +238,13 @@ describe('DatabaseStream', () => {
       const onClose = vi.fn();
       const changes = streamOf(
         connectionService,
-        adapterOf([[insert(1), insert(2)]], true),
+        adapterOf([{ events: [insert(1), insert(2)] }], true),
         StreamMode.Snapshot,
       ).read({ onClose });
 
-      expect((await changes.next()).value).toEqual([insert(1), insert(2)]);
+      expect((await changes.next()).value).toEqual({
+        events: [insert(1), insert(2)],
+      });
       expect((await changes.next()).done).toBe(true);
 
       expect(acquire).toHaveBeenCalledWith(
@@ -281,7 +295,7 @@ describe('DatabaseStream', () => {
     const { connectionService, client } = fakeConnectionService();
     const changes = streamOf(
       connectionService,
-      adapterOf([[insert(1)]], true),
+      adapterOf([batchAt(1, insert(1))], true),
       StreamMode.Snapshot,
     ).read();
 

@@ -9,7 +9,7 @@ import type { DiffRow } from './materialize.js';
 import type { RawRow } from './postgres.js';
 import type { CompiledSelect } from './select.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
-import type { Row, RowUpdateEvent } from '../common/types.js';
+import type { Row, RowUpdateBatch } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 
@@ -77,7 +77,7 @@ describe('MaterializeAdapter', () => {
       const query = vi.fn(() =>
         Promise.resolve({ rows: [{ id: '1', name: 'a' }] }),
       );
-      const batches: RowUpdateEvent[][] = [];
+      const batches: RowUpdateBatch[] = [];
       for await (const batch of adapter.read(
         { query } as unknown as pg.ClientBase,
         idAndName,
@@ -89,13 +89,15 @@ describe('MaterializeAdapter', () => {
 
       expect(query.mock.calls).toEqual([['select 1', []]]);
       expect(batches).toEqual([
-        [
-          {
-            type: RowUpdateType.Insert,
-            fields: new Set(['id', 'name']),
-            row: { id: 1, name: 'a' },
-          },
-        ],
+        {
+          events: [
+            {
+              type: RowUpdateType.Insert,
+              fields: new Set(['id', 'name']),
+              row: { id: 1, name: 'a' },
+            },
+          ],
+        },
       ]);
     });
   });
@@ -121,7 +123,7 @@ describe('MaterializeAdapter', () => {
       expect(queries[3]).toEqual(['FETCH 1000 c']);
     });
 
-    it('should yield each complete timestamp across fetches as row events', async () => {
+    it('should yield each complete timestamp across fetches as row events, with its timestamp', async () => {
       const { client } = fakeClient([
         [change(1, 1, { id: '1', name: 'a' })],
         [change(1, 1, { id: '2', name: 'b' }), progress(2)],
@@ -134,30 +136,60 @@ describe('MaterializeAdapter', () => {
       ]);
       const batches = readAll(client);
 
-      expect((await batches.next()).value).toEqual([
-        {
-          type: RowUpdateType.Insert,
-          fields: new Set(['id', 'name']),
-          row: { id: 1, name: 'a' },
-        },
-        {
-          type: RowUpdateType.Insert,
-          fields: new Set(['id', 'name']),
-          row: { id: 2, name: 'b' },
-        },
+      expect((await batches.next()).value).toEqual({
+        timestamp: 1n,
+        events: [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id', 'name']),
+            row: { id: 1, name: 'a' },
+          },
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id', 'name']),
+            row: { id: 2, name: 'b' },
+          },
+        ],
+      });
+      expect((await batches.next()).value).toEqual({
+        timestamp: 2n,
+        events: [
+          {
+            type: RowUpdateType.Update,
+            fields: new Set(['id', 'name']),
+            row: { id: 1, name: 'c' },
+          },
+          {
+            type: RowUpdateType.Delete,
+            fields: new Set(['id']),
+            row: { id: 2, name: 'b' },
+          },
+        ],
+      });
+    });
+
+    it('should yield an empty snapshot, then the changes after it', async () => {
+      // Materialize sends the snapshot's timestamp first, as a progress row
+      const { client } = fakeClient([
+        [progress(1), progress(2)],
+        [change(2, 1, { id: '1', name: 'a' }), progress(3)],
       ]);
-      expect((await batches.next()).value).toEqual([
-        {
-          type: RowUpdateType.Update,
-          fields: new Set(['id', 'name']),
-          row: { id: 1, name: 'c' },
-        },
-        {
-          type: RowUpdateType.Delete,
-          fields: new Set(['id']),
-          row: { id: 2, name: 'b' },
-        },
-      ]);
+      const batches = readAll(client);
+
+      expect((await batches.next()).value).toEqual({
+        timestamp: 1n,
+        events: [],
+      });
+      expect((await batches.next()).value).toEqual({
+        timestamp: 2n,
+        events: [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id', 'name']),
+            row: { id: 1, name: 'a' },
+          },
+        ],
+      });
     });
 
     it('should keep two live streams on the one adapter apart, each with its own source and rows', async () => {
@@ -187,40 +219,51 @@ describe('MaterializeAdapter', () => {
         firstBatches.next(),
         secondBatches.next(),
       ]);
-      expect(firstEvents.value).toEqual([
-        {
-          type: RowUpdateType.Insert,
-          fields: new Set(['id', 'name']),
-          row: { id: 1, name: 'a' },
-        },
-      ]);
-      expect(secondEvents.value).toEqual([
-        {
-          type: RowUpdateType.Insert,
-          fields: new Set(['symbol', 'price']),
-          row: { symbol: 'AAPL', price: 1.5 },
-        },
-      ]);
+      expect(firstEvents.value).toEqual({
+        timestamp: 1n,
+        events: [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id', 'name']),
+            row: { id: 1, name: 'a' },
+          },
+        ],
+      });
+      expect(secondEvents.value).toEqual({
+        timestamp: 1n,
+        events: [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['symbol', 'price']),
+            row: { symbol: 'AAPL', price: 1.5 },
+          },
+        ],
+      });
     });
 
-    it('should skip a timestamp whose changes cancel out', async () => {
+    it('should skip a timestamp after the snapshot whose changes cancel out', async () => {
       const { client } = fakeClient([
+        [change(1, 1, { id: '1', name: 'a' }), progress(2)],
         [
-          change(1, 1, { id: '1', name: 'a' }),
-          change(1, -1, { id: '1', name: 'a' }),
-          progress(2),
+          change(2, 1, { id: '2', name: 'b' }),
+          change(2, -1, { id: '2', name: 'b' }),
+          progress(3),
         ],
-        [change(2, 1, { id: '2', name: 'b' }), progress(3)],
+        [change(3, -1, { id: '1', name: 'a' }), progress(4)],
       ]);
       const batches = readAll(client);
+      await batches.next();
 
-      expect((await batches.next()).value).toEqual([
-        {
-          type: RowUpdateType.Insert,
-          fields: new Set(['id', 'name']),
-          row: { id: 2, name: 'b' },
-        },
-      ]);
+      expect((await batches.next()).value).toEqual({
+        timestamp: 3n,
+        events: [
+          {
+            type: RowUpdateType.Delete,
+            fields: new Set(['id']),
+            row: { id: 1, name: 'a' },
+          },
+        ],
+      });
     });
 
     it('should fail when a key is not unique', async () => {
@@ -258,10 +301,13 @@ describe('ProgressBatcher', () => {
         ]),
       ).toEqual([]);
       expect(batcher.take([progress(2)])).toEqual([
-        [
-          { diff: 1, row: { id: 1, name: 'a' } },
-          { diff: 1, row: { id: 2, name: 'b' } },
-        ],
+        {
+          timestamp: 1n,
+          rows: [
+            { diff: 1, row: { id: 1, name: 'a' } },
+            { diff: 1, row: { id: 2, name: 'b' } },
+          ],
+        },
       ]);
     });
 
@@ -280,11 +326,14 @@ describe('ProgressBatcher', () => {
           progress(4),
         ]),
       ).toEqual([
-        [{ diff: 1, row: { id: 1, name: 'a' } }],
-        [
-          { diff: -1, row: { id: 1, name: 'a' } },
-          { diff: 1, row: { id: 1, name: 'b' } },
-        ],
+        { timestamp: 1n, rows: [{ diff: 1, row: { id: 1, name: 'a' } }] },
+        {
+          timestamp: 3n,
+          rows: [
+            { diff: -1, row: { id: 1, name: 'a' } },
+            { diff: 1, row: { id: 1, name: 'b' } },
+          ],
+        },
       ]);
     });
 
@@ -292,26 +341,40 @@ describe('ProgressBatcher', () => {
       batcher.take([change(1, 1, { id: '1', name: 'a' })]);
       batcher.take([change(1, 1, { id: '2', name: 'b' })]);
       expect(batcher.take([progress(2)])).toEqual([
-        [
-          { diff: 1, row: { id: 1, name: 'a' } },
-          { diff: 1, row: { id: 2, name: 'b' } },
-        ],
+        {
+          timestamp: 1n,
+          rows: [
+            { diff: 1, row: { id: 1, name: 'a' } },
+            { diff: 1, row: { id: 2, name: 'b' } },
+          ],
+        },
       ]);
     });
 
-    it('should release nothing for progress on an idle view', () => {
-      expect(batcher.take([progress(1), progress(2)])).toEqual([]);
+    it('should release the snapshot even when it has no rows, at the first timestamp given', () => {
+      expect(batcher.take([progress(1), progress(2)])).toEqual([
+        { timestamp: 1n, rows: [] },
+      ]);
+    });
+
+    it('should release nothing for progress on an idle view after the snapshot', () => {
+      batcher.take([progress(1), progress(2)]);
+      expect(batcher.take([progress(3), progress(4)])).toEqual([]);
     });
 
     it('should keep the count in diffs above one', () => {
       batcher.take([change(1, 2, { id: '1', name: 'a' })]);
-      expect(batcher.take([progress(2)])[0][0].diff).toBe(2);
+      expect(batcher.take([progress(2)])[0].rows[0].diff).toBe(2);
     });
   });
 
   it('should type each row as the schema says, keeping only its columns', () => {
     batcher.take([change(1, 1, { id: '7', name: 'a' })]);
-    const [[{ row }]] = batcher.take([progress(2)]);
+    const [
+      {
+        rows: [{ row }],
+      },
+    ] = batcher.take([progress(2)]);
     expect(row).toEqual({ id: 7, name: 'a' });
   });
 });

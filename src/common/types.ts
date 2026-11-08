@@ -101,6 +101,18 @@ export interface RowUpdateEvent {
 }
 
 /**
+ * A stream's row events at one complete timestamp. A stream's first batch
+ * is its snapshot, even when it has no rows.
+ */
+export interface RowUpdateBatch {
+  // The database's timestamp for the events, when it gives one: a live
+  // stream's batches always have it; a snapshot read by a plain SELECT
+  // doesn't
+  timestamp?: bigint;
+  events: RowUpdateEvent[];
+}
+
+/**
  * How a stream on a source runs. Both start with the snapshot: the source's
  * current rows that match the filter, as one batch of inserts.
  */

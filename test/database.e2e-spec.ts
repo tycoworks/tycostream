@@ -8,7 +8,12 @@ import { MaterializeAdapter } from '../src/database/materialize.js';
 import type { RowUpdateBatches } from '../src/database/types.js';
 import type { DatabaseConfig } from '../src/config/database.config.js';
 import type { SourceDefinition } from '../src/config/source.types.js';
-import type { Row, RowUpdateEvent, WhereClause } from '../src/common/types.js';
+import type {
+  Row,
+  RowUpdateBatch,
+  RowUpdateEvent,
+  WhereClause,
+} from '../src/common/types.js';
 import { DataType, RowUpdateType, StreamMode } from '../src/common/types.js';
 
 // Each test reads its own table, so they don't see each other's rows
@@ -37,7 +42,7 @@ const sleep = (ms: number) =>
 async function nextBatch(
   batches: RowUpdateBatches,
   timeoutMs = 10000,
-): Promise<RowUpdateEvent[]> {
+): Promise<RowUpdateBatch> {
   const result = await Promise.race([batches.next(), sleep(timeoutMs)]);
   if (result === 'timeout') {
     throw new Error(`No batch within ${timeoutMs}ms`);
@@ -47,6 +52,10 @@ async function nextBatch(
   }
   return result.value;
 }
+
+// The next batch's events
+const nextEvents = async (batches: RowUpdateBatches) =>
+  (await nextBatch(batches)).events;
 
 const rowsById = (rows: Row[]) =>
   [...rows].sort((a, b) => (a.id as number) - (b.id as number));
@@ -80,7 +89,7 @@ describe('DatabaseService on Materialize', () => {
       where,
       StreamMode.Snapshot,
     )) {
-      rows.push(...batch.map((event) => event.row));
+      rows.push(...batch.events.map((event) => event.row));
     }
     return rows;
   };
@@ -145,7 +154,7 @@ describe('DatabaseService on Materialize', () => {
 
       const batches = subscribe(tradesTable('snapshot'));
       try {
-        expect(byId(await nextBatch(batches))).toEqual([
+        expect(byId(await nextEvents(batches))).toEqual([
           {
             type: RowUpdateType.Insert,
             fields: ALL_FIELDS,
@@ -197,7 +206,7 @@ describe('DatabaseService on Materialize', () => {
           `INSERT INTO changes (id, symbol, qty) VALUES (1, 'AAPL', 10), (2, 'MSFT', 20)`,
         );
         expect(
-          byId(await nextBatch(batches)).map((e) => [e.row.id, e.type]),
+          byId(await nextEvents(batches)).map((e) => [e.row.id, e.type]),
         ).toEqual([
           [1, RowUpdateType.Insert],
           [2, RowUpdateType.Insert],
@@ -205,7 +214,7 @@ describe('DatabaseService on Materialize', () => {
 
         // An update arrives as a -1 and a +1, paired into one event
         await sql(`UPDATE changes SET qty = 15 WHERE id = 1`);
-        expect(await nextBatch(batches)).toEqual([
+        expect(await nextEvents(batches)).toEqual([
           {
             type: RowUpdateType.Update,
             fields: new Set(['id', 'qty']),
@@ -214,13 +223,29 @@ describe('DatabaseService on Materialize', () => {
         ]);
 
         await sql(`DELETE FROM changes WHERE id = 2`);
-        expect(await nextBatch(batches)).toEqual([
+        expect(await nextEvents(batches)).toEqual([
           {
             type: RowUpdateType.Delete,
             fields: new Set(['id']),
             row: expect.objectContaining({ id: 2 }),
           },
         ]);
+      } finally {
+        await batches.return();
+      }
+    });
+
+    it("should give each batch Materialize's timestamp, a later batch a later one", async () => {
+      await createTable('stamped');
+      await sql(`INSERT INTO stamped (id) VALUES (1)`);
+      const batches = subscribe(tradesTable('stamped'));
+      try {
+        const snapshotBatch = await nextBatch(batches);
+        await sql(`INSERT INTO stamped (id) VALUES (2)`);
+        const later = await nextBatch(batches);
+
+        expect(typeof snapshotBatch.timestamp).toBe('bigint');
+        expect(later.timestamp! > snapshotBatch.timestamp!).toBe(true);
       } finally {
         await batches.return();
       }
@@ -238,7 +263,7 @@ describe('DatabaseService on Materialize', () => {
       });
       try {
         expect(
-          (await nextBatch(batches)).map((e) => [e.row.id, e.row.symbol]),
+          (await nextEvents(batches)).map((e) => [e.row.id, e.row.symbol]),
         ).toEqual([[2, tricky]]);
       } finally {
         await batches.return();
@@ -251,12 +276,12 @@ describe('DatabaseService on Materialize', () => {
       const batches = subscribe(tradesTable('filtered'), { qty: { _gt: 10 } });
       try {
         await sql(`UPDATE filtered SET qty = 50 WHERE id = 1`);
-        expect((await nextBatch(batches)).map((e) => e.type)).toEqual([
+        expect((await nextEvents(batches)).map((e) => e.type)).toEqual([
           RowUpdateType.Insert,
         ]);
 
         await sql(`UPDATE filtered SET qty = 1 WHERE id = 1`);
-        expect((await nextBatch(batches)).map((e) => e.type)).toEqual([
+        expect((await nextEvents(batches)).map((e) => e.type)).toEqual([
           RowUpdateType.Delete,
         ]);
       } finally {
@@ -264,22 +289,25 @@ describe('DatabaseService on Materialize', () => {
       }
     });
 
-    it('should stay open while the source is idle, and still send later changes', async () => {
+    it('should send an empty snapshot of an empty source, then stay open while it is idle, and still send later changes', async () => {
       await createTable('idle');
       const batches = subscribe(tradesTable('idle'));
       try {
+        const snapshotBatch = await nextBatch(batches);
+        expect(snapshotBatch.events).toEqual([]);
+        expect(typeof snapshotBatch.timestamp).toBe('bigint');
+
         const next = batches.next();
         expect(await Promise.race([next, sleep(4000)])).toBe('timeout');
 
         await sql(`INSERT INTO idle (id, symbol) VALUES (1, 'AAPL')`);
         const result = await Promise.race([next, sleep(10000)]);
-        expect(result).not.toBe('timeout');
-        expect(
-          (result as IteratorResult<RowUpdateEvent[]>).value.map((e) => [
-            e.type,
-            e.row.symbol,
-          ]),
-        ).toEqual([[RowUpdateType.Insert, 'AAPL']]);
+        if (result === 'timeout' || result.done) {
+          throw new Error('No batch after the insert');
+        }
+        expect(result.value.events.map((e) => [e.type, e.row.symbol])).toEqual([
+          [RowUpdateType.Insert, 'AAPL'],
+        ]);
       } finally {
         await batches.return();
       }
@@ -296,7 +324,7 @@ describe('DatabaseService on Materialize', () => {
       const healthy = subscribe(tradesTable('unique_keys'));
       try {
         await expect(duplicates.next()).rejects.toThrow(/isn't unique/);
-        expect((await nextBatch(healthy)).map((e) => e.row.id)).toEqual([1]);
+        expect((await nextEvents(healthy)).map((e) => e.row.id)).toEqual([1]);
       } finally {
         await duplicates.return();
         await healthy.return();
@@ -313,11 +341,11 @@ describe('DatabaseService on Materialize', () => {
       );
       const batches = subscribe(tradesTable('slow'));
       try {
-        await nextBatch(batches);
+        await nextEvents(batches);
         // The consumer takes a while before it asks for more
         await sleep(3000);
         await sql(`INSERT INTO slow (id) VALUES (2)`);
-        expect((await nextBatch(batches)).map((e) => e.row.id)).toEqual([2]);
+        expect((await nextEvents(batches)).map((e) => e.row.id)).toEqual([2]);
       } finally {
         await batches.return();
         await sql(
@@ -335,7 +363,7 @@ describe('DatabaseService on Materialize', () => {
         symbol: { _neq: 'AAPL' },
       });
       try {
-        expect((await nextBatch(batches)).map((e) => e.row.id)).toEqual([2]);
+        expect((await nextEvents(batches)).map((e) => e.row.id)).toEqual([2]);
       } finally {
         await batches.return();
       }
@@ -350,7 +378,7 @@ describe('DatabaseService on Materialize', () => {
       expect(await subscriptions()).toBe(0);
 
       const batches = subscribe(tradesTable('cleanup'));
-      await nextBatch(batches);
+      await nextEvents(batches);
       expect(await subscriptions()).toBe(1);
 
       await batches.return();
@@ -374,8 +402,8 @@ describe('DatabaseService on Materialize', () => {
       await sql(`INSERT INTO shutdown (id) VALUES (1)`);
       const first = subscribe(tradesTable('shutdown'));
       const second = subscribe(tradesTable('shutdown'));
-      await nextBatch(first);
-      await nextBatch(second);
+      await nextEvents(first);
+      await nextEvents(second);
       expect(await subscriptions()).toBe(2);
 
       await databaseService.onModuleDestroy();
@@ -396,7 +424,7 @@ describe('DatabaseService on Materialize', () => {
       const healthy = subscribe(tradesTable('healthy'));
       try {
         await expect(missing.next()).rejects.toThrow(/unknown catalog item/);
-        expect((await nextBatch(healthy)).map((r) => r.row.id)).toEqual([1]);
+        expect((await nextEvents(healthy)).map((r) => r.row.id)).toEqual([1]);
       } finally {
         await missing.return();
         await healthy.return();
@@ -446,7 +474,7 @@ describe('DatabaseService on Materialize', () => {
 
       const batches = subscribe(tradesTable('queried'), where);
       try {
-        const liveSnapshot = (await nextBatch(batches)).map(
+        const liveSnapshot = (await nextEvents(batches)).map(
           (event) => event.row,
         );
         const rows = await snapshot(tradesTable('queried'), where);
@@ -466,6 +494,20 @@ describe('DatabaseService on Materialize', () => {
       } finally {
         await batches.return();
       }
+    });
+
+    it('should give an empty source as one empty batch, with no timestamp', async () => {
+      await createTable('query_empty');
+      const batches: RowUpdateBatch[] = [];
+      for await (const batch of databaseService.stream(
+        tradesTable('query_empty'),
+        undefined,
+        StreamMode.Snapshot,
+      )) {
+        batches.push(batch);
+      }
+
+      expect(batches).toEqual([{ events: [] }]);
     });
 
     it('should bind filter values as parameters', async () => {
@@ -539,8 +581,8 @@ describe('DatabaseService on Materialize', () => {
       );
       try {
         // Both connections are held
-        await nextBatch(first);
-        await nextBatch(second);
+        await nextEvents(first);
+        await nextEvents(second);
 
         // pg's error when no connection comes free in time
         const NO_FREE_CONNECTION = 'timeout exceeded when trying to connect';

@@ -3,7 +3,7 @@ import { Repeater } from '@repeaterjs/repeater';
 import { ApiService, GraphQLRowOperation } from './api.service.js';
 import { ViewService } from '../view/view.service.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
-import type { Row, RowUpdateEvent } from '../common/types.js';
+import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
@@ -25,12 +25,13 @@ describe('ApiService', () => {
   const ALL_FIELDS = new Set(['id', 'name', 'value']);
   const ROW = { id: '1', name: 'test', value: 7 };
 
-  // A view that sends these batches, then stays open; records when it's closed
+  // A view that sends these timestamps' events, then stays open; records
+  // when it's closed
   const viewOf = (...batches: RowUpdateEvent[][]) => {
     const closed = vi.fn();
-    const view = new Repeater<RowUpdateEvent[]>(async (push, stop) => {
-      for (const batch of batches) {
-        await push(batch);
+    const view = new Repeater<RowUpdateBatch>(async (push, stop) => {
+      for (const [i, events] of batches.entries()) {
+        await push({ timestamp: BigInt(i + 1), events });
       }
       await stop;
       closed();
@@ -39,12 +40,12 @@ describe('ApiService', () => {
     return closed;
   };
 
-  // A snapshot: these batches, then the stream ends
+  // A snapshot: these events, then the stream ends
   const snapshotOf = (...batches: RowUpdateEvent[][]) => {
     viewService.stream.mockReturnValue(
-      new Repeater<RowUpdateEvent[]>(async (push, stop) => {
-        for (const batch of batches) {
-          await push(batch);
+      new Repeater<RowUpdateBatch>(async (push, stop) => {
+        for (const events of batches) {
+          await push({ events });
         }
         stop();
       }) as RowUpdateBatches,
@@ -108,14 +109,14 @@ describe('ApiService', () => {
     });
 
     it('should return no rows for an empty source', async () => {
-      snapshotOf();
+      snapshotOf([]);
 
       expect(await apiService.query(testSourceDefinition)).toEqual([]);
     });
 
     it('should fail with the error when the view fails', async () => {
       viewService.stream.mockReturnValue(
-        new Repeater<RowUpdateEvent[]>((_push, stop) => {
+        new Repeater<RowUpdateBatch>((_push, stop) => {
           void stop(new Error('unknown catalog item'));
         }) as RowUpdateBatches,
       );
@@ -261,7 +262,7 @@ describe('ApiService', () => {
 
     it('should end with the error when the view fails', async () => {
       viewService.stream.mockReturnValue(
-        new Repeater<RowUpdateEvent[]>((_push, stop) => {
+        new Repeater<RowUpdateBatch>((_push, stop) => {
           void stop(new Error('connection lost'));
         }) as RowUpdateBatches,
       );
