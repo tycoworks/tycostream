@@ -1,8 +1,75 @@
-import { insertOf, parseRow } from './rows.js';
-import type { RawRow } from './rows.js';
+import type pg from 'pg';
+import { insertOf, parseRow, readSnapshot } from './postgres.js';
+import type { RawRow } from './postgres.js';
 import type { SourceDefinition, EnumType } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import { RowUpdateType } from '../common/types.js';
+import type { RowUpdateEvent } from '../common/types.js';
+
+const idAndName: SourceDefinition = {
+  name: 'test',
+  primaryKeyField: 'id',
+  fields: [
+    { name: 'id', dataType: DataType.Integer },
+    { name: 'name', dataType: DataType.String },
+  ],
+};
+
+describe('readSnapshot', () => {
+  const clientReturning = (rows: RawRow[]) => {
+    const query = vi.fn(() => Promise.resolve({ rows }));
+    return { client: { query } as unknown as pg.ClientBase, query };
+  };
+  const readAll = async (client: pg.ClientBase) => {
+    const batches: RowUpdateEvent[][] = [];
+    for await (const batch of readSnapshot(client, idAndName, {
+      sql: 'select "id" from "test" where "id" = $1',
+      parameters: [7],
+    })) {
+      batches.push(batch);
+    }
+    return batches;
+  };
+
+  it('should run the SELECT with its parameters', async () => {
+    const { client, query } = clientReturning([]);
+
+    await readAll(client);
+
+    expect(query).toHaveBeenCalledWith(
+      'select "id" from "test" where "id" = $1',
+      [7],
+    );
+  });
+
+  it('should yield the rows, typed, as one batch of inserts, then end', async () => {
+    const { client } = clientReturning([
+      { id: '1', name: 'a' },
+      { id: '2', name: null },
+    ]);
+
+    expect(await readAll(client)).toEqual([
+      [
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['id', 'name']),
+          row: { id: 1, name: 'a' },
+        },
+        {
+          type: RowUpdateType.Insert,
+          fields: new Set(['id', 'name']),
+          row: { id: 2, name: null },
+        },
+      ],
+    ]);
+  });
+
+  it('should yield nothing for an empty source, as a live stream would not', async () => {
+    const { client } = clientReturning([]);
+
+    expect(await readAll(client)).toEqual([]);
+  });
+});
 
 const source = (fields: SourceDefinition['fields']): SourceDefinition => ({
   name: 'test',

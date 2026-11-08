@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
 import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
+import { StreamMode } from '../common/types.js';
 import type { WhereClause } from '../common/types.js';
 
 /**
@@ -20,6 +21,6 @@ export class ViewService {
    * closes the view.
    */
   subscribe(source: SourceDefinition, where?: WhereClause): RowUpdateBatches {
-    return this.databaseService.subscribe(source, where);
+    return this.databaseService.stream(source, where, StreamMode.Live);
   }
 }

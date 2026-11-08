@@ -1,14 +1,15 @@
 import type pg from 'pg';
 import {
   KeyViolationError,
-  MaterializeSubscriptionProtocol,
+  MaterializeAdapter,
   pairChanges,
   ProgressBatcher,
 } from './materialize.js';
 import type { DiffRow } from './materialize.js';
-import type { RawRow } from './rows.js';
-import { RowUpdateType } from '../common/types.js';
-import type { Row } from '../common/types.js';
+import type { RawRow } from './postgres.js';
+import type { CompiledSelect } from './select.js';
+import { RowUpdateType, StreamMode } from '../common/types.js';
+import type { Row, RowUpdateEvent } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 
@@ -35,7 +36,7 @@ const progress = (timestamp: number): RawRow => ({
   mz_diff: null,
 });
 
-describe('MaterializeSubscriptionProtocol', () => {
+describe('MaterializeAdapter', () => {
   const idAndName = source([
     { name: 'id', dataType: DataType.Integer },
     { name: 'name', dataType: DataType.String },
@@ -58,14 +59,51 @@ describe('MaterializeSubscriptionProtocol', () => {
     return { client: client as unknown as pg.ClientBase, queries };
   };
 
-  const protocol = new MaterializeSubscriptionProtocol();
+  const adapter = new MaterializeAdapter();
+  // A live read, as an iterator the tests can step through
+  const readLive = (
+    client: pg.ClientBase,
+    source: SourceDefinition,
+    select: CompiledSelect,
+  ) =>
+    adapter
+      .read(client, source, select, StreamMode.Live)
+      [Symbol.asyncIterator]();
   const readAll = (client: pg.ClientBase) =>
-    protocol.read(client, idAndName, { sql: 'select 1', parameters: [] });
+    readLive(client, idAndName, { sql: 'select 1', parameters: [] });
 
-  describe('read', () => {
+  describe('read, as a snapshot', () => {
+    it('should run the SELECT alone, with no SUBSCRIBE, and yield its rows as inserts', async () => {
+      const query = vi.fn(() =>
+        Promise.resolve({ rows: [{ id: '1', name: 'a' }] }),
+      );
+      const batches: RowUpdateEvent[][] = [];
+      for await (const batch of adapter.read(
+        { query } as unknown as pg.ClientBase,
+        idAndName,
+        { sql: 'select 1', parameters: [] },
+        StreamMode.Snapshot,
+      )) {
+        batches.push(batch);
+      }
+
+      expect(query.mock.calls).toEqual([['select 1', []]]);
+      expect(batches).toEqual([
+        [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id', 'name']),
+            row: { id: 1, name: 'a' },
+          },
+        ],
+      ]);
+    });
+  });
+
+  describe('read, live', () => {
     it('should turn off the idle timeout, then declare a cursor for the query inside a transaction, keeping its parameters', async () => {
       const { client, queries } = fakeClient([[progress(1)]]);
-      const batches = protocol.read(client, idAndName, {
+      const batches = readLive(client, idAndName, {
         sql: 'select "id" from "test" where "id" = $1',
         parameters: [7],
       });
@@ -122,7 +160,7 @@ describe('MaterializeSubscriptionProtocol', () => {
       ]);
     });
 
-    it('should keep two subscriptions on the one protocol apart, each with its own source and rows', async () => {
+    it('should keep two live streams on the one adapter apart, each with its own source and rows', async () => {
       const prices = source([
         { name: 'symbol', dataType: DataType.String },
         { name: 'price', dataType: DataType.Float },
@@ -135,11 +173,11 @@ describe('MaterializeSubscriptionProtocol', () => {
         [change(1, 1, { symbol: 'AAPL', price: '1.5' })],
         [progress(2)],
       ]);
-      const firstBatches = protocol.read(first.client, idAndName, {
+      const firstBatches = readLive(first.client, idAndName, {
         sql: 'select 1',
         parameters: [],
       });
-      const secondBatches = protocol.read(second.client, prices, {
+      const secondBatches = readLive(second.client, prices, {
         sql: 'select 2',
         parameters: [],
       });

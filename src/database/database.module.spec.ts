@@ -1,7 +1,7 @@
 import { DatabaseModule } from './database.module.js';
 import { DatabaseService } from './database.service.js';
 import { DatabaseConnectionService } from './connection.service.js';
-import { DatabaseDriver } from './types.js';
+import { DatabaseAdapter } from './types.js';
 
 describe('DatabaseModule', () => {
   it('should be defined', () => {
@@ -16,7 +16,7 @@ describe('DatabaseModule', () => {
     const providerTokens = providers.map((p: any) => p.provide || p);
     expect(providerTokens).toContain(DatabaseService);
     expect(providerTokens).toContain(DatabaseConnectionService);
-    expect(providerTokens).toContain(DatabaseDriver);
+    expect(providerTokens).toContain(DatabaseAdapter);
 
     // Only DatabaseService is exported
     expect(exports).toEqual([DatabaseService]);

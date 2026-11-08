@@ -5,7 +5,7 @@ import type { SourceDefinition } from '../config/source.types.js';
 import type { CompiledSelect } from './select.js';
 import { StreamMode } from '../common/types.js';
 import type { RowUpdateEvent } from '../common/types.js';
-import type { RowUpdateBatches, SubscriptionProtocol } from './types.js';
+import type { DatabaseAdapter, RowUpdateBatches } from './types.js';
 
 /**
  * Called when a stream starts, on the first pull, and once it has closed.
@@ -17,9 +17,9 @@ export interface StreamLifecycle {
 }
 
 /**
- * One subscription on a connection of its own. The driver's subscription
- * protocol does all the talking over it; this holds the connection for as
- * long as the subscriber stays, and hands on what the protocol reads.
+ * One stream on a source, in either mode. The adapter does all the talking
+ * over the connection; this borrows it for as long as the stream runs, and
+ * hands on what the adapter reads.
  */
 export class DatabaseStream {
   private readonly logger = new Logger(DatabaseStream.name);
@@ -27,21 +27,23 @@ export class DatabaseStream {
   constructor(
     private readonly connectionService: DatabaseConnectionService,
     private readonly source: SourceDefinition,
-    private readonly protocol: SubscriptionProtocol,
+    private readonly mode: StreamMode,
+    private readonly adapter: DatabaseAdapter,
     private readonly select: CompiledSelect,
   ) {}
 
   /**
-   * The subscription's row events, one complete timestamp at a time, the
-   * snapshot first. The connection opens on the first pull.
+   * The stream's row events, one complete timestamp at a time, the snapshot
+   * first. A snapshot then ends; a live stream goes on until it's stopped.
+   * Nothing connects until the first pull.
    *
-   * The protocol reads on only once the consumer has taken the last batch,
+   * The adapter reads on only once the consumer has taken the last batch,
    * so a slow consumer's rows queue in the database. Ending the iteration
-   * closes the connection, which ends the subscription in the database.
+   * cancels the connection, which ends the stream in the database.
    */
   read(lifecycle: StreamLifecycle = {}): RowUpdateBatches {
     return new Repeater<RowUpdateEvent[]>(async (push, stop) => {
-      // Stopping cancels the connection, which ends the subscription in the
+      // Stopping cancels the connection, which ends the stream in the
       // database at once, even mid-read or while still connecting
       const cancel = new AbortController();
       let stopped = false;
@@ -52,23 +54,39 @@ export class DatabaseStream {
       lifecycle.onOpen?.();
 
       const readUntilStopped = async () => {
-        await using lease = await this.connectionService.acquire(
-          StreamMode.Live,
+        const lease = await this.connectionService.acquire(
+          this.mode,
           cancel.signal,
         );
-        lease.client.on('error', (error) => void stop(error));
-        this.logger.debug(`Subscribing to ${this.source.name}`);
-        for await (const batch of this.protocol.read(
-          lease.client,
-          this.source,
-          this.select,
-        )) {
-          await push(batch);
-          if (stopped) {
-            return;
+        const onError = (error: Error) => void stop(error);
+        lease.client.on('error', onError);
+        let failure: unknown;
+        try {
+          this.logger.debug(
+            `Streaming ${this.source.name} (${StreamMode[this.mode]})`,
+          );
+          for await (const batch of this.adapter.read(
+            lease.client,
+            this.source,
+            this.select,
+            this.mode,
+          )) {
+            await push(batch);
+            if (stopped) {
+              return;
+            }
           }
+        } catch (error) {
+          // A cancelled stream fails with why it was cancelled, a timeout
+          // say, rather than with its connection being ended
+          failure = lease.signal.aborted ? lease.signal.reason : error;
+          throw failure;
+        } finally {
+          // A reused connection mustn't keep this stream's listener
+          lease.client.removeListener('error', onError);
+          await lease.close(failure);
         }
-        // The protocol finished by itself, so the subscription is over
+        // The adapter finished reading by itself, as a snapshot does
         void stop();
       };
 
@@ -79,9 +97,9 @@ export class DatabaseStream {
       });
 
       await stop;
-      // Returns once the connection is closed
+      // Returns once the connection is given back
       await reading;
-      this.logger.debug(`Closed the subscription to ${this.source.name}`);
+      this.logger.debug(`Closed the stream on ${this.source.name}`);
       lifecycle.onClose?.();
     });
   }

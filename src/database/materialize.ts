@@ -1,14 +1,15 @@
+import { Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
-import { RowUpdateType } from '../common/types.js';
+import { RowUpdateType, StreamMode } from '../common/types.js';
 import type { Row, RowUpdateEvent } from '../common/types.js';
-import { insertOf, parseRow, TEXT_TRUE } from './rows.js';
-import type { RawRow } from './rows.js';
+import { insertOf, parseRow, readSnapshot, TEXT_TRUE } from './postgres.js';
+import type { RawRow } from './postgres.js';
 import type { CompiledSelect } from './select.js';
-import type { DatabaseDriver, SubscriptionProtocol } from './types.js';
+import { DatabaseAdapter } from './types.js';
 
 /**
- * One row of a subscription's changes: +1 when it was added, -1 when it was
+ * One row of a live stream's changes: +1 when it was added, -1 when it was
  * removed, and the row's values
  */
 export interface DiffRow {
@@ -32,14 +33,27 @@ const VALUE_SEPARATOR = '\u0000';
 const FETCH_SIZE = 1000;
 
 /**
- * Handles Materialize-specific protocol details: reads
- * SUBSCRIBE (<select>) WITH (SNAPSHOT, PROGRESS) through a cursor
+ * Materialize: snapshots as any Postgres-compatible database gives them, and
+ * live streams through SUBSCRIBE
  */
-export class MaterializeSubscriptionProtocol implements SubscriptionProtocol {
+@Injectable()
+export class MaterializeAdapter extends DatabaseAdapter {
+  read(
+    client: pg.ClientBase,
+    source: SourceDefinition,
+    select: CompiledSelect,
+    mode: StreamMode,
+  ): AsyncIterable<RowUpdateEvent[]> {
+    return mode === StreamMode.Snapshot
+      ? readSnapshot(client, source, select)
+      : this.readLive(client, source, select);
+  }
+
   /**
-   * Never ends by itself; it stops when the connection closes
+   * Reads SUBSCRIBE (<select>) WITH (SNAPSHOT, PROGRESS) through a cursor.
+   * Never ends by itself; it stops when the connection closes.
    */
-  async *read(
+  private async *readLive(
     client: pg.ClientBase,
     source: SourceDefinition,
     select: CompiledSelect,
@@ -75,14 +89,7 @@ export class MaterializeSubscriptionProtocol implements SubscriptionProtocol {
 }
 
 /**
- * Materialize: its own subscriptions
- */
-export const materializeDriver: DatabaseDriver = {
-  subscriptions: new MaterializeSubscriptionProtocol(),
-};
-
-/**
- * Holds a subscription's rows until a progress row says their timestamp is
+ * Holds a live stream's rows until a progress row says their timestamp is
  * complete, typing each value as the schema says
  */
 export class ProgressBatcher {

@@ -2,13 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DatabaseService } from './database.service.js';
 import { DatabaseConnectionService } from './connection.service.js';
 import { DatabaseStream } from './stream.js';
-import { DatabaseDriver } from './types.js';
-import type { SubscriptionProtocol } from './types.js';
+import { DatabaseAdapter } from './types.js';
+import { StreamMode } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 import type { Mock } from 'vitest';
 
-// Mock DatabaseStream: each read() is a subscription whose connection opens
+// Mock DatabaseStream: each read() is a stream whose connection opens
 // just after, as on a first pull (unless a test says otherwise), and that
 // records its close
 const streamState = vi.hoisted(() => ({ opens: true }));
@@ -50,9 +50,7 @@ const trades: SourceDefinition = {
 describe('DatabaseService', () => {
   let service: DatabaseService;
   const connectionService = {} as DatabaseConnectionService;
-  const driver: DatabaseDriver = {
-    subscriptions: {} as SubscriptionProtocol,
-  };
+  const adapter = { read: vi.fn() } as unknown as DatabaseAdapter;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -62,31 +60,35 @@ describe('DatabaseService', () => {
       providers: [
         DatabaseService,
         { provide: DatabaseConnectionService, useValue: connectionService },
-        { provide: DatabaseDriver, useValue: driver },
+        { provide: DatabaseAdapter, useValue: adapter },
       ],
     }).compile();
 
     service = module.get<DatabaseService>(DatabaseService);
   });
 
-  describe('subscribe', () => {
-    it("should open a stream on the connection service, with the source, the driver's subscription protocol and the compiled filter", () => {
-      service.subscribe(trades, { symbol: { _eq: 'AAPL' } });
+  describe('stream', () => {
+    it.each([StreamMode.Snapshot, StreamMode.Live])(
+      'should open a stream of the mode (%s) on the connection service, with the source, the adapter and the compiled filter',
+      (mode) => {
+        service.stream(trades, { symbol: { _eq: 'AAPL' } }, mode);
 
-      expect(DatabaseStream).toHaveBeenCalledWith(
-        connectionService,
-        trades,
-        driver.subscriptions,
-        expect.objectContaining({
-          sql: expect.stringContaining('where "symbol" = $1'),
-          parameters: ['AAPL'],
-        }),
-      );
-    });
+        expect(DatabaseStream).toHaveBeenCalledWith(
+          connectionService,
+          trades,
+          mode,
+          adapter,
+          expect.objectContaining({
+            sql: expect.stringContaining('where "symbol" = $1'),
+            parameters: ['AAPL'],
+          }),
+        );
+      },
+    );
 
-    it('should open a separate stream for each subscription', () => {
-      const first = service.subscribe(trades);
-      const second = service.subscribe(trades);
+    it('should open a separate stream each time', () => {
+      const first = service.stream(trades, undefined, StreamMode.Live);
+      const second = service.stream(trades, undefined, StreamMode.Live);
 
       expect(DatabaseStream).toHaveBeenCalledTimes(2);
       expect(first).not.toBe(second);
@@ -94,7 +96,11 @@ describe('DatabaseService', () => {
 
     it('should reject an invalid filter without opening a stream', () => {
       expect(() =>
-        service.subscribe(trades, { no_such_field: { _eq: 1 } }),
+        service.stream(
+          trades,
+          { no_such_field: { _eq: 1 } },
+          StreamMode.Snapshot,
+        ),
       ).toThrow();
       expect(DatabaseStream).not.toHaveBeenCalled();
     });
@@ -102,8 +108,8 @@ describe('DatabaseService', () => {
 
   describe('onModuleDestroy', () => {
     it('should close every open subscription', async () => {
-      const first = service.subscribe(trades);
-      const second = service.subscribe(trades);
+      const first = service.stream(trades, undefined, StreamMode.Live);
+      const second = service.stream(trades, undefined, StreamMode.Live);
       await flush();
 
       await service.onModuleDestroy();
@@ -113,7 +119,7 @@ describe('DatabaseService', () => {
     });
 
     it('should not close a subscription twice once it has closed itself', async () => {
-      const closed = service.subscribe(trades);
+      const closed = service.stream(trades, undefined, StreamMode.Live);
       await flush();
       await closed.return();
       (closed.return as Mock).mockClear();
@@ -125,7 +131,7 @@ describe('DatabaseService', () => {
 
     it('should leave alone a subscription that never opened a connection', async () => {
       streamState.opens = false;
-      const neverPulled = service.subscribe(trades);
+      const neverPulled = service.stream(trades, undefined, StreamMode.Live);
       await flush();
 
       await service.onModuleDestroy();

@@ -1,16 +1,16 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { DatabaseConnectionService } from './connection.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import type { WhereClause } from '../common/types.js';
+import type { StreamMode, WhereClause } from '../common/types.js';
 import { buildSelect } from './select.js';
 import { DatabaseStream } from './stream.js';
-import { DatabaseDriver } from './types.js';
+import { DatabaseAdapter } from './types.js';
 import type { RowUpdateBatches } from './types.js';
 
 /**
- * The database layer's one export: subscriptions to sources, through the
- * driver. Opens one DatabaseStream per subscription, and closes any still
- * open first thing at shutdown.
+ * The database layer's one export: streams on sources, in either mode,
+ * through the adapter. Opens one DatabaseStream per stream, and closes any
+ * still open first thing at shutdown.
  */
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -19,18 +19,24 @@ export class DatabaseService implements OnModuleDestroy {
 
   constructor(
     private readonly connectionService: DatabaseConnectionService,
-    private readonly driver: DatabaseDriver,
+    private readonly adapter: DatabaseAdapter,
   ) {}
 
   /**
-   * Subscribes to a source's rows that match the filter. Throws if the
-   * filter is invalid; ending the iteration closes the subscription.
+   * A stream on the source's rows that match the filter: the snapshot, then,
+   * if live, every change. Throws if the filter is invalid; ending the
+   * iteration closes the stream.
    */
-  subscribe(source: SourceDefinition, where?: WhereClause): RowUpdateBatches {
+  stream(
+    source: SourceDefinition,
+    where: WhereClause | undefined,
+    mode: StreamMode,
+  ): RowUpdateBatches {
     const stream = new DatabaseStream(
       this.connectionService,
       source,
-      this.driver.subscriptions,
+      mode,
+      this.adapter,
       buildSelect(source, where),
     );
     const batches = stream.read({
@@ -41,12 +47,12 @@ export class DatabaseService implements OnModuleDestroy {
   }
 
   /**
-   * Closes the open subscriptions first thing at shutdown, so their SSE
-   * responses finish and the HTTP server can close
+   * Closes the open streams first thing at shutdown, so their SSE responses
+   * finish and the HTTP server can close
    */
   async onModuleDestroy() {
     this.logger.log(`Closing ${this.open.size} database streams`);
-    await Promise.all([...this.open].map((changes) => changes.return()));
+    await Promise.all([...this.open].map((batches) => batches.return()));
     this.open.clear();
   }
 }

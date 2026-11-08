@@ -1,10 +1,13 @@
+import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType, RowUpdateType } from '../common/types.js';
 import type { Row, RowUpdateEvent } from '../common/types.js';
+import type { CompiledSelect } from './select.js';
 
 /**
- * How every Postgres-compatible database sends rows when asked for text,
- * and how tycostream types them by the schema. Both stream protocols use it.
+ * What every Postgres-compatible database does the same way: sending rows as
+ * text, which tycostream types by the schema, and giving a snapshot with a
+ * plain SELECT. Any adapter for such a database builds on it.
  */
 
 /**
@@ -39,6 +42,26 @@ export function parseRow(source: SourceDefinition, raw: RawRow): Row {
  */
 export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
   return { type: RowUpdateType.Insert, fields: new Set(fieldNames), row };
+}
+
+/**
+ * A snapshot, as every Postgres-compatible database gives one: the SELECT's
+ * rows, typed, as one batch of inserts. Any adapter can read snapshots this
+ * way.
+ */
+export async function* readSnapshot(
+  client: pg.ClientBase,
+  source: SourceDefinition,
+  select: CompiledSelect,
+): AsyncGenerator<RowUpdateEvent[]> {
+  const { rows } = await client.query<RawRow>(select.sql, [
+    ...select.parameters,
+  ]);
+  const fieldNames = source.fields.map((field) => field.name);
+  // An empty source has nothing to send, as a live stream's snapshot doesn't
+  if (rows.length > 0) {
+    yield rows.map((raw) => insertOf(parseRow(source, raw), fieldNames));
+  }
 }
 
 /**
