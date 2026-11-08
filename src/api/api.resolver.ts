@@ -1,6 +1,7 @@
 import type { SourceDefinition } from '../config/source.types.js';
 import type { Row, WhereClause } from '../common/types.js';
 import { ApiService, GraphQLUpdate } from './api.service.js';
+import { RootType } from './schema.js';
 
 // Every resolver takes a source's filter
 type Args = { where?: WhereClause };
@@ -63,23 +64,32 @@ function createSubscriptionResolver(
 }
 
 /**
+ * Every source's resolvers, under the root types' names. A type, not an
+ * interface, so it fits the GraphQL module's resolver map.
+ */
+export type Resolvers = {
+  [RootType.Query]: Record<string, QueryResolver>;
+  [RootType.Subscription]: Record<string, SubscriptionResolver>;
+};
+
+/**
  * Builds the resolvers for every source, a query and a subscription each,
  * delegating to ApiService
  */
 export function buildResolvers(
   sources: Map<string, SourceDefinition>,
   apiService: ApiService,
-): {
-  Query: Record<string, QueryResolver>;
-  Subscription: Record<string, SubscriptionResolver>;
-} {
-  const Query: Record<string, QueryResolver> = {};
-  const Subscription: Record<string, SubscriptionResolver> = {};
+): Resolvers {
+  const queries: Record<string, QueryResolver> = {};
+  const subscriptions: Record<string, SubscriptionResolver> = {};
 
   sources.forEach((source, sourceName) => {
-    Query[sourceName] = createQueryResolver(source, apiService);
-    Subscription[sourceName] = createSubscriptionResolver(source, apiService);
+    queries[sourceName] = createQueryResolver(source, apiService);
+    subscriptions[sourceName] = createSubscriptionResolver(source, apiService);
   });
 
-  return { Query, Subscription };
+  return {
+    [RootType.Query]: queries,
+    [RootType.Subscription]: subscriptions,
+  };
 }

@@ -20,14 +20,18 @@ import {
 import type { GraphQLScalarType } from 'graphql';
 
 /**
- * Comparison input type names for GraphQL schema
+ * The root types' names, as Hasura names them
  */
-enum ComparisonInputType {
-  String = 'StringComparison',
-  Int = 'IntComparison',
-  Float = 'FloatComparison',
-  Boolean = 'BooleanComparison',
+export enum RootType {
+  Query = 'query_root',
+  Subscription = 'subscription_root',
 }
+
+// The generated types' names, following Hasura's conventions
+const ROW_OPERATION_TYPE = 'row_operation';
+const boolExpTypeName = (sourceName: string) => `${sourceName}_bool_exp`;
+const comparisonTypeName = (typeName: string) => `${typeName}_comparison_exp`;
+const updateTypeName = (sourceName: string) => `${sourceName}_update`;
 
 /**
  * The comparison operators each kind of field offers in a where filter
@@ -96,14 +100,14 @@ export function generateSchema(config: SourceConfiguration): string {
   );
   const subscriptionFields = buildRootFields(
     sources,
-    (sourceName) => `[${sourceName}Update!]!`,
+    (sourceName) => `[${updateTypeName(sourceName)}!]!`,
   );
 
   const schema = `
     # ================== ENUMS & BASE TYPES ==================
 
     # Row operation types for subscriptions
-    enum RowOperation {
+    enum ${ROW_OPERATION_TYPE} {
       ${GraphQLRowOperation.Insert}
       ${GraphQLRowOperation.Update}
       ${GraphQLRowOperation.Delete}
@@ -125,14 +129,19 @@ ${sourceTypes}
     
     # ================== ROOT TYPES ==================
     
+    schema {
+      query: ${RootType.Query}
+      subscription: ${RootType.Subscription}
+    }
+
     # Queries: each source's current rows, once
-    type Query {
+    type ${RootType.Query} {
 ${queryFields}
     }
     
     # Subscriptions: each source's current rows, then every change, as one
     # list of updates per timestamp
-    type Subscription {
+    type ${RootType.Subscription} {
 ${subscriptionFields}
     }`;
 
@@ -176,7 +185,7 @@ function buildEnumComparisonTypes(enumTypes: Map<string, EnumType>): string {
     comparisonTypes.push(
       `    # Comparison operators for ${enumName} enum\n` +
         buildComparisonInput(
-          `${enumName}Comparison`,
+          comparisonTypeName(enumName),
           enumName,
           ORDERED_OPERATORS,
         ),
@@ -194,22 +203,22 @@ function buildComparisonTypes(): string {
   return [
     `    # Comparison operators\n` +
       buildComparisonInput(
-        ComparisonInputType.String,
+        comparisonTypeName(GraphQLString.name),
         GraphQLString.name,
         STRING_OPERATORS,
       ),
     buildComparisonInput(
-      ComparisonInputType.Int,
+      comparisonTypeName(GraphQLInt.name),
       GraphQLInt.name,
       ORDERED_OPERATORS,
     ),
     buildComparisonInput(
-      ComparisonInputType.Float,
+      comparisonTypeName(GraphQLFloat.name),
       GraphQLFloat.name,
       ORDERED_OPERATORS,
     ),
     buildComparisonInput(
-      ComparisonInputType.Boolean,
+      comparisonTypeName(GraphQLBoolean.name),
       GraphQLBoolean.name,
       BOOLEAN_OPERATORS,
     ),
@@ -232,8 +241,8 @@ ${fields}
     }
     
     # ${sourceName} update event
-    type ${sourceName}Update {
-      operation: RowOperation!
+    type ${updateTypeName(sourceName)} {
+      operation: ${ROW_OPERATION_TYPE}!
       data: ${sourceName}
       fields: [${GraphQLString.name}!]!
     }`);
@@ -253,7 +262,7 @@ function buildRootFields(
   return Array.from(sources.keys())
     .map(
       (sourceName) =>
-        `      ${sourceName}(where: ${sourceName}Expression): ${returnType(sourceName)}`,
+        `      ${sourceName}(where: ${boolExpTypeName(sourceName)}): ${returnType(sourceName)}`,
     )
     .join('\n');
 }
@@ -276,12 +285,12 @@ function buildExpressionInputTypes(
       })
       .join('\n');
 
-    inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions)
-    input ${sourceName}Expression {
+    inputTypes.push(`    # ${sourceName} filter, for its query and subscription
+    input ${boolExpTypeName(sourceName)} {
 ${fieldComparisons}
-      ${LogicalOperator.And}: [${sourceName}Expression!]
-      ${LogicalOperator.Or}: [${sourceName}Expression!]
-      ${LogicalOperator.Not}: ${sourceName}Expression
+      ${LogicalOperator.And}: [${boolExpTypeName(sourceName)}!]
+      ${LogicalOperator.Or}: [${boolExpTypeName(sourceName)}!]
+      ${LogicalOperator.Not}: ${boolExpTypeName(sourceName)}
     }`);
   }
 
@@ -294,24 +303,14 @@ ${fieldComparisons}
 function getComparisonType(field: SourceField): string {
   // Enums use their specific comparison type
   if (field.enumType) {
-    return `${field.enumType.name}Comparison`;
+    return comparisonTypeName(field.enumType.name);
   }
 
-  const graphqlTypeName = getGraphQLScalarType(field.dataType).name;
-  switch (graphqlTypeName) {
-    case GraphQLString.name:
-    case GraphQLID.name:
-      return ComparisonInputType.String;
-    case GraphQLInt.name:
-      return ComparisonInputType.Int;
-    case GraphQLFloat.name:
-      return ComparisonInputType.Float;
-    case GraphQLBoolean.name:
-      return ComparisonInputType.Boolean;
-    default:
-      // Any other types (shouldn't happen with our current type mappings)
-      return ComparisonInputType.String;
-  }
+  // IDs compare as strings; every other scalar has its own comparisons
+  const scalarName = getGraphQLScalarType(field.dataType).name;
+  return comparisonTypeName(
+    scalarName === GraphQLID.name ? GraphQLString.name : scalarName,
+  );
 }
 
 /**

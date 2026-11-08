@@ -1,5 +1,6 @@
 import { buildResolvers } from './api.resolver.js';
 import type { ApiService } from './api.service.js';
+import { RootType } from './schema.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
 
@@ -20,10 +21,13 @@ describe('buildResolvers', () => {
     ['trades', source('trades')],
     ['prices', source('prices')],
   ]);
-  const { Query, Subscription } = buildResolvers(sources, apiService);
+  const resolvers = buildResolvers(sources, apiService);
+  const Query = resolvers[RootType.Query];
+  const Subscription = resolvers[RootType.Subscription];
   const where = { id: { _eq: 1 } };
 
-  it('should give every source a query and a subscription', () => {
+  it("should give every source a query and a subscription, under Hasura's root type names", () => {
+    expect(Object.keys(resolvers)).toEqual(['query_root', 'subscription_root']);
     expect(Object.keys(Query)).toEqual(['trades', 'prices']);
     expect(Object.keys(Subscription)).toEqual(['trades', 'prices']);
   });

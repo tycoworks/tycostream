@@ -73,7 +73,7 @@ export type FieldComparison = {
 
 /**
  * Row update event types sent to GraphQL clients
- * Maps to GraphQL's RowOperation enum (INSERT/UPDATE/DELETE)
+ * Maps to GraphQL's row_operation enum (INSERT/UPDATE/DELETE)
  */
 export enum RowUpdateType {
   Insert,

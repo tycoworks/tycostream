@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module.js';
 import databaseConfig from '../src/config/database.config.js';
 import graphqlConfig from '../src/config/graphql.config.js';
 import sourcesConfig from '../src/config/sources.config.js';
+import { RootType } from '../src/api/schema.js';
 
 /**
  * HTTP behaviour of the GraphQL endpoint that browser clients rely on,
@@ -55,7 +56,7 @@ async function stillServing(app: INestApplication<App>): Promise<boolean> {
     .post('/graphql')
     .send({ query: '{ __typename }' });
   const body = response.body as { data?: { __typename?: string } };
-  return body.data?.__typename === 'Query';
+  return body.data?.__typename === RootType.Query;
 }
 
 describe('HTTP', () => {

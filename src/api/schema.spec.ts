@@ -19,13 +19,14 @@ describe('generateSchema', () => {
   it('should generate root types even with no sources', () => {
     const schema = generateSchema(createConfig());
 
-    // Query and Subscription root types; there are no mutations
-    expect(schema).toContain('type Query {');
-    expect(schema).toContain('type Subscription {');
-    expect(schema).not.toContain('type Mutation');
+    // Query and subscription root types, named as Hasura names them; there
+    // are no mutations
+    expect(schema).toContain('type query_root {');
+    expect(schema).toContain('type subscription_root {');
+    expect(schema).not.toContain('mutation');
   });
 
-  it('should give each source a query of its rows and a subscription of its updates, both filtered by its expression', () => {
+  it("should give each source a query of its rows and a subscription of its updates, both filtered by its bool_exp, under Hasura's root types", () => {
     const sources = new Map<string, SourceDefinition>([
       [
         'trades',
@@ -38,24 +39,26 @@ describe('generateSchema', () => {
     ]);
     const schema = buildSchema(generateSchema(createConfig(sources)));
 
+    expect(schema.getQueryType()!.name).toBe('query_root');
+    expect(schema.getSubscriptionType()!.name).toBe('subscription_root');
     const query = schema.getQueryType()!.getFields().trades;
     expect(query.type.toString()).toBe('[trades!]!');
     expect(query.args.map((arg) => [arg.name, arg.type.toString()])).toEqual([
-      ['where', 'tradesExpression'],
+      ['where', 'trades_bool_exp'],
     ]);
     const subscription = schema.getSubscriptionType()!.getFields().trades;
     // One list of updates per timestamp
-    expect(subscription.type.toString()).toBe('[tradesUpdate!]!');
+    expect(subscription.type.toString()).toBe('[trades_update!]!');
     expect(
       subscription.args.map((arg) => [arg.name, arg.type.toString()]),
-    ).toEqual([['where', 'tradesExpression']]);
+    ).toEqual([['where', 'trades_bool_exp']]);
     expect(schema.getQueryType()!.getFields().ping).toBeUndefined();
   });
 
-  it('should define RowOperation enum for subscription events', () => {
+  it('should define the row_operation enum for subscription events', () => {
     const schema = generateSchema(createConfig());
 
-    expect(schema).toContain('enum RowOperation');
+    expect(schema).toContain('enum row_operation');
     expect(schema).toContain('INSERT');
     expect(schema).toContain('UPDATE');
     expect(schema).toContain('DELETE');
@@ -65,21 +68,21 @@ describe('generateSchema', () => {
     const schema = generateSchema(createConfig());
 
     // String comparisons
-    expect(schema).toContain('input StringComparison');
+    expect(schema).toContain('input String_comparison_exp');
     expect(schema).toContain('_eq: String');
     expect(schema).toContain('_neq: String');
     expect(schema).toContain('_in: [String!]');
     expect(schema).toContain('_is_null: Boolean');
 
     // Numeric comparisons
-    expect(schema).toContain('input IntComparison');
+    expect(schema).toContain('input Int_comparison_exp');
     expect(schema).toContain('_gt: Int');
     expect(schema).toContain('_lt: Int');
     expect(schema).toContain('_gte: Int');
     expect(schema).toContain('_lte: Int');
 
-    expect(schema).toContain('input FloatComparison');
-    expect(schema).toContain('input BooleanComparison');
+    expect(schema).toContain('input Float_comparison_exp');
+    expect(schema).toContain('input Boolean_comparison_exp');
   });
 
   it('should give each comparison input exactly the operators for its type', () => {
@@ -118,17 +121,17 @@ describe('generateSchema', () => {
       _is_null: 'Boolean',
     });
 
-    expect(operators('StringComparison')).toEqual({
+    expect(operators('String_comparison_exp')).toEqual({
       _eq: 'String',
       _neq: 'String',
       _in: '[String!]',
       _nin: '[String!]',
       _is_null: 'Boolean',
     });
-    expect(operators('IntComparison')).toEqual(ordered('Int'));
-    expect(operators('FloatComparison')).toEqual(ordered('Float'));
-    expect(operators('sideComparison')).toEqual(ordered('side'));
-    expect(operators('BooleanComparison')).toEqual({
+    expect(operators('Int_comparison_exp')).toEqual(ordered('Int'));
+    expect(operators('Float_comparison_exp')).toEqual(ordered('Float'));
+    expect(operators('side_comparison_exp')).toEqual(ordered('side'));
+    expect(operators('Boolean_comparison_exp')).toEqual({
       _eq: 'Boolean',
       _neq: 'Boolean',
       _is_null: 'Boolean',
@@ -153,16 +156,16 @@ describe('generateSchema', () => {
 
     const schema = generateSchema(createConfig(sources));
 
-    // Should have Expression input type with field comparisons
-    expect(schema).toContain('input tradesExpression {');
-    expect(schema).toContain('id: IntComparison');
-    expect(schema).toContain('symbol: StringComparison');
-    expect(schema).toContain('price: FloatComparison');
+    // Should have a bool_exp input type with field comparisons
+    expect(schema).toContain('input trades_bool_exp {');
+    expect(schema).toContain('id: Int_comparison_exp');
+    expect(schema).toContain('symbol: String_comparison_exp');
+    expect(schema).toContain('price: Float_comparison_exp');
 
     // Should have logical operators
-    expect(schema).toContain('_and: [tradesExpression!]');
-    expect(schema).toContain('_or: [tradesExpression!]');
-    expect(schema).toContain('_not: tradesExpression');
+    expect(schema).toContain('_and: [trades_bool_exp!]');
+    expect(schema).toContain('_or: [trades_bool_exp!]');
+    expect(schema).toContain('_not: trades_bool_exp');
   });
 
   it('should generate source object types and update types', () => {
@@ -189,15 +192,15 @@ describe('generateSchema', () => {
     expect(schema).toContain('symbol: String');
     expect(schema).toContain('price: Float');
 
-    // Check tradesUpdate type
-    expect(schema).toContain('type tradesUpdate {');
-    expect(schema).toContain('operation: RowOperation!');
+    // Check trades_update type
+    expect(schema).toContain('type trades_update {');
+    expect(schema).toContain('operation: row_operation!');
     expect(schema).toContain('data: trades');
     expect(schema).toContain('fields: [String!]');
 
     // Should have subscription field
     expect(schema).toContain(
-      'trades(where: tradesExpression): [tradesUpdate!]!',
+      'trades(where: trades_bool_exp): [trades_update!]!',
     );
   });
 
@@ -247,10 +250,10 @@ describe('generateSchema', () => {
 
     // Should use source name as-is
     expect(schema).toContain('type live_pnl {');
-    expect(schema).toContain('type live_pnlUpdate {');
+    expect(schema).toContain('type live_pnl_update {');
     expect(schema).toContain('data: live_pnl');
     expect(schema).toContain(
-      'live_pnl(where: live_pnlExpression): [live_pnlUpdate!]!',
+      'live_pnl(where: live_pnl_bool_exp): [live_pnl_update!]!',
     );
   });
 
@@ -352,14 +355,14 @@ describe('generateSchema', () => {
     expect(schema).toContain('status: order_status');
 
     // Should generate enum comparison types
-    expect(schema).toContain('input trade_sideComparison {');
+    expect(schema).toContain('input trade_side_comparison_exp {');
     expect(schema).toContain('_eq: trade_side');
     expect(schema).toContain('_gt: trade_side');
-    expect(schema).toContain('input order_statusComparison {');
+    expect(schema).toContain('input order_status_comparison_exp {');
 
     // Enum fields should use enum-specific comparison types for filtering
-    expect(schema).toContain('side: trade_sideComparison');
-    expect(schema).toContain('status: order_statusComparison');
+    expect(schema).toContain('side: trade_side_comparison_exp');
+    expect(schema).toContain('status: order_status_comparison_exp');
   });
 
   it('should generate enum comparison types with ordinal operators', () => {
@@ -394,7 +397,7 @@ describe('generateSchema', () => {
     const schema = generateSchema(config);
 
     // Should generate enum comparison type with all operators
-    expect(schema).toContain('input priority_levelComparison {');
+    expect(schema).toContain('input priority_level_comparison_exp {');
     expect(schema).toContain('_eq: priority_level');
     expect(schema).toContain('_neq: priority_level');
     expect(schema).toContain('_gt: priority_level'); // Ordinal comparison
