@@ -1,4 +1,4 @@
-import { buildSelect } from './query.js';
+import { buildSelect } from './select.js';
 import type { WhereClause } from '../common/types.js';
 import { ComparisonOperator, DataType } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';

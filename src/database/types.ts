@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import type { RowUpdateEvent } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import type { CompiledQuery } from './query.js';
+import type { CompiledSelect } from './select.js';
 
 /**
  * A subscription's row events, one complete timestamp at a time. Ending the
@@ -20,13 +20,13 @@ export interface RowUpdateBatches extends AsyncIterableIterator<
  */
 export interface SubscriptionProtocol {
   /**
-   * Subscribes to the source's query over an open connection and yields its
+   * Subscribes to the source's SELECT over an open connection and yields its
    * row events, one complete timestamp at a time, the snapshot first
    */
   read(
     client: pg.ClientBase,
     source: SourceDefinition,
-    query: CompiledQuery,
+    select: CompiledSelect,
   ): AsyncIterable<RowUpdateEvent[]>;
 }
 

@@ -1,15 +1,11 @@
 import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType, RowUpdateType } from '../common/types.js';
-import type { RowUpdateEvent } from '../common/types.js';
-import type { CompiledQuery } from './query.js';
+import { RowUpdateType } from '../common/types.js';
+import type { Row, RowUpdateEvent } from '../common/types.js';
+import { insertOf, parseRow, TEXT_TRUE } from './rows.js';
+import type { RawRow } from './rows.js';
+import type { CompiledSelect } from './select.js';
 import type { DatabaseDriver, SubscriptionProtocol } from './types.js';
-
-/**
- * One fetched row as Materialize sends it: every column as text, or null,
- * since tycostream's connections read every value as text
- */
-export type RawRow = Record<string, string | null>;
 
 /**
  * One row of a subscription's changes: +1 when it was added, -1 when it was
@@ -17,7 +13,7 @@ export type RawRow = Record<string, string | null>;
  */
 export interface DiffRow {
   diff: number;
-  row: Record<string, unknown>;
+  row: Row;
 }
 
 const CURSOR = 'c';
@@ -29,9 +25,6 @@ enum SubscribeColumn {
   Diff = 'mz_diff',
 }
 
-// How Postgres writes a true boolean as text
-const TEXT_TRUE = 't';
-
 // Joins a row's values into one key; no value's text can contain it
 const VALUE_SEPARATOR = '\u0000';
 
@@ -40,7 +33,7 @@ const FETCH_SIZE = 1000;
 
 /**
  * Handles Materialize-specific protocol details: reads
- * SUBSCRIBE (<query>) WITH (SNAPSHOT, PROGRESS) through a cursor
+ * SUBSCRIBE (<select>) WITH (SNAPSHOT, PROGRESS) through a cursor
  */
 export class MaterializeSubscriptionProtocol implements SubscriptionProtocol {
   /**
@@ -49,7 +42,7 @@ export class MaterializeSubscriptionProtocol implements SubscriptionProtocol {
   async *read(
     client: pg.ClientBase,
     source: SourceDefinition,
-    query: CompiledQuery,
+    select: CompiledSelect,
   ): AsyncGenerator<RowUpdateEvent[]> {
     // The transaction sits idle while the consumer works through a batch.
     // Materialize's cap on a subscription's backlog limits a slow consumer,
@@ -58,8 +51,8 @@ export class MaterializeSubscriptionProtocol implements SubscriptionProtocol {
     // A cursor only lives inside a transaction
     await client.query('BEGIN');
     await client.query(
-      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${query.sql}) WITH (SNAPSHOT, PROGRESS)`,
-      [...query.parameters],
+      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${select.sql}) WITH (SNAPSHOT, PROGRESS)`,
+      [...select.parameters],
     );
 
     // FETCH without a timeout returns as soon as rows exist
@@ -117,24 +110,12 @@ export class ProgressBatcher {
         const batch = this.pending.get(timestamp) ?? [];
         batch.push({
           diff: Number(raw[SubscribeColumn.Diff]),
-          row: this.parseRow(raw),
+          row: parseRow(this.sourceDefinition, raw),
         });
         this.pending.set(timestamp, batch);
       }
     }
     return complete;
-  }
-
-  private parseRow(raw: RawRow): Record<string, unknown> {
-    return Object.fromEntries(
-      this.sourceDefinition.fields.map((field) => {
-        const value = raw[field.name];
-        return [
-          field.name,
-          value === null ? null : parseValue(value, field.dataType),
-        ];
-      }),
-    );
   }
 }
 
@@ -192,11 +173,7 @@ function toEvent(
   const key = forKey[0].row[primaryKeyField];
 
   if (forKey.length === 1 && added) {
-    return {
-      type: RowUpdateType.Insert,
-      fields: new Set(fieldNames),
-      row: added.row,
-    };
+    return insertOf(added.row, fieldNames);
   }
   if (forKey.length === 1 && removed) {
     return {
@@ -241,37 +218,4 @@ function valueKey(value: unknown): string {
     return `n:${value.toString()}`;
   }
   return `j:${JSON.stringify(value) ?? 'undefined'}`;
-}
-
-/**
- * Parse a column's text value into the type the GraphQL schema serves
- */
-function parseValue(value: string, dataType: DataType): unknown {
-  switch (dataType) {
-    case DataType.Boolean:
-      return value === TEXT_TRUE;
-
-    case DataType.Integer:
-      return parseInt(value, 10);
-
-    case DataType.Float:
-      return parseFloat(value);
-
-    case DataType.BigInt:
-      // Keep as string to preserve precision
-      return value;
-
-    // All string-based types
-    case DataType.String:
-    case DataType.UUID:
-    case DataType.Timestamp:
-    case DataType.Date:
-    case DataType.Time:
-    case DataType.JSON:
-    case DataType.Array:
-      return value;
-
-    default:
-      return value;
-  }
 }

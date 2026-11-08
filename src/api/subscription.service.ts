@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
 import { ViewService } from '../view/view.service.js';
 import { RowUpdateType } from '../common/types.js';
-import type { RowUpdateEvent, WhereClause } from '../common/types.js';
+import type { Row, RowUpdateEvent, WhereClause } from '../common/types.js';
 import { truncateForLog } from '../common/logging.utils.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
@@ -21,7 +21,7 @@ export enum GraphQLRowOperation {
  */
 export interface GraphQLUpdate {
   operation: GraphQLRowOperation;
-  data: Record<string, any>;
+  data: Row;
   fields: string[];
 }
 

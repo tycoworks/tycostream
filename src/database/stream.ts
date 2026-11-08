@@ -3,7 +3,7 @@ import { Repeater } from '@repeaterjs/repeater';
 import { ConnectionType } from './connection.service.js';
 import type { DatabaseConnectionService } from './connection.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import type { CompiledQuery } from './query.js';
+import type { CompiledSelect } from './select.js';
 import type { RowUpdateEvent } from '../common/types.js';
 import type { RowUpdateBatches, SubscriptionProtocol } from './types.js';
 
@@ -28,7 +28,7 @@ export class DatabaseStream {
     private readonly connectionService: DatabaseConnectionService,
     private readonly source: SourceDefinition,
     private readonly protocol: SubscriptionProtocol,
-    private readonly query: CompiledQuery,
+    private readonly select: CompiledSelect,
   ) {}
 
   /**
@@ -61,7 +61,7 @@ export class DatabaseStream {
         for await (const batch of this.protocol.read(
           lease.client,
           this.source,
-          this.query,
+          this.select,
         )) {
           await push(batch);
           if (stopped) {

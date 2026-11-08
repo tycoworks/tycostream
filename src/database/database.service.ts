@@ -2,7 +2,7 @@ import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { DatabaseConnectionService } from './connection.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { WhereClause } from '../common/types.js';
-import { buildSelect } from './query.js';
+import { buildSelect } from './select.js';
 import { DatabaseStream } from './stream.js';
 import { DatabaseDriver } from './types.js';
 import type { RowUpdateBatches } from './types.js';

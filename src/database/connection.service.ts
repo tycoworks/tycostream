@@ -7,12 +7,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import pg from 'pg';
 import type { DatabaseConfig } from '../config/database.config.js';
+import { TEXT_ONLY } from './rows.js';
 
 const DB_CONNECTION_TIMEOUT_MS = 10000; // Allow sufficient time for network latency
 const DB_KEEP_ALIVE_DELAY_MS = 10000; // Prevent connection drops
-
-// Every value arrives as text; tycostream types it as schema.yaml says
-const TEXT_ONLY = { getTypeParser: () => (value: string) => value };
 
 /**
  * What a connection is for, which decides where it comes from and its limits
