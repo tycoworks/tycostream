@@ -261,6 +261,73 @@ describe('Integration Test', () => {
     await testEnv.waitUntil(async () => (await subscriptions()) === before);
   }, 30000);
 
+  it("should send one SSE message per timestamp: the snapshot, even when empty, then each later timestamp's updates together", async () => {
+    type Updates = { operation: string; data: { user_id: number } }[];
+    const controller = new AbortController();
+    const response = await fetch(`http://localhost:${testEnv.port}/graphql`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        // Rows no other test writes, so the snapshot is empty
+        query:
+          'subscription { users(where: { user_id: { _gte: 8000, _lt: 9000 } }) { operation data { user_id } } }',
+      }),
+      signal: controller.signal,
+    });
+    const reader = response
+      .body!.pipeThrough(new TextDecoderStream())
+      .getReader();
+    let buffered = '';
+    // The next SSE `next` message's updates, skipping keep-alives
+    const nextMessage = async (): Promise<Updates> => {
+      for (;;) {
+        const end = buffered.indexOf('\n\n');
+        if (end >= 0) {
+          const message = buffered.slice(0, end);
+          buffered = buffered.slice(end + 2);
+          const data = message
+            .split('\n')
+            .find((line) => line.startsWith('data:'));
+          if (message.startsWith('event: next') && data) {
+            return (
+              JSON.parse(data.slice('data:'.length)) as {
+                data: { users: Updates };
+              }
+            ).data.users;
+          }
+          continue;
+        }
+        const { value, done } = await reader.read();
+        if (done) {
+          throw new Error('The stream ended');
+        }
+        buffered += value;
+      }
+    };
+
+    try {
+      expect(await nextMessage()).toEqual([]);
+
+      // Two rows in one statement share a timestamp, so they arrive together
+      await testEnv.executeSql(
+        `INSERT INTO users (user_id, name) VALUES (8001, 'a'), (8002, 'b')`,
+      );
+      expect(
+        (await nextMessage())
+          .map((update) => [update.operation, update.data.user_id])
+          .sort(),
+      ).toEqual([
+        ['INSERT', 8001],
+        ['INSERT', 8002],
+      ]);
+    } finally {
+      controller.abort();
+    }
+  }, 30000);
+
   describe('queries', () => {
     const graphql = (query: string, signal?: AbortSignal) =>
       fetch(`http://localhost:${testEnv.port}/graphql`, {

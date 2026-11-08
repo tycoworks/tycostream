@@ -44,7 +44,8 @@ describe('generateSchema', () => {
       ['where', 'tradesExpression'],
     ]);
     const subscription = schema.getSubscriptionType()!.getFields().trades;
-    expect(subscription.type.toString()).toBe('tradesUpdate!');
+    // One list of updates per timestamp
+    expect(subscription.type.toString()).toBe('[tradesUpdate!]!');
     expect(
       subscription.args.map((arg) => [arg.name, arg.type.toString()]),
     ).toEqual([['where', 'tradesExpression']]);
@@ -195,7 +196,9 @@ describe('generateSchema', () => {
     expect(schema).toContain('fields: [String!]');
 
     // Should have subscription field
-    expect(schema).toContain('trades(where: tradesExpression): tradesUpdate!');
+    expect(schema).toContain(
+      'trades(where: tradesExpression): [tradesUpdate!]!',
+    );
   });
 
   it('should handle DataType mappings correctly', () => {
@@ -247,7 +250,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('type live_pnlUpdate {');
     expect(schema).toContain('data: live_pnl');
     expect(schema).toContain(
-      'live_pnl(where: live_pnlExpression): live_pnlUpdate!',
+      'live_pnl(where: live_pnlExpression): [live_pnlUpdate!]!',
     );
   });
 

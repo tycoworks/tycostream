@@ -74,29 +74,30 @@ export class ApiService {
   }
 
   /**
-   * A GraphQL subscription: a live stream on the view, its row events sent
-   * as GraphQL updates. Throws if the filter is invalid; a database error
-   * ends the subscription with that error.
+   * A GraphQL subscription: a live stream on the view, each timestamp's row
+   * events sent as one list of GraphQL updates, the snapshot first, even
+   * when it's empty. Throws if the filter is invalid; a database error ends
+   * the subscription with that error.
    */
   subscribe(
     source: SourceDefinition,
     where?: WhereClause,
-  ): AsyncIterableIterator<GraphQLUpdate> {
+  ): AsyncIterableIterator<GraphQLUpdate[]> {
     this.logger.log(`Subscription for ${describe(source, where)}`);
 
     const batches = this.viewService.stream(source, where, StreamMode.Live);
 
-    return new Repeater<GraphQLUpdate>(async (push, stop) => {
+    return new Repeater<GraphQLUpdate[]>(async (push, stop) => {
       const forward = async () => {
-        for await (const { events } of batches) {
-          for (const event of events) {
-            const update = this.transformToGraphQLUpdate(event);
-            this.logger.debug(
-              `Sending GraphQL update - source: ${source.name}, operation: ${update.operation}, ` +
-                `data: ${truncateForLog(update.data)}, fields: [${update.fields.join(', ')}]`,
-            );
-            await push(update);
-          }
+        for await (const { timestamp, events } of batches) {
+          const updates = events.map((event) =>
+            this.transformToGraphQLUpdate(event),
+          );
+          this.logger.debug(
+            `Sending GraphQL updates - source: ${source.name}, timestamp: ${timestamp}, ` +
+              `updates: ${truncateForLog(updates)}`,
+          );
+          await push(updates);
         }
         // The view ended by itself
         void stop();

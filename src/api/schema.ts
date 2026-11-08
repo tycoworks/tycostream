@@ -96,7 +96,7 @@ export function generateSchema(config: SourceConfiguration): string {
   );
   const subscriptionFields = buildRootFields(
     sources,
-    (sourceName) => `${sourceName}Update!`,
+    (sourceName) => `[${sourceName}Update!]!`,
   );
 
   const schema = `
@@ -130,7 +130,8 @@ ${sourceTypes}
 ${queryFields}
     }
     
-    # Subscriptions: each source's current rows, then every change
+    # Subscriptions: each source's current rows, then every change, as one
+    # list of updates per timestamp
     type Subscription {
 ${subscriptionFields}
     }`;

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repeater } from '@repeaterjs/repeater';
 import { ApiService, GraphQLRowOperation } from './api.service.js';
+import type { GraphQLUpdate } from './api.service.js';
 import { ViewService } from '../view/view.service.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
@@ -173,11 +174,13 @@ describe('ApiService', () => {
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
-        {
-          operation: GraphQLRowOperation.Insert,
-          data: ROW,
-          fields: ['id', 'name', 'value'],
-        },
+        [
+          {
+            operation: GraphQLRowOperation.Insert,
+            data: ROW,
+            fields: ['id', 'name', 'value'],
+          },
+        ],
       ]);
     });
 
@@ -193,11 +196,13 @@ describe('ApiService', () => {
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
-        {
-          operation: GraphQLRowOperation.Update,
-          data: { id: '1', value: 7 },
-          fields: ['id', 'value'],
-        },
+        [
+          {
+            operation: GraphQLRowOperation.Update,
+            data: { id: '1', value: 7 },
+            fields: ['id', 'value'],
+          },
+        ],
       ]);
     });
 
@@ -209,15 +214,17 @@ describe('ApiService', () => {
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
-        {
-          operation: GraphQLRowOperation.Delete,
-          data: { id: '1' },
-          fields: ['id'],
-        },
+        [
+          {
+            operation: GraphQLRowOperation.Delete,
+            data: { id: '1' },
+            fields: ['id'],
+          },
+        ],
       ]);
     });
 
-    it('should send every event of every timestamp, in order', async () => {
+    it("should send each timestamp's updates together, as one list, in order", async () => {
       viewOf(
         [
           { type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW },
@@ -233,17 +240,24 @@ describe('ApiService', () => {
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(
-        (
-          (await take(updates, 3)) as {
-            operation: GraphQLRowOperation;
-            data: { id: string };
-          }[]
-        ).map((u) => [u.operation, u.data.id]),
+        ((await take(updates, 2)) as GraphQLUpdate[][]).map((list) =>
+          list.map((u) => [u.operation, u.data.id]),
+        ),
       ).toEqual([
-        [GraphQLRowOperation.Insert, '1'],
-        [GraphQLRowOperation.Insert, '2'],
-        [GraphQLRowOperation.Delete, '1'],
+        [
+          [GraphQLRowOperation.Insert, '1'],
+          [GraphQLRowOperation.Insert, '2'],
+        ],
+        [[GraphQLRowOperation.Delete, '1']],
       ]);
+    });
+
+    it('should send an empty snapshot as an empty list', async () => {
+      viewOf([]);
+
+      const updates = apiService.subscribe(testSourceDefinition);
+
+      expect(await take(updates, 1)).toEqual([[]]);
     });
 
     it('should close the view as soon as the client stops, even while the view is idle', async () => {

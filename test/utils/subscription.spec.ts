@@ -4,13 +4,16 @@ import { GraphQLRowOperation } from './events.js';
 describe('SubscriptionProcessor', () => {
   let processor: SubscriptionProcessor;
 
-  // Helper to create properly formatted events
+  // Helper to create properly formatted events: a timestamp's list of
+  // updates, here holding one
   const createEvent = (operation: string, rowData: any, fields: string[]) => ({
-    data: {
-      operation,
-      data: rowData,
-      fields,
-    },
+    data: [
+      {
+        operation,
+        data: rowData,
+        fields,
+      },
+    ],
   });
 
   describe('with Map-based expected state', () => {
@@ -92,6 +95,38 @@ describe('SubscriptionProcessor', () => {
             ),
           );
         }).toThrow('Received duplicate INSERT for item 1');
+      });
+    });
+
+    describe("a timestamp's updates", () => {
+      it('should apply every update in the list, in order', () => {
+        processor.processEvent({
+          data: [
+            {
+              operation: GraphQLRowOperation.Insert,
+              data: { id: 1, name: 'Alice', age: 29 },
+              fields: ['id', 'name', 'age'],
+            },
+            {
+              operation: GraphQLRowOperation.Update,
+              data: { id: 1, age: 30 },
+              fields: ['id', 'age'],
+            },
+            {
+              operation: GraphQLRowOperation.Insert,
+              data: { id: 2, name: 'Bob', age: 25 },
+              fields: ['id', 'name', 'age'],
+            },
+          ],
+        });
+
+        expect(processor.getStats().totalReceived).toBe(2);
+      });
+
+      it('should accept an empty list, as an empty snapshot is', () => {
+        processor.processEvent({ data: [] });
+
+        expect(processor.getStats().totalReceived).toBe(0);
       });
     });
 
