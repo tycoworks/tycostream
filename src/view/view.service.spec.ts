@@ -32,10 +32,10 @@ describe('ViewService', () => {
     viewService = module.get<ViewService>(ViewService);
   });
 
-  it('should open a live stream on the source and filter, and return its events', () => {
+  it('should open a stream of the mode on the source and filter, and return its events', () => {
     const where = { id: { _eq: 1 } };
 
-    expect(viewService.subscribe(trades, where)).toBe(changes);
+    expect(viewService.stream(trades, where, StreamMode.Live)).toBe(changes);
     expect(databaseService.stream).toHaveBeenCalledWith(
       trades,
       where,
@@ -44,8 +44,8 @@ describe('ViewService', () => {
   });
 
   it('should open a separate stream for each view', () => {
-    viewService.subscribe(trades);
-    viewService.subscribe(trades);
+    viewService.stream(trades, undefined, StreamMode.Live);
+    viewService.stream(trades, undefined, StreamMode.Snapshot);
 
     expect(databaseService.stream).toHaveBeenCalledTimes(2);
   });

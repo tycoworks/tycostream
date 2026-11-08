@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
 import { ViewService } from '../view/view.service.js';
-import { RowUpdateType } from '../common/types.js';
+import { RowUpdateType, StreamMode } from '../common/types.js';
 import type { Row, RowUpdateEvent, WhereClause } from '../common/types.js';
 import { truncateForLog } from '../common/logging.utils.js';
 import type { SourceDefinition } from '../config/source.types.js';
@@ -34,15 +34,19 @@ const ROW_UPDATE_TYPE_MAP = {
   [RowUpdateType.Delete]: GraphQLRowOperation.Delete,
 } as const;
 
+/**
+ * The API layer's one service: GraphQL's operations on a source, each a
+ * stream on a view of it
+ */
 @Injectable()
-export class SubscriptionService {
-  private readonly logger = new Logger(SubscriptionService.name);
+export class ApiService {
+  private readonly logger = new Logger(ApiService.name);
 
   constructor(private readonly viewService: ViewService) {}
 
   /**
-   * Creates a subscription stream for a data source
-   * Transforms row events into GraphQL updates. Throws if the filter is
+   * A GraphQL subscription: a live stream on the view, its row events sent
+   * as GraphQL updates. Throws if the filter is
    * invalid; a database error ends this subscription with that error.
    */
   subscribe(
@@ -53,7 +57,7 @@ export class SubscriptionService {
       `Subscription for ${source.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`,
     );
 
-    const batches = this.viewService.subscribe(source, where);
+    const batches = this.viewService.stream(source, where, StreamMode.Live);
 
     return new Repeater<GraphQLUpdate>(async (push, stop) => {
       const forward = async () => {

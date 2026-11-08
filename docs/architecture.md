@@ -43,7 +43,7 @@ The domain layer. `ViewService` is a pass-through to the database layer for now;
 ### API Module (`src/api/`)
 
 - Generates the GraphQL schema from `schema.yaml`: a type, an update type and a filter input per source.
-- `SubscriptionService` passes the client's `where` down, and turns each event into a GraphQL update, sending only the fields the event names.
+- `ApiService` (`api.service.ts`) is the layer's one service: `subscribe` opens a `Live` stream on the view and turns each event into a GraphQL update, sending only the fields the event names. Resolvers per source are built in `api.resolver.ts`.
 - The resolvers hand GraphQL the service's iterator directly, so a client that disconnects closes its database connection at once.
 
 ### Configuration & Common (`src/config/` and `src/common/`)

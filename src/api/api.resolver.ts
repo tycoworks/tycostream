@@ -1,6 +1,6 @@
 import type { SourceDefinition } from '../config/source.types.js';
 import type { WhereClause } from '../common/types.js';
-import { SubscriptionService, GraphQLUpdate } from './subscription.service.js';
+import { ApiService, GraphQLUpdate } from './api.service.js';
 
 /**
  * GraphQL subscription resolver type
@@ -16,37 +16,32 @@ type SubscriptionResolver = {
 
 /**
  * Creates a subscription resolver for a specific source
- * Acts as a thin pass-through to SubscriptionService
+ * Acts as a thin pass-through to ApiService
  */
-function createSourceSubscriptionResolver(
+function createSubscriptionResolver(
   source: SourceDefinition,
-  subscriptionService: SubscriptionService,
+  apiService: ApiService,
 ): SubscriptionResolver {
   return {
     // Returns the service's iterator itself, not a generator wrapping it, so
     // a client that disconnects closes its subscription at once
-    subscribe: (_parent, args) =>
-      subscriptionService.subscribe(source, args.where),
+    subscribe: (_parent, args) => apiService.subscribe(source, args.where),
     resolve: (update) => update,
   };
 }
 
 /**
- * Builds all subscription resolvers for the given sources
- * Creates a resolver for each source that delegates to SubscriptionService
+ * Builds the resolvers for every source, each delegating to ApiService
  */
-export function buildSubscriptionResolvers(
+export function buildResolvers(
   sources: Map<string, SourceDefinition>,
-  subscriptionService: SubscriptionService,
-): Record<string, SubscriptionResolver> {
-  const resolvers: Record<string, SubscriptionResolver> = {};
+  apiService: ApiService,
+): { Subscription: Record<string, SubscriptionResolver> } {
+  const Subscription: Record<string, SubscriptionResolver> = {};
 
   sources.forEach((source, sourceName) => {
-    resolvers[sourceName] = createSourceSubscriptionResolver(
-      source,
-      subscriptionService,
-    );
+    Subscription[sourceName] = createSubscriptionResolver(source, apiService);
   });
 
-  return resolvers;
+  return { Subscription };
 }
