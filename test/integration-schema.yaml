@@ -48,3 +48,10 @@ sources:
       # JSON types
       json_val: JSON
       jsonb_val: JSON
+
+  # Its one row takes Materialize seconds to work out, so a query of it is
+  # still running when its client leaves
+  slow_count:
+    primary_key: id
+    columns:
+      id: Integer

@@ -260,4 +260,69 @@ describe('Integration Test', () => {
 
     await testEnv.waitUntil(async () => (await subscriptions()) === before);
   }, 30000);
+
+  describe('queries', () => {
+    const graphql = (query: string, signal?: AbortSignal) =>
+      fetch(`http://localhost:${testEnv.port}/graphql`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal,
+      });
+
+    it("should return a source's current rows that match the filter, typed as the schema says", async () => {
+      await testEnv.executeSql(`
+        INSERT INTO users (user_id, name, active, rank) VALUES
+          (9001, 'Query One', true, 'gold'),
+          (9002, 'Query Two', false, 'bronze')
+      `);
+
+      const response = await graphql(`
+        {
+          users(
+            where: { user_id: { _in: [9001, 9002] }, active: { _eq: true } }
+          ) {
+            user_id
+            name
+            active
+            rank
+          }
+        }
+      `);
+
+      expect(await response.json()).toEqual({
+        data: {
+          users: [
+            { user_id: 9001, name: 'Query One', active: true, rank: 'gold' },
+          ],
+        },
+      });
+    });
+
+    it('should end a query in Materialize as soon as its client leaves', async () => {
+      const queriesRunning = async () => {
+        const [{ n }] = await testEnv.querySql<{ n: string }>(
+          'SELECT count(*) AS n FROM mz_internal.mz_active_peeks',
+        );
+        return Number(n);
+      };
+      await testEnv.executeSql('CREATE TABLE slow_input (a INT)');
+      await testEnv.executeSql(
+        'INSERT INTO slow_input SELECT generate_series(1, 50000)',
+      );
+      await testEnv.executeSql(
+        'CREATE VIEW slow_count AS SELECT count(*)::int AS id FROM slow_input x, slow_input y WHERE x.a < y.a',
+      );
+
+      const controller = new AbortController();
+      const querying = graphql('{ slow_count { id } }', controller.signal);
+      await testEnv.waitUntil(async () => (await queriesRunning()) > 0);
+
+      controller.abort();
+      await expect(querying).rejects.toThrow();
+
+      // Well within the 30 s time limit that would otherwise end it
+      await testEnv.waitUntil(async () => (await queriesRunning()) === 0);
+    }, 30000);
+  });
 });

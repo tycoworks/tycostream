@@ -25,10 +25,30 @@ describe('generateSchema', () => {
     expect(schema).not.toContain('type Mutation');
   });
 
-  it('should define a ping query, since GraphQL requires at least one query field', () => {
-    const schema = generateSchema(createConfig());
+  it('should give each source a query of its rows and a subscription of its updates, both filtered by its expression', () => {
+    const sources = new Map<string, SourceDefinition>([
+      [
+        'trades',
+        {
+          name: 'trades',
+          primaryKeyField: 'id',
+          fields: [{ name: 'id', dataType: DataType.Integer }],
+        },
+      ],
+    ]);
+    const schema = buildSchema(generateSchema(createConfig(sources)));
 
-    expect(schema).toContain('ping: String');
+    const query = schema.getQueryType()!.getFields().trades;
+    expect(query.type.toString()).toBe('[trades!]!');
+    expect(query.args.map((arg) => [arg.name, arg.type.toString()])).toEqual([
+      ['where', 'tradesExpression'],
+    ]);
+    const subscription = schema.getSubscriptionType()!.getFields().trades;
+    expect(subscription.type.toString()).toBe('tradesUpdate!');
+    expect(
+      subscription.args.map((arg) => [arg.name, arg.type.toString()]),
+    ).toEqual([['where', 'tradesExpression']]);
+    expect(schema.getQueryType()!.getFields().ping).toBeUndefined();
   });
 
   it('should define RowOperation enum for subscription events', () => {

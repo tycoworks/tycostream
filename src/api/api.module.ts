@@ -10,8 +10,7 @@ import { ViewService } from '../view/view.service.js';
 import { ApiService } from './api.service.js';
 
 /**
- * API module provides GraphQL subscriptions
- * Handles real-time data streaming
+ * API module provides each source's GraphQL query and subscription
  */
 @Module({
   imports: [
@@ -38,7 +37,7 @@ import { ApiService } from './api.service.js';
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
 
         const apiService = new ApiService(viewService);
-        const { Subscription } = buildResolvers(
+        const { Query, Subscription } = buildResolvers(
           sourceConfig.sources,
           apiService,
         );
@@ -53,12 +52,7 @@ import { ApiService } from './api.service.js';
         return {
           typeDefs,
           graphiql: graphqlConfig.playground, // GRAPHQL_UI turns on the GraphiQL UI
-          resolvers: {
-            Query: {
-              ping: () => 'pong',
-            },
-            Subscription,
-          },
+          resolvers: { Query, Subscription },
         };
       },
       inject: [ConfigService, ViewService],

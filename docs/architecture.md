@@ -2,7 +2,7 @@
 
 ## Overview
 
-tycostream turns database views into GraphQL subscriptions. Each source in `schema.yaml` becomes a subscription; each client's subscription is pushed down to Materialize as its own `SUBSCRIBE` of a filtered `SELECT`, so Materialize does the filtering and the snapshot, and tycostream holds no rows beyond the changes it's passing on.
+tycostream turns database views into GraphQL queries and subscriptions. Each source in `schema.yaml` gets a query of its current rows and a subscription to them and every change; each client's subscription is pushed down to Materialize as its own `SUBSCRIBE` of a filtered `SELECT`, and each query as a plain `SELECT`, so Materialize does the filtering and the snapshot, and tycostream holds no rows beyond the changes it's passing on.
 
 **Sources, views and streams.** A *source* is whatever tycostream reads from: a table or view in the database, as listed in `schema.yaml`. (Not a Materialize `SOURCE`, which brings data into Materialize.) A *view* is one client's filtered window onto a source: a source plus a `where`. A *stream* is one running read of a view, in a mode: `Snapshot` (the current rows, then it ends) or `Live` (the current rows, then every change). Only the API speaks of queries and subscriptions; below it, a GraphQL query is a `Snapshot` stream and a subscription a `Live` one.
 
@@ -42,9 +42,9 @@ The domain layer. `ViewService` is a pass-through to the database layer for now;
 
 ### API Module (`src/api/`)
 
-- Generates the GraphQL schema from `schema.yaml`: a type, an update type and a filter input per source.
-- `ApiService` (`api.service.ts`) is the layer's one service: `subscribe` opens a `Live` stream on the view and turns each event into a GraphQL update, sending only the fields the event names. Resolvers per source are built in `api.resolver.ts`.
-- The resolvers hand GraphQL the service's iterator directly, so a client that disconnects closes its database connection at once.
+- Generates the GraphQL schema from `schema.yaml`: per source, a type, an update type, a filter input, a query returning its rows, and a subscription returning its updates.
+- `ApiService` (`api.service.ts`) is the layer's one service. `query` opens a `Snapshot` stream on the view and returns its rows. `subscribe` opens a `Live` stream and turns each event into a GraphQL update, sending only the fields the event names.
+- `api.resolver.ts` builds each source's query and subscription resolvers. A subscription resolver hands GraphQL the service's iterator directly, so a client that disconnects closes its database connection at once; a query resolver passes on the request's signal, which aborts when the client leaves, so the query ends in the database.
 
 ### Configuration & Common (`src/config/` and `src/common/`)
 
@@ -62,7 +62,7 @@ The domain layer. `ViewService` is a pass-through to the database layer for now;
 5. **The client gets each event** as a GraphQL update. A slow client holds the next `FETCH` back, so its backlog queues in Materialize, which caps it.
 6. **The client disconnects,** and its connection is discarded, which drops the `SUBSCRIBE` in Materialize.
 
-A database error, or a source whose key turns out not to be unique, ends that one subscription with a GraphQL error. The server keeps running.
+A database error, or a source whose key turns out not to be unique, ends that one query or subscription with a GraphQL error. The server keeps running.
 
 ## Key Design Decisions
 

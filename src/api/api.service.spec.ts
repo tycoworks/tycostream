@@ -3,7 +3,7 @@ import { Repeater } from '@repeaterjs/repeater';
 import { ApiService, GraphQLRowOperation } from './api.service.js';
 import { ViewService } from '../view/view.service.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
-import type { RowUpdateEvent } from '../common/types.js';
+import type { Row, RowUpdateEvent } from '../common/types.js';
 import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { DataType } from '../config/source.types.js';
@@ -39,6 +39,18 @@ describe('ApiService', () => {
     return closed;
   };
 
+  // A snapshot: these batches, then the stream ends
+  const snapshotOf = (...batches: RowUpdateEvent[][]) => {
+    viewService.stream.mockReturnValue(
+      new Repeater<RowUpdateEvent[]>(async (push, stop) => {
+        for (const batch of batches) {
+          await push(batch);
+        }
+        stop();
+      }) as RowUpdateBatches,
+    );
+  };
+
   const take = async (
     updates: AsyncIterableIterator<unknown>,
     count: number,
@@ -64,6 +76,80 @@ describe('ApiService', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('query', () => {
+    const insert = (row: Row) => ({
+      type: RowUpdateType.Insert,
+      fields: ALL_FIELDS,
+      row,
+    });
+
+    it('should open a snapshot stream on the source and filter', async () => {
+      snapshotOf();
+      const where = { name: { _eq: 'test' } };
+
+      await apiService.query(testSourceDefinition, where);
+
+      expect(viewService.stream).toHaveBeenCalledWith(
+        testSourceDefinition,
+        where,
+        StreamMode.Snapshot,
+      );
+    });
+
+    it('should return every row of the snapshot, whole, as GraphQL resolves the fields asked for', async () => {
+      snapshotOf([insert(ROW), insert({ ...ROW, id: '2' })]);
+
+      expect(await apiService.query(testSourceDefinition)).toEqual([
+        ROW,
+        { ...ROW, id: '2' },
+      ]);
+    });
+
+    it('should return no rows for an empty source', async () => {
+      snapshotOf();
+
+      expect(await apiService.query(testSourceDefinition)).toEqual([]);
+    });
+
+    it('should fail with the error when the view fails', async () => {
+      viewService.stream.mockReturnValue(
+        new Repeater<RowUpdateEvent[]>((_push, stop) => {
+          void stop(new Error('unknown catalog item'));
+        }) as RowUpdateBatches,
+      );
+
+      await expect(apiService.query(testSourceDefinition)).rejects.toThrow(
+        'unknown catalog item',
+      );
+    });
+
+    it('should stop the stream, and fail with why, when the signal aborts', async () => {
+      // A snapshot that hasn't arrived yet
+      const closed = viewOf();
+      const cancel = new AbortController();
+      const querying = apiService.query(
+        testSourceDefinition,
+        undefined,
+        cancel.signal,
+      );
+
+      cancel.abort(new Error('the client left'));
+
+      await expect(querying).rejects.toThrow('the client left');
+      expect(closed).toHaveBeenCalled();
+    });
+
+    it('should fail when the view rejects the filter', async () => {
+      viewService.stream.mockImplementation(() => {
+        throw new Error('Unknown field');
+      });
+
+      await expect(
+        apiService.query(testSourceDefinition, { nope: { _eq: 1 } }),
+      ).rejects.toThrow('Unknown field');
+    });
   });
 
   describe('subscribe', () => {

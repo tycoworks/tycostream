@@ -186,9 +186,11 @@ One commit each, shown before committing. Each builds and passes every test on i
 2. **Drivers:** `DatabaseDriver` (now `DatabaseAdapter`), `DatabaseService`, and the renames that went with them. (Done.)
 3. **Names and the text format:** `Row`; `query.ts` becomes `select.ts`; `rows.ts`, merged into `postgres.ts` in step 5. No change in behaviour. (Done.)
 4. **One pool, and `StreamMode`:** the capped pool with the policy per mode and the time limit; the two settings; subscriptions borrow live connections from it. (Done.)
-5. **Snapshot streams:** `DatabaseAdapter.read` with its mode, `MaterializeAdapter`, and `readSnapshot`, with `rows.ts` merged into `postgres.ts`; `DatabaseStream` in both modes; `DatabaseService.stream`; the snapshot tests against Materialize. Nothing new reaches GraphQL yet.
-6. **The connection cap, tested against Materialize, and the docs.**
-7. **Queries through GraphQL:** `ViewService.stream`; `ApiService` with `subscribe` and `query`, and `api.resolver.ts`, replacing `SubscriptionService` and `subscription.resolver.ts`; cancelling when the request is aborted; `ping` removed; `DATABASE_QUERY_TIMEOUT_MS` in the README; the end-to-end tests.
+5. **Snapshot streams:** `DatabaseAdapter.read` with its mode, `MaterializeAdapter`, and `readSnapshot`, with `rows.ts` merged into `postgres.ts`; `DatabaseStream` in both modes; `DatabaseService.stream`; the snapshot tests against Materialize. Nothing new reaches GraphQL yet. (Done.)
+6. **The connection cap, tested against Materialize, and the docs.** (Done.)
+7. **Queries through GraphQL,** in two commits:
+   - **7a, names:** `ViewService.stream`; `ApiService` and `api.resolver.ts`, replacing `SubscriptionService` and `subscription.resolver.ts`. (Done.)
+   - **7b, queries:** a query field per source; `ApiService.query`; `Query` resolvers that pass on the request's signal, so a client leaving ends its query; `ping` removed; `DATABASE_QUERY_TIMEOUT_MS` in the README; the end-to-end tests.
 
 ## Tests
 

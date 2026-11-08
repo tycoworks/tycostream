@@ -45,17 +45,44 @@ export class ApiService {
   constructor(private readonly viewService: ViewService) {}
 
   /**
+   * A GraphQL query: a snapshot stream on the view, its rows returned once.
+   * Throws if the filter is invalid; a database error, or the time limit,
+   * fails the query. Aborting the signal, as the client leaving does, stops
+   * the stream, which ends the query in the database.
+   */
+  async query(
+    source: SourceDefinition,
+    where?: WhereClause,
+    signal?: AbortSignal,
+  ): Promise<Row[]> {
+    this.logger.log(`Query for ${describe(source, where)}`);
+
+    const batches = this.viewService.stream(source, where, StreamMode.Snapshot);
+    const stop = () => void batches.return();
+    signal?.addEventListener('abort', stop, { once: true });
+    try {
+      const rows: Row[] = [];
+      for await (const events of batches) {
+        rows.push(...events.map((event) => event.row));
+      }
+      // A stopped stream just ends, so say why it stopped
+      signal?.throwIfAborted();
+      return rows;
+    } finally {
+      signal?.removeEventListener('abort', stop);
+    }
+  }
+
+  /**
    * A GraphQL subscription: a live stream on the view, its row events sent
-   * as GraphQL updates. Throws if the filter is
-   * invalid; a database error ends this subscription with that error.
+   * as GraphQL updates. Throws if the filter is invalid; a database error
+   * ends the subscription with that error.
    */
   subscribe(
     source: SourceDefinition,
     where?: WhereClause,
   ): AsyncIterableIterator<GraphQLUpdate> {
-    this.logger.log(
-      `Subscription for ${source.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`,
-    );
+    this.logger.log(`Subscription for ${describe(source, where)}`);
 
     const batches = this.viewService.stream(source, where, StreamMode.Live);
 
@@ -99,4 +126,9 @@ export class ApiService {
 
     return { operation, data, fields };
   }
+}
+
+// A source and its filter, for the logs
+function describe(source: SourceDefinition, where?: WhereClause): string {
+  return `${source.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`;
 }
