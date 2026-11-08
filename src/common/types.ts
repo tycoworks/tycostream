@@ -42,6 +42,16 @@ export enum ComparisonOperator {
   In = '_in',
   Nin = '_nin',
   IsNull = '_is_null',
+  // Text patterns: LIKE's wildcards, case-sensitive or not, and regular
+  // expressions, case-sensitive or not; each with its negation
+  Like = '_like',
+  Nlike = '_nlike',
+  Ilike = '_ilike',
+  Nilike = '_nilike',
+  Regex = '_regex',
+  Nregex = '_nregex',
+  Iregex = '_iregex',
+  Niregex = '_niregex',
 }
 
 /**

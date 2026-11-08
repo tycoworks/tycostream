@@ -270,6 +270,26 @@ describe('DatabaseService on Materialize', () => {
       }
     });
 
+    it('should filter by text patterns, as Materialize matches them', async () => {
+      await createTable('patterns');
+      await sql(
+        `INSERT INTO patterns (id, symbol) VALUES (1, 'AAPL'), (2, 'amzn'), (3, 'MSFT'), (4, 'META')`,
+      );
+      const byPattern = async (where: WhereClause) => {
+        const batches = subscribe(tradesTable('patterns'), where);
+        try {
+          return byId(await nextEvents(batches)).map((e) => e.row.id);
+        } finally {
+          await batches.return();
+        }
+      };
+
+      expect(await byPattern({ symbol: { _ilike: 'a%' } })).toEqual([1, 2]);
+      expect(await byPattern({ symbol: { _nlike: 'M%' } })).toEqual([1, 2]);
+      expect(await byPattern({ symbol: { _regex: '^M.*T$' } })).toEqual([3]);
+      expect(await byPattern({ symbol: { _niregex: '^m' } })).toEqual([1, 2]);
+    });
+
     it('should send a row entering the filter as an insert and one leaving it as a delete', async () => {
       await createTable('filtered');
       await sql(`INSERT INTO filtered (id, qty) VALUES (1, 5)`);
@@ -519,6 +539,19 @@ describe('DatabaseService on Materialize', () => {
 
       const rows = await snapshot(tradesTable('query_params'), {
         symbol: { _eq: tricky },
+      });
+
+      expect(rows.map((row) => row.id)).toEqual([2]);
+    });
+
+    it('should filter by text patterns', async () => {
+      await createTable('query_patterns');
+      await sql(
+        `INSERT INTO query_patterns (id, symbol) VALUES (1, 'AAPL'), (2, 'MSFT')`,
+      );
+
+      const rows = await snapshot(tradesTable('query_patterns'), {
+        symbol: { _iregex: '^ms' },
       });
 
       expect(rows.map((row) => row.id)).toEqual([2]);

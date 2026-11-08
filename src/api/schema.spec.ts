@@ -121,21 +121,23 @@ describe('generateSchema', () => {
       _is_null: 'Boolean',
     });
 
+    // Hasura's base set for every scalar and enum; text adds its patterns,
+    // but not _similar or _nsimilar, which Materialize lacks
     expect(operators('String_comparison_exp')).toEqual({
-      _eq: 'String',
-      _neq: 'String',
-      _in: '[String!]',
-      _nin: '[String!]',
-      _is_null: 'Boolean',
+      ...ordered('String'),
+      _like: 'String',
+      _nlike: 'String',
+      _ilike: 'String',
+      _nilike: 'String',
+      _regex: 'String',
+      _nregex: 'String',
+      _iregex: 'String',
+      _niregex: 'String',
     });
     expect(operators('Int_comparison_exp')).toEqual(ordered('Int'));
     expect(operators('Float_comparison_exp')).toEqual(ordered('Float'));
+    expect(operators('Boolean_comparison_exp')).toEqual(ordered('Boolean'));
     expect(operators('side_comparison_exp')).toEqual(ordered('side'));
-    expect(operators('Boolean_comparison_exp')).toEqual({
-      _eq: 'Boolean',
-      _neq: 'Boolean',
-      _is_null: 'Boolean',
-    });
   });
 
   it('should generate expression input types for subscription filters', () => {

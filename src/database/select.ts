@@ -43,6 +43,19 @@ const SQL_COMPARISONS = {
 
 type SetOperator = ComparisonOperator.In | ComparisonOperator.Nin;
 
+// Text patterns, matched by the database: Materialize's regular expressions
+// use Rust's syntax, not POSIX
+const SQL_PATTERNS = {
+  [ComparisonOperator.Like]: 'like',
+  [ComparisonOperator.Nlike]: 'not like',
+  [ComparisonOperator.Ilike]: 'ilike',
+  [ComparisonOperator.Nilike]: 'not ilike',
+  [ComparisonOperator.Regex]: '~',
+  [ComparisonOperator.Nregex]: '!~',
+  [ComparisonOperator.Iregex]: '~*',
+  [ComparisonOperator.Niregex]: '!~*',
+} as const;
+
 const SQL_SETS = {
   [ComparisonOperator.In]: 'in',
   [ComparisonOperator.Nin]: 'not in',
@@ -141,6 +154,15 @@ function buildComparisons(
         return inSet(eb, column, operator, value as unknown[]);
       case ComparisonOperator.IsNull:
         return eb(column, value ? 'is' : 'is not', null);
+      case ComparisonOperator.Like:
+      case ComparisonOperator.Nlike:
+      case ComparisonOperator.Ilike:
+      case ComparisonOperator.Nilike:
+      case ComparisonOperator.Regex:
+      case ComparisonOperator.Nregex:
+      case ComparisonOperator.Iregex:
+      case ComparisonOperator.Niregex:
+        return eb(column, SQL_PATTERNS[operator], value);
       default:
         throw new Error(`Unknown operator '${key}' on '${field.name}'`);
     }

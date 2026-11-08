@@ -34,27 +34,32 @@ const comparisonTypeName = (typeName: string) => `${typeName}_comparison_exp`;
 const updateTypeName = (sourceName: string) => `${sourceName}_update`;
 
 /**
- * The comparison operators each kind of field offers in a where filter
+ * The comparison operators each kind of field offers in a where filter, as
+ * in Hasura: every scalar and enum has the base set, and text adds patterns
  */
-const EQUALITY_OPERATORS = [
+const BASE_OPERATORS = [
   ComparisonOperator.Eq,
   ComparisonOperator.Neq,
-  ComparisonOperator.IsNull,
-];
-const SET_OPERATORS = [ComparisonOperator.In, ComparisonOperator.Nin];
-const ORDERING_OPERATORS = [
   ComparisonOperator.Gt,
   ComparisonOperator.Gte,
   ComparisonOperator.Lt,
   ComparisonOperator.Lte,
+  ComparisonOperator.In,
+  ComparisonOperator.Nin,
+  ComparisonOperator.IsNull,
 ];
-const BOOLEAN_OPERATORS = EQUALITY_OPERATORS;
-const STRING_OPERATORS = [...EQUALITY_OPERATORS, ...SET_OPERATORS];
-const ORDERED_OPERATORS = [
-  ...EQUALITY_OPERATORS,
-  ...ORDERING_OPERATORS,
-  ...SET_OPERATORS,
+// Materialize has no SIMILAR TO, so Hasura's _similar and _nsimilar are left out
+const PATTERN_OPERATORS = [
+  ComparisonOperator.Like,
+  ComparisonOperator.Nlike,
+  ComparisonOperator.Ilike,
+  ComparisonOperator.Nilike,
+  ComparisonOperator.Regex,
+  ComparisonOperator.Nregex,
+  ComparisonOperator.Iregex,
+  ComparisonOperator.Niregex,
 ];
+const STRING_OPERATORS = [...BASE_OPERATORS, ...PATTERN_OPERATORS];
 
 /**
  * Builds a comparison input type: each operator takes a value of the field's
@@ -187,7 +192,7 @@ function buildEnumComparisonTypes(enumTypes: Map<string, EnumType>): string {
         buildComparisonInput(
           comparisonTypeName(enumName),
           enumName,
-          ORDERED_OPERATORS,
+          BASE_OPERATORS,
         ),
     );
   }
@@ -210,17 +215,17 @@ function buildComparisonTypes(): string {
     buildComparisonInput(
       comparisonTypeName(GraphQLInt.name),
       GraphQLInt.name,
-      ORDERED_OPERATORS,
+      BASE_OPERATORS,
     ),
     buildComparisonInput(
       comparisonTypeName(GraphQLFloat.name),
       GraphQLFloat.name,
-      ORDERED_OPERATORS,
+      BASE_OPERATORS,
     ),
     buildComparisonInput(
       comparisonTypeName(GraphQLBoolean.name),
       GraphQLBoolean.name,
-      BOOLEAN_OPERATORS,
+      BASE_OPERATORS,
     ),
   ].join('\n\n');
 }

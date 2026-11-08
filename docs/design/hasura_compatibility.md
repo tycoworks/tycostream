@@ -63,7 +63,7 @@ Hasura names each column's GraphQL type after its Postgres type. `schema.yaml`'s
 
 Every scalar gets Hasura's base set: `_eq`, `_neq`, `_gt`, `_gte`, `_lt`, `_lte`, `_in`, `_nin`, `_is_null`. Today strings and booleans have no orderings. `String` adds the pattern operators: `_like`, `_nlike`, `_ilike`, `_nilike`, `_similar`, `_nsimilar`, `_regex`, `_nregex`, `_iregex`, `_niregex`. `_and`, `_or` and `_not` stay as they are.
 
-Materialize's regular expressions use Rust's syntax, not POSIX, so a pattern can behave differently than on Hasura. Whether Materialize supports `SIMILAR TO` is to confirm; if not, `_similar` and `_nsimilar` are left out.
+Materialize's regular expressions use Rust's syntax, not POSIX, so a pattern can behave differently than on Hasura. Materialize has no `SIMILAR TO` (checked on v26.49.1, 8 Nov), so `_similar` and `_nsimilar` are left out.
 
 ### Root fields
 
@@ -103,7 +103,7 @@ Hasura's subscriptions send the whole result again on every change, or, for `_st
 Against Materialize in Testcontainers, before the steps that depend on them:
 
 1. `ORDER BY`, `LIMIT` and `OFFSET` inside a `SUBSCRIBE`: does Materialize keep the window up to date, with rows entering and leaving it?
-2. `SIMILAR TO`, and how far Materialize's regular expressions differ from Postgres's.
+2. ~~`SIMILAR TO`~~: not supported (8 Nov). `LIKE`, `ILIKE` and the regular expression operators are.
 3. Timestamps' text format.
 
 ## Steps

@@ -60,6 +60,36 @@ describe('buildSelect', () => {
       });
     });
 
+    it.each([
+      [ComparisonOperator.Like, 'like'],
+      [ComparisonOperator.Nlike, 'not like'],
+      [ComparisonOperator.Ilike, 'ilike'],
+      [ComparisonOperator.Nilike, 'not ilike'],
+      [ComparisonOperator.Regex, '~'],
+      [ComparisonOperator.Nregex, '!~'],
+      [ComparisonOperator.Iregex, '~*'],
+      [ComparisonOperator.Niregex, '!~*'],
+    ])(
+      'should compile %s to %s with the pattern as a parameter',
+      (op, sqlOp) => {
+        expect(where({ name: { [op]: 'A%' } })).toEqual({
+          condition: `"name" ${sqlOp} $1`,
+          parameters: ['A%'],
+        });
+      },
+    );
+
+    it('should order text and booleans, and match booleans against a set, as Hasura allows', () => {
+      expect(where({ name: { _gt: 'm' } })).toEqual({
+        condition: '"name" > $1',
+        parameters: ['m'],
+      });
+      expect(where({ active: { _gte: false, _in: [true] } })).toEqual({
+        condition: '("active" >= $1 and "active" in ($2))',
+        parameters: [false, true],
+      });
+    });
+
     it('should compile _in and _nin to parameter lists', () => {
       expect(where({ name: { _in: ['a', 'b'] } })).toEqual({
         condition: '"name" in ($1, $2)',
@@ -207,6 +237,7 @@ describe('buildSelect', () => {
         { _gt: null },
         { _in: ['a', null] },
         { _nin: [null] },
+        { _like: null },
       ]) {
         expect(() => buildSelect(users, { name: comparison })).toThrow(
           "can't compare with null; use '_is_null'",
@@ -214,10 +245,12 @@ describe('buildSelect', () => {
       }
     });
 
-    it('should reject unknown operators', () => {
+    it("should reject unknown operators, such as Hasura's _similar, which Materialize lacks", () => {
       expect(() =>
-        buildSelect(users, { id: { _like: 'a' } } as unknown as WhereClause),
-      ).toThrow("Unknown operator '_like' on 'id'");
+        buildSelect(users, {
+          name: { _similar: 'a' },
+        } as unknown as WhereClause),
+      ).toThrow("Unknown operator '_similar' on 'name'");
     });
   });
 });
