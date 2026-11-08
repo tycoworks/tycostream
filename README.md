@@ -82,7 +82,7 @@ curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/gen
 docker run -p 4000:4000 --env-file .env \
   -e DATABASE_HOST=host.docker.internal \
   -v $(pwd)/schema.yaml:/app/schema.yaml \
-  ghcr.io/tycoworks/tycostream:v0.2.0
+  ghcr.io/tycoworks/tycostream:latest
 ```
 
 ### 4. Test your API
