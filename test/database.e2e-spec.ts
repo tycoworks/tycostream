@@ -57,6 +57,7 @@ const byId = (batch: RowUpdateEvent[]) =>
 describe('DatabaseService on Materialize', () => {
   let container: StartedTestContainer;
   let admin: pg.Client;
+  let config: DatabaseConfig;
   let connectionService: DatabaseConnectionService;
   let databaseService: DatabaseService;
 
@@ -68,9 +69,13 @@ describe('DatabaseService on Materialize', () => {
   const subscribe = (source: SourceDefinition, where?: WhereClause) =>
     databaseService.stream(source, where, StreamMode.Live);
   // A snapshot stream's rows, collected
-  const snapshot = async (source: SourceDefinition, where?: WhereClause) => {
+  const snapshotFrom = async (
+    service: DatabaseService,
+    source: SourceDefinition,
+    where?: WhereClause,
+  ) => {
     const rows: Row[] = [];
-    for await (const batch of databaseService.stream(
+    for await (const batch of service.stream(
       source,
       where,
       StreamMode.Snapshot,
@@ -79,6 +84,8 @@ describe('DatabaseService on Materialize', () => {
     }
     return rows;
   };
+  const snapshot = (source: SourceDefinition, where?: WhereClause) =>
+    snapshotFrom(databaseService, source, where);
   const subscriptions = async () => {
     const result = await admin.query<{ n: string }>(
       'SELECT count(*) AS n FROM mz_internal.mz_subscriptions',
@@ -101,7 +108,7 @@ describe('DatabaseService on Materialize', () => {
       .withEnvironment({ MZ_WORKERS: '1' })
       .withStartupTimeout(120000)
       .start();
-    const config: DatabaseConfig = {
+    config = {
       host: container.getHost(),
       port: container.getMappedPort(6875),
       user: 'materialize',
@@ -508,5 +515,62 @@ describe('DatabaseService on Materialize', () => {
         /unknown catalog item/,
       );
     });
+  });
+
+  describe('the connection cap', () => {
+    it('should make a stream beyond DATABASE_MAX_CONNECTIONS wait for a free connection, then fail, in either mode', async () => {
+      // Its own service, capped at two, with no time limit to get in first
+      const capped = new DatabaseConnectionService({
+        get: () => ({ ...config, maxConnections: 2, queryTimeoutMs: 60000 }),
+      } as unknown as ConfigService);
+      capped.onModuleInit();
+      const service = new DatabaseService(capped, new MaterializeAdapter());
+      await createTable('capped');
+      await sql(`INSERT INTO capped (id) VALUES (1)`);
+      const first = service.stream(
+        tradesTable('capped'),
+        undefined,
+        StreamMode.Live,
+      );
+      const second = service.stream(
+        tradesTable('capped'),
+        undefined,
+        StreamMode.Live,
+      );
+      try {
+        // Both connections are held
+        await nextBatch(first);
+        await nextBatch(second);
+
+        // pg's error when no connection comes free in time
+        const NO_FREE_CONNECTION = 'timeout exceeded when trying to connect';
+        const started = Date.now();
+        const live = service.stream(
+          tradesTable('capped'),
+          undefined,
+          StreamMode.Live,
+        );
+        await Promise.all([
+          expect(live.next()).rejects.toThrow(NO_FREE_CONNECTION),
+          expect(snapshotFrom(service, tradesTable('capped'))).rejects.toThrow(
+            NO_FREE_CONNECTION,
+          ),
+        ]);
+        // They waited for a free connection, for the connect timeout
+        expect(Date.now() - started).toBeGreaterThanOrEqual(9000);
+
+        // Once a stream ends, its connection is free again
+        await first.return();
+        expect(
+          (await snapshotFrom(service, tradesTable('capped'))).map(
+            (row) => row.id,
+          ),
+        ).toEqual([1]);
+      } finally {
+        await first.return();
+        await second.return();
+        await capped.onApplicationShutdown();
+      }
+    }, 30000);
   });
 });
