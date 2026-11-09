@@ -3,7 +3,7 @@ import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
-import { insertOf, parseRow, readSnapshot, TEXT_TRUE } from './postgres.js';
+import { insertOf, pickRow, readSnapshot } from './postgres.js';
 import type { RawRow } from './postgres.js';
 import type { CompiledSelect } from './select.js';
 import { DatabaseAdapter } from './types.js';
@@ -101,7 +101,7 @@ export class MaterializeAdapter extends DatabaseAdapter {
 
 /**
  * Holds a live stream's rows until a progress row says their timestamp is
- * complete, typing each value as the schema says
+ * complete, keeping only the source's columns
  */
 export class ProgressBatcher {
   private readonly pending = new Map<bigint, DiffRow[]>();
@@ -119,12 +119,13 @@ export class ProgressBatcher {
   take(rows: RawRow[]): TimestampRows[] {
     const complete: TimestampRows[] = [];
     for (const raw of rows) {
-      const timestamp = BigInt(raw[SubscribeColumn.Timestamp]!);
+      // Materialize reports mz_timestamp as numeric, which arrives as text
+      const timestamp = BigInt(raw[SubscribeColumn.Timestamp] as string);
       if (!this.started) {
         this.pending.set(timestamp, []);
         this.started = true;
       }
-      if (raw[SubscribeColumn.Progressed] === TEXT_TRUE) {
+      if (raw[SubscribeColumn.Progressed] === true) {
         for (const done of [...this.pending.keys()]
           .filter((t) => t < timestamp)
           .sort((a, b) => (a < b ? -1 : 1))) {
@@ -135,7 +136,7 @@ export class ProgressBatcher {
         const batch = this.pending.get(timestamp) ?? [];
         batch.push({
           diff: Number(raw[SubscribeColumn.Diff]),
-          row: parseRow(this.sourceDefinition, raw),
+          row: pickRow(this.sourceDefinition, raw),
         });
         this.pending.set(timestamp, batch);
       }

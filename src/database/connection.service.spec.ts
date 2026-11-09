@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnectionService } from './connection.service.js';
 import { StreamMode } from '../common/types.js';
+import { TYPE_PARSERS } from './postgres.js';
 
 type FakeClient = EventEmitter & { release: ReturnType<typeof vi.fn> };
 type FakePool = EventEmitter & {
@@ -97,11 +98,8 @@ describe('DatabaseConnectionService', () => {
       );
     });
 
-    it('should read every value as text, so the schema decides the types', () => {
-      const { types } = pgState.pools[0].config as {
-        types: { getTypeParser: () => (value: string) => unknown };
-      };
-      expect(types.getTypeParser()('2026-01-01')).toBe('2026-01-01');
+    it("should type every value by its column's type, with tycostream's conversions", () => {
+      expect(pgState.pools[0].config).toMatchObject({ types: TYPE_PARSERS });
     });
 
     it.each([StreamMode.Snapshot, StreamMode.Live])(

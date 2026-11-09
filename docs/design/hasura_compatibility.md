@@ -73,7 +73,7 @@ Every result tells node-postgres each column's real type, and node-postgres turn
 
 - **The database layer needs no type information.** `parseRow` only picks the source's columns.
 - **node-postgres's defaults are what we want for most types:** `int8` and `numeric` stay strings, integers and floats become numbers, booleans booleans, and `json` and `jsonb` JSON.
-- **Overrides for the rest:** timestamps and times as ISO 8601 text, as Hasura sends them, rather than JavaScript `Date`s, which put a timestamp without a time zone into the server's; dates, `interval` and `bytea` as text.
+- **Overrides for the rest:** timestamps as ISO 8601 text, as Postgres writes them in JSON and so Hasura sends them (`2026-01-01T07:30:00+00:00`), rather than JavaScript `Date`s, which put a timestamp without a time zone into the server's; dates, `interval` and `bytea` as text rather than a `Date`, an object and a `Buffer`. Materialize's own JSON writes timestamps with a space, so they're converted from the text.
 - **The `SUBSCRIBE` columns** are typed too: `mz_progressed` arrives as a boolean and `mz_diff` as a string.
 - **Enums** keep their names from `schema.yaml`.
 
@@ -133,6 +133,7 @@ Each a commit, leaving tycostream building and its tests passing; all released t
 3. **Hasura's scalars,** in two commits:
    - **3a, Postgres types throughout:** the `PostgresType` list, Postgres's names in `schema.yaml`, the generator reading `pg_catalog`, and the API's one table to GraphQL. Arrays dropped for now.
    - **3b, parsing by the database's own types,** with the overrides above: the database layer's type switch goes, `json` and `jsonb` arrive as JSON, and timestamps in ISO 8601.
+   - **3c, arrays, as GraphQL lists** (Chris, 9 Nov): node-postgres already turns them into lists once it parses by the database's types.
 4. **`_by_pk`,** for queries and subscriptions.
 5. **`order_by`, `limit` and `offset`,** for queries, then subscriptions.
 6. **Docs:** README, `architecture.md`, `filters.md`, `roadmap.md`. positions-app moves to the new API after the release.

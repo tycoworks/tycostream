@@ -18,20 +18,18 @@ const source = (fields: SourceDefinition['fields']): SourceDefinition => ({
   fields,
 });
 
-// The columns SUBSCRIBE adds to each row, then the row's own
-const change = (
-  timestamp: number,
-  diff: number,
-  row: Record<string, string | null>,
-): RawRow => ({
+// The columns SUBSCRIBE adds to each row, then the row's own, as
+// node-postgres types them: mz_timestamp is numeric and mz_diff int8, so
+// both arrive as text
+const change = (timestamp: number, diff: number, row: Row): RawRow => ({
   mz_timestamp: String(timestamp),
-  mz_progressed: 'f',
+  mz_progressed: false,
   mz_diff: String(diff),
   ...row,
 });
 const progress = (timestamp: number): RawRow => ({
   mz_timestamp: String(timestamp),
-  mz_progressed: 't',
+  mz_progressed: true,
   mz_diff: null,
 });
 
@@ -74,7 +72,7 @@ describe('MaterializeAdapter', () => {
   describe('read, as a snapshot', () => {
     it('should run the SELECT alone, with no SUBSCRIBE, and yield its rows as inserts', async () => {
       const query = vi.fn(() =>
-        Promise.resolve({ rows: [{ id: '1', name: 'a' }] }),
+        Promise.resolve({ rows: [{ id: 1, name: 'a' }] }),
       );
       const batches: RowUpdateBatch[] = [];
       for await (const batch of adapter.read(
@@ -124,12 +122,12 @@ describe('MaterializeAdapter', () => {
 
     it('should yield each complete timestamp across fetches as row events, with its timestamp', async () => {
       const { client } = fakeClient([
-        [change(1, 1, { id: '1', name: 'a' })],
-        [change(1, 1, { id: '2', name: 'b' }), progress(2)],
+        [change(1, 1, { id: 1, name: 'a' })],
+        [change(1, 1, { id: 2, name: 'b' }), progress(2)],
         [
-          change(2, -1, { id: '1', name: 'a' }),
-          change(2, 1, { id: '1', name: 'c' }),
-          change(2, -1, { id: '2', name: 'b' }),
+          change(2, -1, { id: 1, name: 'a' }),
+          change(2, 1, { id: 1, name: 'c' }),
+          change(2, -1, { id: 2, name: 'b' }),
           progress(3),
         ],
       ]);
@@ -171,7 +169,7 @@ describe('MaterializeAdapter', () => {
       // Materialize sends the snapshot's timestamp first, as a progress row
       const { client } = fakeClient([
         [progress(1), progress(2)],
-        [change(2, 1, { id: '1', name: 'a' }), progress(3)],
+        [change(2, 1, { id: 1, name: 'a' }), progress(3)],
       ]);
       const batches = readAll(client);
 
@@ -197,11 +195,11 @@ describe('MaterializeAdapter', () => {
         { name: 'price', type: PostgresType.Float8 },
       ]);
       const first = fakeClient([
-        [change(1, 1, { id: '1', name: 'a' })],
+        [change(1, 1, { id: 1, name: 'a' })],
         [progress(2)],
       ]);
       const second = fakeClient([
-        [change(1, 1, { symbol: 'AAPL', price: '1.5' })],
+        [change(1, 1, { symbol: 'AAPL', price: 1.5 })],
         [progress(2)],
       ]);
       const firstBatches = readLive(first.client, idAndName, {
@@ -242,13 +240,13 @@ describe('MaterializeAdapter', () => {
 
     it('should skip a timestamp after the snapshot whose changes cancel out', async () => {
       const { client } = fakeClient([
-        [change(1, 1, { id: '1', name: 'a' }), progress(2)],
+        [change(1, 1, { id: 1, name: 'a' }), progress(2)],
         [
-          change(2, 1, { id: '2', name: 'b' }),
-          change(2, -1, { id: '2', name: 'b' }),
+          change(2, 1, { id: 2, name: 'b' }),
+          change(2, -1, { id: 2, name: 'b' }),
           progress(3),
         ],
-        [change(3, -1, { id: '1', name: 'a' }), progress(4)],
+        [change(3, -1, { id: 1, name: 'a' }), progress(4)],
       ]);
       const batches = readAll(client);
       await batches.next();
@@ -268,8 +266,8 @@ describe('MaterializeAdapter', () => {
     it('should fail when a key is not unique', async () => {
       const { client } = fakeClient([
         [
-          change(1, 1, { id: '1', name: 'a' }),
-          change(1, 1, { id: '1', name: 'b' }),
+          change(1, 1, { id: 1, name: 'a' }),
+          change(1, 1, { id: 1, name: 'b' }),
           progress(2),
         ],
       ]);
@@ -295,8 +293,8 @@ describe('ProgressBatcher', () => {
     it('should hold rows until a progress row passes their timestamp', () => {
       expect(
         batcher.take([
-          change(1, 1, { id: '1', name: 'a' }),
-          change(1, 1, { id: '2', name: 'b' }),
+          change(1, 1, { id: 1, name: 'a' }),
+          change(1, 1, { id: 2, name: 'b' }),
         ]),
       ).toEqual([]);
       expect(batcher.take([progress(2)])).toEqual([
@@ -312,16 +310,16 @@ describe('ProgressBatcher', () => {
 
     it('should not release a timestamp that progress has only reached', () => {
       expect(
-        batcher.take([change(2, 1, { id: '1', name: 'a' }), progress(2)]),
+        batcher.take([change(2, 1, { id: 1, name: 'a' }), progress(2)]),
       ).toEqual([]);
     });
 
     it('should release each complete timestamp as its own batch, oldest first', () => {
       expect(
         batcher.take([
-          change(3, -1, { id: '1', name: 'a' }),
-          change(1, 1, { id: '1', name: 'a' }),
-          change(3, 1, { id: '1', name: 'b' }),
+          change(3, -1, { id: 1, name: 'a' }),
+          change(1, 1, { id: 1, name: 'a' }),
+          change(3, 1, { id: 1, name: 'b' }),
           progress(4),
         ]),
       ).toEqual([
@@ -337,8 +335,8 @@ describe('ProgressBatcher', () => {
     });
 
     it('should keep a timestamp whole across several fetches', () => {
-      batcher.take([change(1, 1, { id: '1', name: 'a' })]);
-      batcher.take([change(1, 1, { id: '2', name: 'b' })]);
+      batcher.take([change(1, 1, { id: 1, name: 'a' })]);
+      batcher.take([change(1, 1, { id: 2, name: 'b' })]);
       expect(batcher.take([progress(2)])).toEqual([
         {
           timestamp: 1n,
@@ -362,13 +360,13 @@ describe('ProgressBatcher', () => {
     });
 
     it('should keep the count in diffs above one', () => {
-      batcher.take([change(1, 2, { id: '1', name: 'a' })]);
+      batcher.take([change(1, 2, { id: 1, name: 'a' })]);
       expect(batcher.take([progress(2)])[0].rows[0].diff).toBe(2);
     });
   });
 
-  it('should type each row as the schema says, keeping only its columns', () => {
-    batcher.take([change(1, 1, { id: '7', name: 'a' })]);
+  it("should keep only the source's columns of each row", () => {
+    batcher.take([change(1, 1, { id: 7, name: 'a' })]);
     const [
       {
         rows: [{ row }],

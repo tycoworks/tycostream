@@ -169,7 +169,7 @@ describe('DatabaseService on Materialize', () => {
               qty: 1.5,
               big: '9007199254740993',
               live: true,
-              at: '2026-01-01 09:30:00',
+              at: '2026-01-01T09:30:00',
               // numeric keeps every digit
               price: '12345678901234567890.123',
             },
@@ -183,7 +183,7 @@ describe('DatabaseService on Materialize', () => {
               qty: 20,
               big: '1',
               live: false,
-              at: '2026-01-02 16:00:00',
+              at: '2026-01-02T16:00:00',
               price: '0.1',
             },
           },
@@ -516,7 +516,7 @@ describe('DatabaseService on Materialize', () => {
             qty: 1.5,
             big: '9007199254740993',
             live: true,
-            at: '2026-01-01 09:30:00',
+            at: '2026-01-01T09:30:00',
             price: '12345678901234567890.123',
           },
           {
