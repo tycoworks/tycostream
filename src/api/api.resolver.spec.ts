@@ -1,13 +1,13 @@
 import { buildResolvers } from './api.resolver.js';
+import { PostgresType } from '../common/types.js';
 import type { ApiService } from './api.service.js';
 import { RootType } from './schema.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType } from '../config/source.types.js';
 
 const source = (name: string): SourceDefinition => ({
   name,
   primaryKeyField: 'id',
-  fields: [{ name: 'id', dataType: DataType.Integer }],
+  fields: [{ name: 'id', type: PostgresType.Int4 }],
 });
 
 describe('buildResolvers', () => {
@@ -26,7 +26,7 @@ describe('buildResolvers', () => {
   const Subscription = resolvers[RootType.Subscription];
   const where = { id: { _eq: 1 } };
 
-  it("should give every source a query and a subscription, under Hasura's root type names", () => {
+  it('should give every source a query and a subscription, under query_root and subscription_root', () => {
     expect(Object.keys(resolvers)).toEqual(['query_root', 'subscription_root']);
     expect(Object.keys(Query)).toEqual(['trades', 'prices']);
     expect(Object.keys(Subscription)).toEqual(['trades', 'prices']);

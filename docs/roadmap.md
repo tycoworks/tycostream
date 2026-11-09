@@ -33,6 +33,8 @@
 - [Queries per source](./design/queries.md)
 - **Relationships between sources:** nested GraphQL fields, such as a position's trades, each pushed down to Materialize as one `SUBSCRIBE` of a join, so every level of the result stays at one timestamp. The main reason for the hollow-out.
 - `limit`, `offset` and `order_by` for queries
+- **Arrays, as GraphQL lists:** dropped while tycostream moved to Postgres's own types; parsing by the database's types turns them into lists already
+- **Column types read from the database at startup,** with Kysely's built-in catalog reader, as kysely-codegen does, so `schema.yaml` declares only keys and enums
 - [Calculated states](./design/calculated_states.md)
 - Row-level security
 - [Observability](./design/observability.md)

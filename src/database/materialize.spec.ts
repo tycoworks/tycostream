@@ -8,10 +8,9 @@ import {
 import type { DiffRow } from './materialize.js';
 import type { RawRow } from './postgres.js';
 import type { CompiledSelect } from './select.js';
-import { RowUpdateType, StreamMode } from '../common/types.js';
+import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
 import type { Row, RowUpdateBatch } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType } from '../config/source.types.js';
 
 const source = (fields: SourceDefinition['fields']): SourceDefinition => ({
   name: 'test',
@@ -38,8 +37,8 @@ const progress = (timestamp: number): RawRow => ({
 
 describe('MaterializeAdapter', () => {
   const idAndName = source([
-    { name: 'id', dataType: DataType.Integer },
-    { name: 'name', dataType: DataType.String },
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'name', type: PostgresType.Text },
   ]);
 
   // A connection whose FETCHes return the given rows, one list per FETCH,
@@ -194,8 +193,8 @@ describe('MaterializeAdapter', () => {
 
     it('should keep two live streams on the one adapter apart, each with its own source and rows', async () => {
       const prices = source([
-        { name: 'symbol', dataType: DataType.String },
-        { name: 'price', dataType: DataType.Float },
+        { name: 'symbol', type: PostgresType.Text },
+        { name: 'price', type: PostgresType.Float8 },
       ]);
       const first = fakeClient([
         [change(1, 1, { id: '1', name: 'a' })],
@@ -283,8 +282,8 @@ describe('MaterializeAdapter', () => {
 
 describe('ProgressBatcher', () => {
   const idAndName = source([
-    { name: 'id', dataType: DataType.Integer },
-    { name: 'name', dataType: DataType.String },
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'name', type: PostgresType.Text },
   ]);
   let batcher: ProgressBatcher;
 

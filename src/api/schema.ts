@@ -6,8 +6,8 @@ import type {
 } from '../config/source.types.js';
 import {
   ComparisonOperator,
-  DataType,
   LogicalOperator,
+  PostgresType,
 } from '../common/types.js';
 import { GraphQLRowOperation } from './api.service.js';
 import {
@@ -15,27 +15,82 @@ import {
   GraphQLInt,
   GraphQLFloat,
   GraphQLBoolean,
-  GraphQLID,
 } from 'graphql';
-import type { GraphQLScalarType } from 'graphql';
 
 /**
- * The root types' names, as Hasura names them
+ * The root types' names
  */
 export enum RootType {
   Query = 'query_root',
   Subscription = 'subscription_root',
 }
 
-// The generated types' names, following Hasura's conventions
+// The generated types' names
 const ROW_OPERATION_TYPE = 'row_operation';
 const boolExpTypeName = (sourceName: string) => `${sourceName}_bool_exp`;
 const comparisonTypeName = (typeName: string) => `${typeName}_comparison_exp`;
 const updateTypeName = (sourceName: string) => `${sourceName}_update`;
 
 /**
- * The comparison operators each kind of field offers in a where filter, as
- * in Hasura: every scalar and enum has the base set, and text adds patterns
+ * The GraphQL scalars tycostream declares, for the Postgres types GraphQL's
+ * own scalars don't fit, each named after its Postgres type
+ */
+enum CustomScalar {
+  SmallInt = 'smallint',
+  BigInt = 'bigint',
+  Float8 = 'float8',
+  Numeric = 'numeric',
+  Bpchar = 'bpchar',
+  Uuid = 'uuid',
+  Timestamp = 'timestamp',
+  Timestamptz = 'timestamptz',
+  Date = 'date',
+  Time = 'time',
+  Interval = 'interval',
+  Json = 'json',
+  Jsonb = 'jsonb',
+  Bytea = 'bytea',
+}
+const CUSTOM_SCALARS: ReadonlySet<string> = new Set(
+  Object.values(CustomScalar),
+);
+
+/**
+ * Each Postgres type's GraphQL scalar: GraphQL's own where one fits, and a
+ * custom one for the rest
+ */
+const SCALARS: Record<PostgresType, string> = {
+  [PostgresType.Int2]: CustomScalar.SmallInt,
+  [PostgresType.Int4]: GraphQLInt.name,
+  [PostgresType.Int8]: CustomScalar.BigInt,
+  [PostgresType.Float4]: GraphQLFloat.name,
+  [PostgresType.Float8]: CustomScalar.Float8,
+  [PostgresType.Numeric]: CustomScalar.Numeric,
+  [PostgresType.Text]: GraphQLString.name,
+  [PostgresType.Varchar]: GraphQLString.name,
+  [PostgresType.Bpchar]: CustomScalar.Bpchar,
+  [PostgresType.Bool]: GraphQLBoolean.name,
+  [PostgresType.Uuid]: CustomScalar.Uuid,
+  [PostgresType.Timestamp]: CustomScalar.Timestamp,
+  [PostgresType.Timestamptz]: CustomScalar.Timestamptz,
+  [PostgresType.Date]: CustomScalar.Date,
+  [PostgresType.Time]: CustomScalar.Time,
+  [PostgresType.Interval]: CustomScalar.Interval,
+  [PostgresType.Json]: CustomScalar.Json,
+  [PostgresType.Jsonb]: CustomScalar.Jsonb,
+  [PostgresType.Bytea]: CustomScalar.Bytea,
+};
+
+// The text types, whose comparisons add the patterns
+const TEXT_TYPES: ReadonlySet<PostgresType> = new Set([
+  PostgresType.Text,
+  PostgresType.Varchar,
+  PostgresType.Bpchar,
+]);
+
+/**
+ * The comparison operators each kind of field offers in a where filter:
+ * every scalar and enum has the base set, and text adds patterns
  */
 const BASE_OPERATORS = [
   ComparisonOperator.Eq,
@@ -48,7 +103,7 @@ const BASE_OPERATORS = [
   ComparisonOperator.Nin,
   ComparisonOperator.IsNull,
 ];
-// Materialize has no SIMILAR TO, so Hasura's _similar and _nsimilar are left out
+// Materialize has no SIMILAR TO, so there's no _similar or _nsimilar
 const PATTERN_OPERATORS = [
   ComparisonOperator.Like,
   ComparisonOperator.Nlike,
@@ -96,7 +151,9 @@ export function generateSchema(config: SourceConfiguration): string {
   // Build all the dynamic parts
   const enumTypeDefinitions = buildEnumTypes(enums);
   const enumComparisonTypes = buildEnumComparisonTypes(enums);
-  const comparisonTypes = buildComparisonTypes();
+  const scalars = scalarsUsed(sources);
+  const scalarDeclarations = buildScalarDeclarations(scalars);
+  const comparisonTypes = buildComparisonTypes(scalars);
   const expressionInputTypes = buildExpressionInputTypes(sources);
   const sourceTypes = buildSourceTypes(sources);
   const queryFields = buildRootFields(
@@ -119,6 +176,8 @@ export function generateSchema(config: SourceConfiguration): string {
     }
 
     ${enumTypeDefinitions}
+
+${scalarDeclarations}
     
     # ================== INPUT TYPES ==================
 
@@ -201,33 +260,50 @@ function buildEnumComparisonTypes(enumTypes: Map<string, EnumType>): string {
 }
 
 /**
- * Build comparison types for filtering
- * Creates comparison input types for different data types
+ * The scalars the sources' columns use, apart from enums, in a fixed order,
+ * each with the operators its comparisons offer: the base set, and for text
+ * its patterns too. The schema declares and compares only these.
  */
-function buildComparisonTypes(): string {
-  return [
-    `    # Comparison operators\n` +
-      buildComparisonInput(
-        comparisonTypeName(GraphQLString.name),
-        GraphQLString.name,
-        STRING_OPERATORS,
-      ),
-    buildComparisonInput(
-      comparisonTypeName(GraphQLInt.name),
-      GraphQLInt.name,
-      BASE_OPERATORS,
-    ),
-    buildComparisonInput(
-      comparisonTypeName(GraphQLFloat.name),
-      GraphQLFloat.name,
-      BASE_OPERATORS,
-    ),
-    buildComparisonInput(
-      comparisonTypeName(GraphQLBoolean.name),
-      GraphQLBoolean.name,
-      BASE_OPERATORS,
-    ),
-  ].join('\n\n');
+function scalarsUsed(
+  sources: Map<string, SourceDefinition>,
+): Map<string, ComparisonOperator[]> {
+  const used = new Map<string, ComparisonOperator[]>();
+  for (const source of sources.values()) {
+    for (const field of source.fields) {
+      if (!field.enumType) {
+        used.set(
+          SCALARS[field.type],
+          TEXT_TYPES.has(field.type) ? STRING_OPERATORS : BASE_OPERATORS,
+        );
+      }
+    }
+  }
+  return new Map([...used].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
+ * Declares the scalars that aren't GraphQL's own, such as bigint
+ */
+function buildScalarDeclarations(
+  scalars: Map<string, ComparisonOperator[]>,
+): string {
+  return [...scalars.keys()]
+    .filter((scalar) => CUSTOM_SCALARS.has(scalar))
+    .map((scalar) => `    scalar ${scalar}`)
+    .join('\n');
+}
+
+/**
+ * Builds each scalar's comparison input
+ */
+function buildComparisonTypes(
+  scalars: Map<string, ComparisonOperator[]>,
+): string {
+  return [...scalars]
+    .map(([scalar, operators]) =>
+      buildComparisonInput(comparisonTypeName(scalar), scalar, operators),
+    )
+    .join('\n\n');
 }
 
 /**
@@ -311,11 +387,7 @@ function getComparisonType(field: SourceField): string {
     return comparisonTypeName(field.enumType.name);
   }
 
-  // IDs compare as strings; every other scalar has its own comparisons
-  const scalarName = getGraphQLScalarType(field.dataType).name;
-  return comparisonTypeName(
-    scalarName === GraphQLID.name ? GraphQLString.name : scalarName,
-  );
+  return comparisonTypeName(SCALARS[field.type]);
 }
 
 /**
@@ -328,49 +400,10 @@ function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
       // Use enum type if this field has one, otherwise use scalar type
       const graphqlTypeName = field.enumType
         ? field.enumType.name
-        : getGraphQLScalarType(field.dataType).name;
+        : SCALARS[field.type];
       const nullable =
         field.name !== sourceDefinition.primaryKeyField ? '' : '!';
       return `      ${field.name}: ${graphqlTypeName}${nullable}`;
     })
     .join('\n');
-}
-
-/**
- * Get the GraphQL scalar type for a runtime type
- * Maps our internal DataType to GraphQL scalar types
- */
-function getGraphQLScalarType(dataType: DataType): GraphQLScalarType {
-  switch (dataType) {
-    // Numeric types
-    case DataType.Integer:
-      return GraphQLInt;
-    case DataType.Float:
-      return GraphQLFloat;
-    case DataType.BigInt:
-      return GraphQLString; // BigInt as string to preserve precision
-
-    // String types
-    case DataType.String:
-      return GraphQLString;
-    case DataType.UUID:
-      return GraphQLID;
-
-    // Temporal types (all as strings)
-    case DataType.Timestamp:
-    case DataType.Date:
-    case DataType.Time:
-      return GraphQLString;
-
-    // Other types
-    case DataType.Boolean:
-      return GraphQLBoolean;
-    case DataType.JSON:
-    case DataType.Array:
-      return GraphQLString; // JSON/Arrays as strings
-
-    default:
-      // Fallback to string
-      return GraphQLString;
-  }
 }

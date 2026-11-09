@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Generate schema.yaml from PostgreSQL/Materialize database
-# Supports both tables and materialized views as sources
+# Generate schema.yaml from a Postgres-compatible database
+# Supports tables and views as sources, writing each column's type as
+# Postgres's catalog names it (pg_type.typname): int4, timestamptz, _int4...
 # Usage: ./generate-schema.sh [-e enum_name "value1,value2"] -s source1 -p pk1 [-c column:enum] [-s source2 -p pk2 ...] > schema.yaml
 # Example:
 #   ./generate-schema.sh \
@@ -35,30 +36,6 @@ DB_PASSWORD="${DATABASE_PASSWORD:-materialize}"
 # PostgreSQL connection string
 export PGPASSWORD="$DB_PASSWORD"
 PSQL="psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -t -A -q"
-
-# Function to map PostgreSQL types to DataTypes
-map_type() {
-    local pg_type="$1"
-    local type_lower=$(echo "$pg_type" | tr '[:upper:]' '[:lower:]')
-
-    case "$type_lower" in
-        *int2*|smallint) echo "Integer" ;;
-        *int4*|integer) echo "Integer" ;;
-        *int8*|bigint) echo "BigInt" ;;
-        *float*|real|"double precision") echo "Float" ;;
-        *numeric*|*decimal*) echo "Float" ;;
-        *varchar*|"character varying") echo "String" ;;
-        *char*|character|text) echo "String" ;;
-        uuid) echo "UUID" ;;
-        *timestamp*) echo "Timestamp" ;;
-        date) echo "Date" ;;
-        *time*) echo "Time" ;;
-        bool*) echo "Boolean" ;;
-        *json*) echo "JSON" ;;
-        *"[]"|array) echo "Array" ;;
-        *) echo "String" ;;  # Default fallback
-    esac
-}
 
 # Parse arguments to build list of sources, primary keys, enums, and column mappings
 SOURCES=""
@@ -205,9 +182,10 @@ IFS='|' read -ra PK_ARRAY <<< "$PRIMARY_KEYS"
 # Process each source
 index=0
 for source in "${SOURCE_ARRAY[@]}"; do
-    # Get columns using SHOW COLUMNS, keeping psql's errors to show if it fails
+    # Get each column and its type from the catalog, which every
+    # Postgres-compatible database has, keeping psql's errors to show if it fails
     err_file=$(mktemp)
-    if ! COLUMNS=$($PSQL -c "SHOW COLUMNS FROM $source" 2>"$err_file"); then
+    if ! COLUMNS=$($PSQL -c "SELECT a.attname, t.typname FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid WHERE a.attrelid = '$source'::regclass AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum" 2>"$err_file"); then
         echo "Error: couldn't read the columns of '$source' from $DB_HOST:$DB_PORT" >&2
         cat "$err_file" >&2
         rm -f "$err_file"
@@ -229,8 +207,8 @@ for source in "${SOURCE_ARRAY[@]}"; do
 
     echo "    columns:"
 
-    # Process each column (format: name|nullable|type|comment)
-    while IFS='|' read -r name nullable type comment; do
+    # Process each column (format: name|type)
+    while IFS='|' read -r name type; do
         # Check if this column has an explicit enum mapping
         enum_match=""
         if [ -n "$COLUMN_MAPPINGS" ]; then
@@ -250,8 +228,7 @@ for source in "${SOURCE_ARRAY[@]}"; do
         if [ -n "$enum_match" ]; then
             echo "      $name: $enum_match"
         else
-            mapped_type=$(map_type "$type")
-            echo "      $name: $mapped_type"
+            echo "      $name: $type"
         fi
     done <<< "$COLUMNS"
 

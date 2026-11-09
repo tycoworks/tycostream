@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType, RowUpdateType } from '../common/types.js';
+import { PostgresType, RowUpdateType } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import type { CompiledSelect } from './select.js';
 
@@ -31,7 +31,7 @@ export function parseRow(source: SourceDefinition, raw: RawRow): Row {
       const value = raw[field.name];
       return [
         field.name,
-        value === null ? null : parseValue(value, field.dataType),
+        value === null ? null : parseValue(value, field.type),
       ];
     }),
   );
@@ -64,33 +64,20 @@ export async function* readSnapshot(
 }
 
 /**
- * Parse a column's text value into the type the GraphQL schema serves
+ * Parses a column's text value into the JavaScript value its Postgres type
+ * becomes: booleans and the numbers a JavaScript number holds exactly, and
+ * the rest as the database writes them, so int8 and numeric keep every digit
  */
-function parseValue(value: string, dataType: DataType): unknown {
-  switch (dataType) {
-    case DataType.Boolean:
+function parseValue(value: string, type: PostgresType): unknown {
+  switch (type) {
+    case PostgresType.Bool:
       return value === TEXT_TRUE;
-
-    case DataType.Integer:
+    case PostgresType.Int2:
+    case PostgresType.Int4:
       return parseInt(value, 10);
-
-    case DataType.Float:
+    case PostgresType.Float4:
+    case PostgresType.Float8:
       return parseFloat(value);
-
-    case DataType.BigInt:
-      // Keep as string to preserve precision
-      return value;
-
-    // All string-based types
-    case DataType.String:
-    case DataType.UUID:
-    case DataType.Timestamp:
-    case DataType.Date:
-    case DataType.Time:
-    case DataType.JSON:
-    case DataType.Array:
-      return value;
-
     default:
       return value;
   }

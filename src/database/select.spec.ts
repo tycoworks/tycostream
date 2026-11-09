@@ -1,6 +1,6 @@
 import { buildSelect } from './select.js';
 import type { WhereClause } from '../common/types.js';
-import { ComparisonOperator, DataType } from '../common/types.js';
+import { ComparisonOperator, PostgresType } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
 const rank = { name: 'rank', values: ['bronze', 'silver', 'gold', 'platinum'] };
@@ -9,10 +9,10 @@ const users: SourceDefinition = {
   name: 'users',
   primaryKeyField: 'id',
   fields: [
-    { name: 'id', dataType: DataType.Integer },
-    { name: 'name', dataType: DataType.String },
-    { name: 'active', dataType: DataType.Boolean },
-    { name: 'rank', dataType: DataType.String, enumType: rank },
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'name', type: PostgresType.Text },
+    { name: 'active', type: PostgresType.Bool },
+    { name: 'rank', type: PostgresType.Text, enumType: rank },
   ],
 };
 
@@ -36,7 +36,7 @@ describe('buildSelect', () => {
       const source: SourceDefinition = {
         name: 'odd"view',
         primaryKeyField: 'we"ird',
-        fields: [{ name: 'we"ird', dataType: DataType.String }],
+        fields: [{ name: 'we"ird', type: PostgresType.Text }],
       };
       expect(buildSelect(source, { 'we"ird': { _eq: 'x' } })).toEqual({
         sql: 'select "we""ird" as "we""ird" from "odd""view" as "odd""view" where "we""ird" = $1',
@@ -79,7 +79,7 @@ describe('buildSelect', () => {
       },
     );
 
-    it('should order text and booleans, and match booleans against a set, as Hasura allows', () => {
+    it('should order text and booleans, and match booleans against a set', () => {
       expect(where({ name: { _gt: 'm' } })).toEqual({
         condition: '"name" > $1',
         parameters: ['m'],
@@ -245,7 +245,7 @@ describe('buildSelect', () => {
       }
     });
 
-    it("should reject unknown operators, such as Hasura's _similar, which Materialize lacks", () => {
+    it('should reject unknown operators, such as _similar, which Materialize lacks', () => {
       expect(() =>
         buildSelect(users, {
           name: { _similar: 'a' },

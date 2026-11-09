@@ -3,9 +3,8 @@ import { DatabaseService } from './database.service.js';
 import { DatabaseConnectionService } from './connection.service.js';
 import { DatabaseStream } from './stream.js';
 import { DatabaseAdapter } from './types.js';
-import { StreamMode } from '../common/types.js';
+import { StreamMode, PostgresType } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType } from '../config/source.types.js';
 import type { Mock } from 'vitest';
 
 // Mock DatabaseStream: each read() is a stream whose connection opens
@@ -42,8 +41,8 @@ const trades: SourceDefinition = {
   name: 'trades',
   primaryKeyField: 'id',
   fields: [
-    { name: 'id', dataType: DataType.Integer },
-    { name: 'symbol', dataType: DataType.String },
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'symbol', type: PostgresType.Text },
   ],
 };
 

@@ -11,47 +11,47 @@ sources:
   users:
     primary_key: user_id
     columns:
-      user_id: Integer
-      name: String
-      email: String
-      active: Boolean
+      user_id: int4
+      name: text
+      email: varchar
+      active: bool
       rank: user_rank  # Enum field
-      created_at: Timestamp
-      updated_at: Timestamp
-      metadata: JSON
+      created_at: timestamp
+      updated_at: timestamptz
+      metadata: jsonb  # Materialize stores JSON as jsonb
 
   # Comprehensive test table with ALL PostgreSQL types
   all_types:
     primary_key: id
     columns:
-      id: Integer
+      id: int4
       # Boolean
-      bool_val: Boolean
+      bool_val: bool
       # Numeric types
-      smallint_val: Integer
-      int_val: Integer
-      bigint_val: BigInt
-      decimal_val: Float
-      numeric_val: Float
-      real_val: Float
-      double_val: Float
+      smallint_val: int2
+      int_val: int4
+      bigint_val: int8
+      decimal_val: numeric
+      numeric_val: numeric
+      real_val: float4
+      double_val: float8
       # String types
-      char_val: String
-      varchar_val: String
-      text_val: String
-      uuid_val: UUID
+      char_val: bpchar
+      varchar_val: varchar
+      text_val: text
+      uuid_val: uuid
       # Date/Time types
-      date_val: Date
-      time_val: Time
-      timestamp_val: Timestamp
-      timestamptz_val: Timestamp
-      # JSON types
-      json_val: JSON
-      jsonb_val: JSON
+      date_val: date
+      time_val: time
+      timestamp_val: timestamp
+      timestamptz_val: timestamptz
+      # JSON types, both jsonb in Materialize
+      json_val: jsonb
+      jsonb_val: jsonb
 
   # Its one row takes Materialize seconds to work out, so a query of it is
   # still running when its client leaves
   slow_count:
     primary_key: id
     columns:
-      id: Integer
+      id: int4

@@ -2,14 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ViewService } from './view.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType } from '../config/source.types.js';
-import { StreamMode } from '../common/types.js';
+import { StreamMode, PostgresType } from '../common/types.js';
 import type { Mocked } from 'vitest';
 
 const trades: SourceDefinition = {
   name: 'trades',
   primaryKeyField: 'id',
-  fields: [{ name: 'id', dataType: DataType.Integer }],
+  fields: [{ name: 'id', type: PostgresType.Int4 }],
 };
 
 describe('ViewService', () => {

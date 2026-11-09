@@ -1,32 +1,58 @@
-/**
- * Our internal type system for field types
- * This maintains semantic information needed across layers
- * without being tied to any specific layer's type system
- */
+import { builtins } from 'pg-types';
 
 /**
- * Internal data types that maintain semantic distinctions
- * These preserve the fidelity needed for correct type mapping
+ * The Postgres types tycostream serves, each with the type ID Postgres gives
+ * it, which every Postgres-compatible database reports. tycostream uses these
+ * throughout, until the API presents them as GraphQL. This is the only place
+ * that uses pg-types.
  */
-export enum DataType {
-  // Numeric types
-  Integer,
-  Float,
-  BigInt, // Special handling - stored as string to preserve precision
+export const PostgresType = {
+  Int2: builtins.INT2,
+  Int4: builtins.INT4,
+  Int8: builtins.INT8,
+  Float4: builtins.FLOAT4,
+  Float8: builtins.FLOAT8,
+  Numeric: builtins.NUMERIC,
+  Text: builtins.TEXT,
+  Varchar: builtins.VARCHAR,
+  Bpchar: builtins.BPCHAR,
+  Bool: builtins.BOOL,
+  Uuid: builtins.UUID,
+  Timestamp: builtins.TIMESTAMP,
+  Timestamptz: builtins.TIMESTAMPTZ,
+  Date: builtins.DATE,
+  Time: builtins.TIME,
+  Interval: builtins.INTERVAL,
+  Json: builtins.JSON,
+  Jsonb: builtins.JSONB,
+  Bytea: builtins.BYTEA,
+} as const;
+export type PostgresType = (typeof PostgresType)[keyof typeof PostgresType];
 
-  // String types
-  String,
-  UUID,
+// Each served type's name in Postgres's catalog (pg_type.typname), such as
+// int4, as pg-types gives it, in capitals
+const SERVED = new Set<number>(Object.values(PostgresType));
+const NAMES = new Map<PostgresType, string>(
+  (Object.entries(builtins) as [string, number][])
+    .filter(([, type]) => SERVED.has(type))
+    .map(([name, type]) => [type, name.toLowerCase()]),
+);
+const TYPES_BY_NAME = new Map<string, PostgresType>(
+  [...NAMES].map(([type, name]) => [name, type]),
+);
 
-  // Temporal types
-  Timestamp,
-  Date,
-  Time,
+/**
+ * A Postgres type's name, as its catalog writes it: int4, timestamptz, ...
+ */
+export function postgresTypeName(type: PostgresType): string {
+  return NAMES.get(type)!;
+}
 
-  // Other types
-  Boolean,
-  JSON, // JSON/JSONB data
-  Array, // Array types
+/**
+ * The served Postgres type of that name, as its catalog writes it, if any
+ */
+export function postgresTypeNamed(name: string): PostgresType | undefined {
+  return TYPES_BY_NAME.get(name);
 }
 
 /**

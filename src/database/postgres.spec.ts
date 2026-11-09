@@ -2,16 +2,15 @@ import type pg from 'pg';
 import { insertOf, parseRow, readSnapshot } from './postgres.js';
 import type { RawRow } from './postgres.js';
 import type { SourceDefinition, EnumType } from '../config/source.types.js';
-import { DataType } from '../config/source.types.js';
-import { RowUpdateType } from '../common/types.js';
+import { RowUpdateType, PostgresType } from '../common/types.js';
 import type { RowUpdateBatch } from '../common/types.js';
 
 const idAndName: SourceDefinition = {
   name: 'test',
   primaryKeyField: 'id',
   fields: [
-    { name: 'id', dataType: DataType.Integer },
-    { name: 'name', dataType: DataType.String },
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'name', type: PostgresType.Text },
   ],
 };
 
@@ -87,9 +86,9 @@ describe('parseRow', () => {
     expect(
       typed(
         [
-          { name: 'id', dataType: DataType.String },
-          { name: 'yes', dataType: DataType.Boolean },
-          { name: 'no', dataType: DataType.Boolean },
+          { name: 'id', type: PostgresType.Text },
+          { name: 'yes', type: PostgresType.Bool },
+          { name: 'no', type: PostgresType.Bool },
         ],
         { id: '1', yes: 't', no: 'f' },
       ),
@@ -100,31 +99,42 @@ describe('parseRow', () => {
     expect(
       typed(
         [
-          { name: 'id', dataType: DataType.Integer },
-          { name: 'price', dataType: DataType.Float },
-          { name: 'rate', dataType: DataType.Float },
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'small', type: PostgresType.Int2 },
+          { name: 'price', type: PostgresType.Float8 },
+          { name: 'rate', type: PostgresType.Float4 },
         ],
-        { id: '42', price: '99.99', rate: '-4.56e-3' },
+        { id: '42', small: '-7', price: '99.99', rate: '-4.56e-3' },
       ),
-    ).toEqual({ id: 42, price: 99.99, rate: -4.56e-3 });
+    ).toEqual({ id: 42, small: -7, price: 99.99, rate: -4.56e-3 });
   });
 
-  it('should keep bigints as strings to preserve precision', () => {
+  it('should keep bigints and numerics as strings to preserve precision', () => {
     expect(
       typed(
         [
-          { name: 'id', dataType: DataType.String },
-          { name: 'big', dataType: DataType.BigInt },
+          { name: 'id', type: PostgresType.Text },
+          { name: 'big', type: PostgresType.Int8 },
+          { name: 'amount', type: PostgresType.Numeric },
         ],
-        { id: '1', big: '9223372036854775807' },
+        {
+          id: '1',
+          big: '9223372036854775807',
+          amount: '12345678901234567890.123',
+        },
       ),
-    ).toEqual({ id: '1', big: '9223372036854775807' });
+    ).toEqual({
+      id: '1',
+      big: '9223372036854775807',
+      amount: '12345678901234567890.123',
+    });
   });
 
   it('should keep timestamps, dates, times, UUIDs and JSON as strings', () => {
     const row = {
       id: '550e8400-e29b-41d4-a716-446655440000',
       at: '2023-01-15 14:30:00',
+      atZone: '2023-01-15 14:30:00+00',
       day: '1990-05-20',
       time: '09:15:30',
       meta: '{"key":"value","num":42}',
@@ -132,11 +142,12 @@ describe('parseRow', () => {
     expect(
       typed(
         [
-          { name: 'id', dataType: DataType.UUID },
-          { name: 'at', dataType: DataType.Timestamp },
-          { name: 'day', dataType: DataType.Date },
-          { name: 'time', dataType: DataType.Time },
-          { name: 'meta', dataType: DataType.JSON },
+          { name: 'id', type: PostgresType.Uuid },
+          { name: 'at', type: PostgresType.Timestamp },
+          { name: 'atZone', type: PostgresType.Timestamptz },
+          { name: 'day', type: PostgresType.Date },
+          { name: 'time', type: PostgresType.Time },
+          { name: 'meta', type: PostgresType.Jsonb },
         ],
         row,
       ),
@@ -147,10 +158,10 @@ describe('parseRow', () => {
     expect(
       typed(
         [
-          { name: 'id', dataType: DataType.Integer },
-          { name: 'flag', dataType: DataType.Boolean },
-          { name: 'qty', dataType: DataType.Float },
-          { name: 'name', dataType: DataType.String },
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'flag', type: PostgresType.Bool },
+          { name: 'qty', type: PostgresType.Float8 },
+          { name: 'name', type: PostgresType.Text },
         ],
         { id: '1', flag: null, qty: null, name: null },
       ),
@@ -160,9 +171,9 @@ describe('parseRow', () => {
   it('should give NaN for numbers that do not parse', () => {
     const row = typed(
       [
-        { name: 'id', dataType: DataType.String },
-        { name: 'int', dataType: DataType.Integer },
-        { name: 'float', dataType: DataType.Float },
+        { name: 'id', type: PostgresType.Text },
+        { name: 'int', type: PostgresType.Int4 },
+        { name: 'float', type: PostgresType.Float8 },
       ],
       { id: '1', int: 'not_a_number', float: 'invalid' },
     );
@@ -178,9 +189,9 @@ describe('parseRow', () => {
     expect(
       typed(
         [
-          { name: 'id', dataType: DataType.Integer },
-          { name: 'status', dataType: DataType.String, enumType: status },
-          { name: 'other', dataType: DataType.String, enumType: status },
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'status', type: PostgresType.Text, enumType: status },
+          { name: 'other', type: PostgresType.Text, enumType: status },
         ],
         { id: '1', status: 'shipped', other: null },
       ),
@@ -190,7 +201,7 @@ describe('parseRow', () => {
   it('should take only the schema columns', () => {
     expect(
       Object.keys(
-        typed([{ name: 'id', dataType: DataType.Integer }], {
+        typed([{ name: 'id', type: PostgresType.Int4 }], {
           id: '1',
           mz_timestamp: '42',
         }),

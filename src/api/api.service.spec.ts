@@ -3,11 +3,10 @@ import { Repeater } from '@repeaterjs/repeater';
 import { ApiService, GraphQLRowOperation } from './api.service.js';
 import type { GraphQLUpdate } from './api.service.js';
 import { ViewService } from '../view/view.service.js';
-import { RowUpdateType, StreamMode } from '../common/types.js';
+import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import { DataType } from '../config/source.types.js';
 import type { Mocked } from 'vitest';
 
 describe('ApiService', () => {
@@ -18,9 +17,9 @@ describe('ApiService', () => {
     name: 'test_source',
     primaryKeyField: 'id',
     fields: [
-      { name: 'id', dataType: DataType.String },
-      { name: 'name', dataType: DataType.String },
-      { name: 'value', dataType: DataType.Integer },
+      { name: 'id', type: PostgresType.Text },
+      { name: 'name', type: PostgresType.Text },
+      { name: 'value', type: PostgresType.Int4 },
     ],
   };
   const ALL_FIELDS = new Set(['id', 'name', 'value']);

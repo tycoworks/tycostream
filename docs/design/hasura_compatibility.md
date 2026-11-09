@@ -36,28 +36,46 @@ tycostream's own types take the same style: `row_operation` for `RowOperation`, 
 
 ### Scalars
 
-Hasura names each column's GraphQL type after its Postgres type. `schema.yaml`'s types are tycostream's own (`Integer`, `Float`, `BigInt`…), and several collapse: `numeric` becomes `Float`, losing precision, and timestamps, `uuid` and `bigint` become `String` or `ID`. Instead, `schema.yaml` columns take Postgres type names, as the database reports them (Chris, 8 Nov), and each becomes Hasura's scalar. Materialize and RisingWave both use Postgres's names, so the file stays the same for either.
+Hasura names each column's GraphQL type after its Postgres type. `schema.yaml`'s types were tycostream's own (`Integer`, `Float`, `BigInt`…), and several collapsed: `numeric` became `Float`, losing precision, and timestamps, `uuid` and `bigint` became `String` or `ID`.
 
-| `schema.yaml` | GraphQL | Today |
+Instead, tycostream uses Postgres's types throughout (Chris, 9 Nov), and turns them into GraphQL only at the API:
+
+- **A column's type is its Postgres type.** One list, `PostgresType` in `common/types.ts`, names the types tycostream serves, with the type IDs pg-types gives them (`PostgresType.Int4` is `builtins.INT4`), the IDs every Postgres-compatible database reports. It's the only file that imports pg-types, and tycostream's own `DataType` is gone.
+- **`schema.yaml` names a type as Postgres's catalog does** (`pg_type.typname`): `int4`, `numeric`, `timestamptz`. The generator writes them, so nobody needs to by hand (Chris, 9 Nov). An enum column takes its enum's name, as a user-defined type would.
+- **The generator reads `pg_catalog`,** which Postgres, Materialize and RisingWave all have, instead of Materialize's `SHOW COLUMNS`.
+- **The API is the one place that turns a type into GraphQL:** one complete table from `PostgresType` to its GraphQL type, the custom names in an enum. It follows Hasura's own code (`mkScalarTypeName` and `pgScalarTypeToText` in Hasura's `Types.hs`): GraphQL's own scalars where a type fits, and Hasura's name for the rest. The code itself doesn't name Hasura (Chris, 9 Nov).
+- **The database layer needs no types** once it parses by the database's own (step 3b).
+
+| `schema.yaml` | GraphQL | Before |
 |---|---|---|
-| `smallint` | `smallint` | `Int` |
-| `integer` | `Int` | `Int` |
-| `bigint` | `bigint` | `String` |
-| `real` | `Float` | `Float` |
-| `double precision` | `float8` | `Float` |
+| `int2` | `smallint` | `Int` |
+| `int4` | `Int` | `Int` |
+| `int8` | `bigint` | `String` |
+| `float4` | `Float` | `Float` |
+| `float8` | `float8` | `Float` |
 | `numeric` | `numeric` | `Float` |
-| `text`, `varchar`, `char` | `String` | `String` |
-| `boolean` | `Boolean` | `Boolean` |
+| `text`, `varchar` | `String` | `String` |
+| `bpchar` | `bpchar` | `String` |
+| `bool` | `Boolean` | `Boolean` |
 | `uuid` | `uuid` | `ID` |
-| `timestamp`, `timestamptz` | `timestamp`, `timestamptz` | `String` |
-| `date`, `time` | `date`, `time` | `String` |
-| `json`, `jsonb` | `json`, `jsonb` | `String` |
+| `timestamp`, `timestamptz`, `date`, `time`, `interval` | the same names | `String` |
+| `json`, `jsonb`, `bytea` | the same names | `String` |
+| arrays | not served for now | `String` |
 
-- **`bigint` and `numeric` are sent as strings,** to keep their precision, as Hasura does with `HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES` (not its default). That mode also sends `float8` as a string; we don't, since a JSON number holds a `float8` exactly. As inputs, these scalars take a number or a string.
-- **`smallint`** is its own scalar in Hasura's code, though its docs say `Int`.
-- **Timestamps as Hasura sends them,** in ISO 8601 (`2026-11-08T10:00:00+00:00`), not Materialize's text form, which has a space. The exact format is to confirm.
+- **`int8` and `numeric` are sent as strings,** to keep their precision, as Hasura does with `HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES` (not its default). JSON can carry every digit, but a JavaScript client parses a JSON number into a 64-bit float, exact only to 2^53. That mode also sends `float8` as a string; we don't, since a 64-bit float holds a `float8` exactly. As inputs, these scalars take a number or a string; a client sends an `int8` beyond 2^53 as a string.
+- **`NaN` and `Infinity`** can't travel as GraphQL's `Float`, which raises a field error for them, and a `float8` sends them as `null`. A known limit: Postgres only gives them when asked to.
+- **Arrays aren't served for now.** They were sent as text (`{1,2}`), which was half a feature; they come back as GraphQL lists, on the roadmap, which parsing by the database's own types makes cheap.
+- **Timestamps as Hasura sends them,** in ISO 8601 (`2026-11-08T10:00:00+00:00`), not the text form, which has a space; and `json` and `jsonb` as JSON values (step 3b).
+
+#### Parsing by the database's own types (step 3b)
+
+Every result tells node-postgres each column's real type, and node-postgres turns each value's text into a JavaScript value by it. tycostream switched that off (`TEXT_ONLY` in `postgres.ts`) and typed values by `schema.yaml` instead, a habit from before the hollow-out, when it read Materialize's `COPY` output, which carries no types. Switching it back on:
+
+- **The database layer needs no type information.** `parseRow` only picks the source's columns.
+- **node-postgres's defaults are what we want for most types:** `int8` and `numeric` stay strings, integers and floats become numbers, booleans booleans, and `json` and `jsonb` JSON.
+- **Overrides for the rest:** timestamps and times as ISO 8601 text, as Hasura sends them, rather than JavaScript `Date`s, which put a timestamp without a time zone into the server's; dates, `interval` and `bytea` as text.
+- **The `SUBSCRIBE` columns** are typed too: `mz_progressed` arrives as a boolean and `mz_diff` as a string.
 - **Enums** keep their names from `schema.yaml`.
-- **`scripts/generate-schema.sh`** writes the database's type names as they are.
 
 ### Operators
 
@@ -112,7 +130,9 @@ Each a commit, leaving tycostream building and its tests passing; all released t
 
 1. **Hasura's names** for the types tycostream generates.
 2. **Hasura's operators.**
-3. **Hasura's scalars:** Postgres type names in `schema.yaml`, the scalars, the value formats, and the generator script.
+3. **Hasura's scalars,** in two commits:
+   - **3a, Postgres types throughout:** the `PostgresType` list, Postgres's names in `schema.yaml`, the generator reading `pg_catalog`, and the API's one table to GraphQL. Arrays dropped for now.
+   - **3b, parsing by the database's own types,** with the overrides above: the database layer's type switch goes, `json` and `jsonb` arrive as JSON, and timestamps in ISO 8601.
 4. **`_by_pk`,** for queries and subscriptions.
 5. **`order_by`, `limit` and `offset`,** for queries, then subscriptions.
 6. **Docs:** README, `architecture.md`, `filters.md`, `roadmap.md`. positions-app moves to the new API after the release.

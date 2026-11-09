@@ -14,19 +14,24 @@ import type {
   RowUpdateEvent,
   WhereClause,
 } from '../src/common/types.js';
-import { DataType, RowUpdateType, StreamMode } from '../src/common/types.js';
+import {
+  RowUpdateType,
+  StreamMode,
+  PostgresType,
+} from '../src/common/types.js';
 
 // Each test reads its own table, so they don't see each other's rows
 const tradesTable = (name: string): SourceDefinition => ({
   name,
   primaryKeyField: 'id',
   fields: [
-    { name: 'id', dataType: DataType.Integer },
-    { name: 'symbol', dataType: DataType.String },
-    { name: 'qty', dataType: DataType.Float },
-    { name: 'big', dataType: DataType.BigInt },
-    { name: 'live', dataType: DataType.Boolean },
-    { name: 'at', dataType: DataType.Timestamp },
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'symbol', type: PostgresType.Text },
+    { name: 'qty', type: PostgresType.Float8 },
+    { name: 'big', type: PostgresType.Int8 },
+    { name: 'live', type: PostgresType.Bool },
+    { name: 'at', type: PostgresType.Timestamp },
+    { name: 'price', type: PostgresType.Numeric },
   ],
 });
 
@@ -73,7 +78,7 @@ describe('DatabaseService on Materialize', () => {
   const sql = (statement: string) => admin.query(statement);
   const createTable = (name: string) =>
     sql(
-      `CREATE TABLE ${name} (id INT, symbol TEXT, qty NUMERIC, big BIGINT, live BOOLEAN, at TIMESTAMP)`,
+      `CREATE TABLE ${name} (id INT, symbol TEXT, qty DOUBLE PRECISION, big BIGINT, live BOOLEAN, at TIMESTAMP, price NUMERIC)`,
     );
   const subscribe = (source: SourceDefinition, where?: WhereClause) =>
     databaseService.stream(source, where, StreamMode.Live);
@@ -148,9 +153,9 @@ describe('DatabaseService on Materialize', () => {
     it('should send the snapshot as one batch of inserts, with values typed as the schema says', async () => {
       await createTable('snapshot');
       await sql(`INSERT INTO snapshot VALUES
-        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00'),
-        (2, 'MSFT', 20, 1, false, '2026-01-02 16:00:00'),
-        (3, NULL, NULL, NULL, NULL, NULL)`);
+        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00', 12345678901234567890.123),
+        (2, 'MSFT', 20, 1, false, '2026-01-02 16:00:00', 0.1),
+        (3, NULL, NULL, NULL, NULL, NULL, NULL)`);
 
       const batches = subscribe(tradesTable('snapshot'));
       try {
@@ -165,6 +170,8 @@ describe('DatabaseService on Materialize', () => {
               big: '9007199254740993',
               live: true,
               at: '2026-01-01 09:30:00',
+              // numeric keeps every digit
+              price: '12345678901234567890.123',
             },
           },
           {
@@ -177,6 +184,7 @@ describe('DatabaseService on Materialize', () => {
               big: '1',
               live: false,
               at: '2026-01-02 16:00:00',
+              price: '0.1',
             },
           },
           {
@@ -189,6 +197,7 @@ describe('DatabaseService on Materialize', () => {
               big: null,
               live: null,
               at: null,
+              price: null,
             },
           },
         ]);
@@ -458,7 +467,7 @@ describe('DatabaseService on Materialize', () => {
     const slowSource: SourceDefinition = {
       name: 'slow_count',
       primaryKeyField: 'id',
-      fields: [{ name: 'id', dataType: DataType.Integer }],
+      fields: [{ name: 'id', type: PostgresType.Int4 }],
     };
     const queriesRunning = async () => {
       const result = await admin.query<{ n: string }>(
@@ -487,9 +496,9 @@ describe('DatabaseService on Materialize', () => {
     it("should return the same typed rows as a live stream's snapshot", async () => {
       await createTable('queried');
       await sql(`INSERT INTO queried VALUES
-        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00'),
-        (2, NULL, NULL, NULL, NULL, NULL),
-        (3, 'MSFT', 20, 1, false, '2026-01-02 16:00:00')`);
+        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00', 12345678901234567890.123),
+        (2, NULL, NULL, NULL, NULL, NULL, NULL),
+        (3, 'MSFT', 20, 1, false, '2026-01-02 16:00:00', 0.1)`);
       const where: WhereClause = { id: { _lt: 3 } };
 
       const batches = subscribe(tradesTable('queried'), where);
@@ -508,8 +517,17 @@ describe('DatabaseService on Materialize', () => {
             big: '9007199254740993',
             live: true,
             at: '2026-01-01 09:30:00',
+            price: '12345678901234567890.123',
           },
-          { id: 2, symbol: null, qty: null, big: null, live: null, at: null },
+          {
+            id: 2,
+            symbol: null,
+            qty: null,
+            big: null,
+            live: null,
+            at: null,
+            price: null,
+          },
         ]);
       } finally {
         await batches.return();

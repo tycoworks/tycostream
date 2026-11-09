@@ -1,9 +1,6 @@
 // Types for source definitions loaded from YAML
 
-import { DataType } from '../common/types.js';
-
-// Re-export for use by other modules
-export { DataType } from '../common/types.js';
+import type { PostgresType } from '../common/types.js';
 
 /**
  * Defines an enum type with its allowed values
@@ -16,11 +13,10 @@ export interface EnumType {
 
 /**
  * Represents a single field/column in a data source
- * Uses our internal type system for clean separation
  */
 export interface SourceField {
   name: string;
-  dataType: DataType; // Our internal type representation
+  type: PostgresType; // The column's Postgres type
   enumType?: EnumType; // Present when this field is an enum
 }
 
