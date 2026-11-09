@@ -21,13 +21,6 @@ export interface SourceField {
 }
 
 /**
- * Helper to determine if a field is an enum
- */
-export function isEnumField(field: SourceField): boolean {
-  return field.enumType !== undefined;
-}
-
-/**
  * Complete definition of a data source for streaming
  * Maps to a database view that we subscribe to and expose via GraphQL
  */
