@@ -388,6 +388,29 @@ describe('Integration Test', () => {
       });
     });
 
+    it('should return the rows in order, up to the limit', async () => {
+      await testEnv.executeSql(`
+        INSERT INTO users (user_id, name) VALUES
+          (9201, 'carol'), (9202, 'alice'), (9203, 'bob')
+      `);
+
+      const response = await graphql(`
+        {
+          users(
+            where: { user_id: { _in: [9201, 9202, 9203] } }
+            order_by: [{ name: asc }]
+            limit: 2
+          ) {
+            name
+          }
+        }
+      `);
+
+      expect(await response.json()).toEqual({
+        data: { users: [{ name: 'alice' }, { name: 'bob' }] },
+      });
+    });
+
     it("should return a source's current rows that match the filter, typed as the schema says", async () => {
       await testEnv.executeSql(`
         INSERT INTO users (user_id, name, active, rank) VALUES

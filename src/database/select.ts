@@ -6,9 +6,23 @@ import {
   PostgresQueryCompiler,
   sql,
 } from 'kysely';
-import type { Expression, ExpressionBuilder, SqlBool } from 'kysely';
-import { ComparisonOperator, LogicalOperator } from '../common/types.js';
-import type { FieldComparison, WhereClause } from '../common/types.js';
+import type {
+  Expression,
+  ExpressionBuilder,
+  OrderByItemBuilder,
+  SqlBool,
+} from 'kysely';
+import {
+  ComparisonOperator,
+  LogicalOperator,
+  OrderDirection,
+} from '../common/types.js';
+import type {
+  FieldComparison,
+  OrderBy,
+  Selection,
+  WhereClause,
+} from '../common/types.js';
 import type { SourceDefinition, SourceField } from '../config/source.types.js';
 
 export interface CompiledSelect {
@@ -61,28 +75,72 @@ const SQL_SETS = {
   [ComparisonOperator.Nin]: 'not in',
 } as const;
 
+// Each direction a column can sort in, as SQL writes it
+const SQL_DIRECTIONS: Record<
+  OrderDirection,
+  (order: OrderByItemBuilder) => OrderByItemBuilder
+> = {
+  [OrderDirection.Asc]: (order) => order.asc(),
+  [OrderDirection.AscNullsFirst]: (order) => order.asc().nullsFirst(),
+  [OrderDirection.AscNullsLast]: (order) => order.asc().nullsLast(),
+  [OrderDirection.Desc]: (order) => order.desc(),
+  [OrderDirection.DescNullsFirst]: (order) => order.desc().nullsFirst(),
+  [OrderDirection.DescNullsLast]: (order) => order.desc().nullsLast(),
+};
+
 type Builder = ExpressionBuilder<any, any>;
 type Condition = Expression<SqlBool>;
 
 /**
- * Builds the SELECT for a source, with the client's filter as its WHERE.
- * Source and column names are quoted, and every value is a bind parameter.
+ * Builds the SELECT for a source and a client's selection: its filter as the
+ * WHERE, its order as the ORDER BY, and its limit and offset. Source and
+ * column names are quoted, and every value is a bind parameter.
  */
 export function buildSelect(
   source: SourceDefinition,
-  where?: WhereClause,
+  { where, orderBy, limit, offset }: Selection = {},
 ): CompiledSelect {
+  const fields = new Map(source.fields.map((field) => [field.name, field]));
   let query = db
     .selectFrom(sql.id(source.name).as(source.name))
     .select(source.fields.map((field) => sql.id(field.name).as(field.name)));
 
   if (where && Object.keys(where).length > 0) {
-    const fields = new Map(source.fields.map((field) => [field.name, field]));
     query = query.where((eb) => buildCondition(eb, where, fields));
+  }
+  for (const [column, direction] of orderedColumns(orderBy, fields)) {
+    query = query.orderBy(sql.id(column), SQL_DIRECTIONS[direction]);
+  }
+  if (limit !== undefined) {
+    query = query.limit(checkNotNegative('limit', limit));
+  }
+  if (offset !== undefined) {
+    query = query.offset(checkNotNegative('offset', offset));
   }
 
   const compiled = query.compile();
   return { sql: compiled.sql, parameters: compiled.parameters };
+}
+
+// The ordering's columns and directions, in turn, each a column of the source
+function orderedColumns(
+  orderBy: OrderBy = [],
+  fields: Map<string, SourceField>,
+): [string, OrderDirection][] {
+  const columns = orderBy.flatMap((item) => Object.entries(item));
+  for (const [column] of columns) {
+    if (!fields.has(column)) {
+      throw new Error(`Unknown field '${column}' to order by`);
+    }
+  }
+  return columns;
+}
+
+function checkNotNegative(argument: string, value: number): number {
+  if (value < 0) {
+    throw new Error(`'${argument}' can't be negative`);
+  }
+  return value;
 }
 
 function buildCondition(

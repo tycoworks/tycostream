@@ -7,6 +7,7 @@ import type {
 import {
   ComparisonOperator,
   LogicalOperator,
+  OrderDirection,
   PostgresType,
 } from '../common/types.js';
 import { GraphQLRowOperation } from './api.service.js';
@@ -25,8 +26,20 @@ export enum RootType {
   Subscription = 'subscription_root',
 }
 
+/**
+ * The arguments every root field takes: a selection of a source's rows
+ */
+export enum RootFieldArgument {
+  Where = 'where',
+  OrderBy = 'order_by',
+  Limit = 'limit',
+  Offset = 'offset',
+}
+
 // The generated types' names
 const ROW_OPERATION_TYPE = 'row_operation';
+const ORDER_DIRECTION_TYPE = 'order_by';
+const orderByTypeName = (sourceName: string) => `${sourceName}_order_by`;
 const boolExpTypeName = (sourceName: string) => `${sourceName}_bool_exp`;
 const comparisonTypeName = (typeName: string) => `${typeName}_comparison_exp`;
 const updateTypeName = (sourceName: string) => `${sourceName}_update`;
@@ -155,6 +168,7 @@ export function generateSchema(config: SourceConfiguration): string {
   const scalarDeclarations = buildScalarDeclarations(scalars);
   const comparisonTypes = buildComparisonTypes(scalars);
   const expressionInputTypes = buildExpressionInputTypes(sources);
+  const orderByInputTypes = buildOrderByInputTypes(sources);
   const sourceTypes = buildSourceTypes(sources);
   const queryFields = buildRootFields(
     sources,
@@ -175,6 +189,13 @@ export function generateSchema(config: SourceConfiguration): string {
       ${GraphQLRowOperation.Delete}
     }
 
+    # The ways a column can sort
+    enum ${ORDER_DIRECTION_TYPE} {
+${Object.values(OrderDirection)
+  .map((direction) => `      ${direction}`)
+  .join('\n')}
+    }
+
     ${enumTypeDefinitions}
 
 ${scalarDeclarations}
@@ -186,6 +207,8 @@ ${comparisonTypes}
 ${enumComparisonTypes}
 
 ${expressionInputTypes}
+
+${orderByInputTypes}
     
     # ================== OBJECT TYPES ==================
     
@@ -333,8 +356,9 @@ ${fields}
 }
 
 /**
- * Build a root type's fields: one per source, named after it, filtered by
- * its expression, and returning the given type
+ * Build a root type's fields: one per source, named after it, taking a
+ * selection of its rows (where, order_by, limit and offset), and returning
+ * the given type
  */
 function buildRootFields(
   sources: Map<string, SourceDefinition>,
@@ -343,9 +367,32 @@ function buildRootFields(
   return Array.from(sources.keys())
     .map(
       (sourceName) =>
-        `      ${sourceName}(where: ${boolExpTypeName(sourceName)}): ${returnType(sourceName)}`,
+        `      ${sourceName}(` +
+        `${RootFieldArgument.Where}: ${boolExpTypeName(sourceName)}, ` +
+        `${RootFieldArgument.OrderBy}: [${orderByTypeName(sourceName)}!], ` +
+        `${RootFieldArgument.Limit}: ${GraphQLInt.name}, ` +
+        `${RootFieldArgument.Offset}: ${GraphQLInt.name}` +
+        `): ${returnType(sourceName)}`,
     )
     .join('\n');
+}
+
+/**
+ * Builds each source's order_by input: each column, and the way it sorts
+ */
+function buildOrderByInputTypes(
+  sources: Map<string, SourceDefinition>,
+): string {
+  return Array.from(sources.values())
+    .map(
+      (source) =>
+        `    input ${orderByTypeName(source.name)} {\n` +
+        source.fields
+          .map((field) => `      ${field.name}: ${ORDER_DIRECTION_TYPE}`)
+          .join('\n') +
+        '\n    }',
+    )
+    .join('\n\n');
 }
 
 /**

@@ -1,6 +1,10 @@
 import { buildSchema } from 'graphql';
 import { PostgresType } from '../common/types.js';
-import type { GraphQLInputObjectType, GraphQLObjectType } from 'graphql';
+import type {
+  GraphQLEnumType,
+  GraphQLInputObjectType,
+  GraphQLObjectType,
+} from 'graphql';
 import { generateSchema } from './schema.js';
 import type {
   SourceDefinition,
@@ -44,16 +48,63 @@ describe('generateSchema', () => {
     expect(schema.getSubscriptionType()!.name).toBe('subscription_root');
     const query = schema.getQueryType()!.getFields().trades;
     expect(query.type.toString()).toBe('[trades!]!');
-    expect(query.args.map((arg) => [arg.name, arg.type.toString()])).toEqual([
+    // Each takes a selection: a filter, an order, a limit and an offset
+    const selectionArgs = [
       ['where', 'trades_bool_exp'],
-    ]);
+      ['order_by', '[trades_order_by!]'],
+      ['limit', 'Int'],
+      ['offset', 'Int'],
+    ];
+    expect(query.args.map((arg) => [arg.name, arg.type.toString()])).toEqual(
+      selectionArgs,
+    );
     const subscription = schema.getSubscriptionType()!.getFields().trades;
     // One list of updates per timestamp
     expect(subscription.type.toString()).toBe('[trades_update!]!');
     expect(
       subscription.args.map((arg) => [arg.name, arg.type.toString()]),
-    ).toEqual([['where', 'trades_bool_exp']]);
+    ).toEqual(selectionArgs);
     expect(schema.getQueryType()!.getFields().ping).toBeUndefined();
+  });
+
+  it('should give each source an order_by input: each column, and the way it sorts', () => {
+    const sources = new Map<string, SourceDefinition>([
+      [
+        'trades',
+        {
+          name: 'trades',
+          primaryKeyField: 'id',
+          fields: [
+            { name: 'id', type: PostgresType.Int4 },
+            { name: 'price', type: PostgresType.Numeric },
+          ],
+        },
+      ],
+    ]);
+    const schema = buildSchema(generateSchema(createConfig(sources)));
+
+    expect(
+      Object.values(
+        (
+          schema.getType('trades_order_by') as GraphQLInputObjectType
+        ).getFields(),
+      ).map((field) => [field.name, field.type.toString()]),
+    ).toEqual([
+      ['id', 'order_by'],
+      ['price', 'order_by'],
+    ]);
+    expect(
+      (schema.getType('order_by') as GraphQLEnumType)
+        .getValues()
+        .map((value) => value.name),
+    ).toEqual([
+      'asc',
+      'asc_nulls_first',
+      'asc_nulls_last',
+      'desc',
+      'desc_nulls_first',
+      'desc_nulls_last',
+    ]);
   });
 
   it('should define the row_operation enum for subscription events', () => {
@@ -215,7 +266,7 @@ describe('generateSchema', () => {
 
     // Should have subscription field
     expect(schema).toContain(
-      'trades(where: trades_bool_exp): [trades_update!]!',
+      'trades(where: trades_bool_exp, order_by: [trades_order_by!], limit: Int, offset: Int): [trades_update!]!',
     );
   });
 
@@ -309,7 +360,7 @@ describe('generateSchema', () => {
     expect(schema).toContain('type live_pnl_update {');
     expect(schema).toContain('data: live_pnl');
     expect(schema).toContain(
-      'live_pnl(where: live_pnl_bool_exp): [live_pnl_update!]!',
+      'live_pnl(where: live_pnl_bool_exp, order_by: [live_pnl_order_by!], limit: Int, offset: Int): [live_pnl_update!]!',
     );
   });
 

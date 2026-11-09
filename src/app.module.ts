@@ -22,7 +22,7 @@ import { ApiModule } from './api/api.module.js';
 
     // Core modules - order matters for dependencies
     DatabaseModule, // Database infrastructure
-    ViewModule, // View domain logic (filtered streams)
+    ViewModule, // View domain logic (views of sources)
     ApiModule, // API layer (GraphQL subscriptions)
   ],
 })

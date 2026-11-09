@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
 import { ViewService } from '../view/view.service.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
-import type { Row, RowUpdateEvent, WhereClause } from '../common/types.js';
+import type { Row, RowUpdateEvent, Selection } from '../common/types.js';
 import { truncateForLog } from '../common/logging.utils.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
@@ -45,19 +45,24 @@ export class ApiService {
   constructor(private readonly viewService: ViewService) {}
 
   /**
-   * A GraphQL query: a snapshot stream on the view, its rows returned once.
-   * Throws if the filter is invalid; a database error, or the time limit,
+   * A GraphQL query: a snapshot stream on the view, its rows returned once,
+   * in the selection's order. Throws if the selection is invalid; a database
+   * error, or the time limit,
    * fails the query. Aborting the signal, as the client leaving does, stops
    * the stream, which ends the query in the database.
    */
   async query(
     source: SourceDefinition,
-    where?: WhereClause,
+    selection: Selection = {},
     signal?: AbortSignal,
   ): Promise<Row[]> {
-    this.logger.log(`Query for ${describe(source, where)}`);
+    this.logger.log(`Query for ${describe(source, selection)}`);
 
-    const batches = this.viewService.stream(source, where, StreamMode.Snapshot);
+    const batches = this.viewService.stream(
+      source,
+      selection,
+      StreamMode.Snapshot,
+    );
     const stop = () => void batches.return();
     signal?.addEventListener('abort', stop, { once: true });
     try {
@@ -76,16 +81,18 @@ export class ApiService {
   /**
    * A GraphQL subscription: a live stream on the view, each timestamp's row
    * events sent as one list of GraphQL updates, the snapshot first, even
-   * when it's empty. Throws if the filter is invalid; a database error ends
-   * the subscription with that error.
+   * when it's empty. The selection's limit and offset choose the rows it
+   * covers, so a row leaving them arrives as a delete. Throws if the
+   * selection is invalid; a database error ends the subscription with that
+   * error.
    */
   subscribe(
     source: SourceDefinition,
-    where?: WhereClause,
+    selection: Selection = {},
   ): AsyncIterableIterator<GraphQLUpdate[]> {
-    this.logger.log(`Subscription for ${describe(source, where)}`);
+    this.logger.log(`Subscription for ${describe(source, selection)}`);
 
-    const batches = this.viewService.stream(source, where, StreamMode.Live);
+    const batches = this.viewService.stream(source, selection, StreamMode.Live);
 
     return new Repeater<GraphQLUpdate[]>(async (push, stop) => {
       const forward = async () => {
@@ -129,7 +136,10 @@ export class ApiService {
   }
 }
 
-// A source and its filter, for the logs
-function describe(source: SourceDefinition, where?: WhereClause): string {
-  return `${source.name}${where ? ` with filter: ${truncateForLog(where)}` : ' (unfiltered)'}`;
+// A source and its selection, for the logs
+function describe(source: SourceDefinition, selection: Selection): string {
+  const selected = Object.values(selection).some(
+    (value) => value !== undefined,
+  );
+  return `${source.name}${selected ? ` with selection: ${truncateForLog(selection)}` : ' (everything)'}`;
 }

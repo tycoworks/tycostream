@@ -3,7 +3,12 @@ import { Repeater } from '@repeaterjs/repeater';
 import { ApiService, GraphQLRowOperation } from './api.service.js';
 import type { GraphQLUpdate } from './api.service.js';
 import { ViewService } from '../view/view.service.js';
-import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
+import {
+  OrderDirection,
+  RowUpdateType,
+  StreamMode,
+  PostgresType,
+} from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import type { RowUpdateBatches } from '../database/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
@@ -86,17 +91,29 @@ describe('ApiService', () => {
       row,
     });
 
-    it('should open a snapshot stream on the source and filter', async () => {
+    it('should open a snapshot stream on the source and selection', async () => {
       snapshotOf();
-      const where = { name: { _eq: 'test' } };
+      const selection = {
+        where: { name: { _eq: 'test' } },
+        orderBy: [{ name: OrderDirection.Desc }],
+        limit: 5,
+      };
 
-      await apiService.query(testSourceDefinition, where);
+      await apiService.query(testSourceDefinition, selection);
 
       expect(viewService.stream).toHaveBeenCalledWith(
         testSourceDefinition,
-        where,
+        selection,
         StreamMode.Snapshot,
       );
+    });
+
+    it('should return the rows in the order the snapshot gives them', async () => {
+      snapshotOf([insert({ ...ROW, id: '2' }), insert(ROW)]);
+
+      expect(
+        (await apiService.query(testSourceDefinition)).map((row) => row.id),
+      ).toEqual(['2', '1']);
     });
 
     it('should return every row of the snapshot, whole, as GraphQL resolves the fields asked for', async () => {
@@ -148,21 +165,23 @@ describe('ApiService', () => {
       });
 
       await expect(
-        apiService.query(testSourceDefinition, { nope: { _eq: 1 } }),
+        apiService.query(testSourceDefinition, {
+          where: { nope: { _eq: 1 } },
+        }),
       ).rejects.toThrow('Unknown field');
     });
   });
 
   describe('subscribe', () => {
-    it('should open a live stream on the source and filter', () => {
+    it('should open a live stream on the source and selection', () => {
       viewOf();
-      const where = { name: { _eq: 'test' } };
+      const selection = { where: { name: { _eq: 'test' } }, limit: 5 };
 
-      apiService.subscribe(testSourceDefinition, where);
+      apiService.subscribe(testSourceDefinition, selection);
 
       expect(viewService.stream).toHaveBeenCalledWith(
         testSourceDefinition,
-        where,
+        selection,
         StreamMode.Live,
       );
     });
@@ -292,7 +311,7 @@ describe('ApiService', () => {
 
       expect(() =>
         apiService.subscribe(testSourceDefinition, {
-          nope: { _eq: 1 },
+          where: { nope: { _eq: 1 } },
         }),
       ).toThrow('Unknown field');
     });

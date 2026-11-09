@@ -119,7 +119,7 @@ Hasura's subscriptions send the whole result again on every change, or, for `_st
 
 Against Materialize in Testcontainers, before the steps that depend on them:
 
-1. `ORDER BY`, `LIMIT` and `OFFSET` inside a `SUBSCRIBE`: does Materialize keep the window up to date, with rows entering and leaving it?
+1. ~~`ORDER BY`, `LIMIT` and `OFFSET` inside a `SUBSCRIBE`~~: Materialize keeps the window up to date; a row leaving it arrives as a −1, one entering as a +1, at one timestamp (9 Nov).
 2. ~~`SIMILAR TO`~~: not supported (8 Nov). `LIKE`, `ILIKE` and the regular expression operators are.
 3. Timestamps' text format.
 

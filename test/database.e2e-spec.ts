@@ -15,6 +15,7 @@ import type {
   WhereClause,
 } from '../src/common/types.js';
 import {
+  OrderDirection,
   RowUpdateType,
   StreamMode,
   PostgresType,
@@ -81,7 +82,7 @@ describe('DatabaseService on Materialize', () => {
       `CREATE TABLE ${name} (id INT, symbol TEXT, qty DOUBLE PRECISION, big BIGINT, live BOOLEAN, at TIMESTAMP, price NUMERIC)`,
     );
   const subscribe = (source: SourceDefinition, where?: WhereClause) =>
-    databaseService.stream(source, where, StreamMode.Live);
+    databaseService.stream(source, { where }, StreamMode.Live);
   // A snapshot stream's rows, collected
   const snapshotFrom = async (
     service: DatabaseService,
@@ -91,7 +92,7 @@ describe('DatabaseService on Materialize', () => {
     const rows: Row[] = [];
     for await (const batch of service.stream(
       source,
-      where,
+      { where },
       StreamMode.Snapshot,
     )) {
       rows.push(...batch.events.map((event) => event.row));
@@ -312,6 +313,34 @@ describe('DatabaseService on Materialize', () => {
         await sql(`UPDATE filtered SET qty = 1 WHERE id = 1`);
         expect((await nextEvents(batches)).map((e) => e.type)).toEqual([
           RowUpdateType.Delete,
+        ]);
+      } finally {
+        await batches.return();
+      }
+    });
+
+    it('should keep a window of the top rows: a row leaving it arrives as a delete, and one entering it as an insert', async () => {
+      await createTable('top');
+      await sql(`INSERT INTO top (id, qty) VALUES (1, 10), (2, 20), (3, 30)`);
+      const batches = databaseService.stream(
+        tradesTable('top'),
+        { orderBy: [{ qty: OrderDirection.Desc }], limit: 2 },
+        StreamMode.Live,
+      );
+      try {
+        expect(
+          byId(await nextEvents(batches)).map((e) => [e.type, e.row.id]),
+        ).toEqual([
+          [RowUpdateType.Insert, 2],
+          [RowUpdateType.Insert, 3],
+        ]);
+
+        await sql(`INSERT INTO top (id, qty) VALUES (4, 25)`);
+        expect(
+          byId(await nextEvents(batches)).map((e) => [e.type, e.row.id]),
+        ).toEqual([
+          [RowUpdateType.Delete, 2],
+          [RowUpdateType.Insert, 4],
         ]);
       } finally {
         await batches.return();
@@ -539,13 +568,31 @@ describe('DatabaseService on Materialize', () => {
       const batches: RowUpdateBatch[] = [];
       for await (const batch of databaseService.stream(
         tradesTable('query_empty'),
-        undefined,
+        {},
         StreamMode.Snapshot,
       )) {
         batches.push(batch);
       }
 
       expect(batches).toEqual([{ events: [] }]);
+    });
+
+    it('should return the rows in order, from the offset, up to the limit', async () => {
+      await createTable('query_ordered');
+      await sql(
+        `INSERT INTO query_ordered (id, qty) VALUES (1, 10), (2, 20), (3, 30)`,
+      );
+
+      const rows: Row[] = [];
+      for await (const batch of databaseService.stream(
+        tradesTable('query_ordered'),
+        { orderBy: [{ qty: OrderDirection.Desc }], limit: 2, offset: 1 },
+        StreamMode.Snapshot,
+      )) {
+        rows.push(...batch.events.map((event) => event.row));
+      }
+
+      expect(rows.map((row) => row.id)).toEqual([2, 1]);
     });
 
     it('should bind filter values as parameters', async () => {
@@ -591,7 +638,7 @@ describe('DatabaseService on Materialize', () => {
     it('should end a snapshot whose client leaves, and Materialize stops it', async () => {
       const batches = databaseService.stream(
         slowSource,
-        undefined,
+        {},
         StreamMode.Snapshot,
       );
       void batches.next();
@@ -620,16 +667,8 @@ describe('DatabaseService on Materialize', () => {
       const service = new DatabaseService(capped, new MaterializeAdapter());
       await createTable('capped');
       await sql(`INSERT INTO capped (id) VALUES (1)`);
-      const first = service.stream(
-        tradesTable('capped'),
-        undefined,
-        StreamMode.Live,
-      );
-      const second = service.stream(
-        tradesTable('capped'),
-        undefined,
-        StreamMode.Live,
-      );
+      const first = service.stream(tradesTable('capped'), {}, StreamMode.Live);
+      const second = service.stream(tradesTable('capped'), {}, StreamMode.Live);
       try {
         // Both connections are held
         await nextEvents(first);
@@ -638,11 +677,7 @@ describe('DatabaseService on Materialize', () => {
         // pg's error when no connection comes free in time
         const NO_FREE_CONNECTION = 'timeout exceeded when trying to connect';
         const started = Date.now();
-        const live = service.stream(
-          tradesTable('capped'),
-          undefined,
-          StreamMode.Live,
-        );
+        const live = service.stream(tradesTable('capped'), {}, StreamMode.Live);
         await Promise.all([
           expect(live.next()).rejects.toThrow(NO_FREE_CONNECTION),
           expect(snapshotFrom(service, tradesTable('capped'))).rejects.toThrow(

@@ -90,7 +90,8 @@ export enum LogicalOperator {
 }
 
 /**
- * A client's filter, as it arrives in a subscription's `where` argument
+ * A client's filter, as it arrives in a query's or subscription's `where`
+ * argument
  */
 export type WhereClause = {
   [LogicalOperator.And]?: WhereClause[];
@@ -106,6 +107,34 @@ export type WhereClause = {
 export type FieldComparison = {
   [operator in ComparisonOperator]?: unknown;
 };
+
+/**
+ * Which way a column sorts, and where its nulls go
+ */
+export enum OrderDirection {
+  Asc = 'asc',
+  AscNullsFirst = 'asc_nulls_first',
+  AscNullsLast = 'asc_nulls_last',
+  Desc = 'desc',
+  DescNullsFirst = 'desc_nulls_first',
+  DescNullsLast = 'desc_nulls_last',
+}
+
+/**
+ * A client's ordering: columns and their directions, applied in turn
+ */
+export type OrderBy = Record<string, OrderDirection>[];
+
+/**
+ * Which of a source's rows a client wants, in what order, and which slice of
+ * them, as a SELECT would say: its filter, its order, and its limit and offset
+ */
+export interface Selection {
+  where?: WhereClause;
+  orderBy?: OrderBy;
+  limit?: number;
+  offset?: number;
+}
 
 /**
  * Row update event types sent to GraphQL clients
@@ -150,7 +179,7 @@ export interface RowUpdateBatch {
 
 /**
  * How a stream on a source runs. Both start with the snapshot: the source's
- * current rows that match the filter, as one batch of inserts.
+ * current rows that its selection selects, as one batch of inserts.
  */
 export enum StreamMode {
   // The snapshot, then the stream ends: a GraphQL query

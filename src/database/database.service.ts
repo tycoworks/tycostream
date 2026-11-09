@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { DatabaseConnectionService } from './connection.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
-import type { StreamMode, WhereClause } from '../common/types.js';
+import type { Selection, StreamMode } from '../common/types.js';
 import { buildSelect } from './select.js';
 import { DatabaseStream } from './stream.js';
 import { DatabaseAdapter } from './types.js';
@@ -23,13 +23,13 @@ export class DatabaseService implements OnModuleDestroy {
   ) {}
 
   /**
-   * A stream on the source's rows that match the filter: the snapshot, then,
-   * if live, every change. Throws if the filter is invalid; ending the
+   * A stream on the source's rows the selection selects: the snapshot, then,
+   * if live, every change. Throws if the selection is invalid; ending the
    * iteration closes the stream.
    */
   stream(
     source: SourceDefinition,
-    where: WhereClause | undefined,
+    selection: Selection,
     mode: StreamMode,
   ): RowUpdateBatches {
     const stream = new DatabaseStream(
@@ -37,7 +37,7 @@ export class DatabaseService implements OnModuleDestroy {
       source,
       mode,
       this.adapter,
-      buildSelect(source, where),
+      buildSelect(source, selection),
     );
     const batches = stream.read({
       onOpen: () => this.open.add(batches),

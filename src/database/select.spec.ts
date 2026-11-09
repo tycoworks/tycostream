@@ -1,6 +1,10 @@
 import { buildSelect } from './select.js';
 import type { WhereClause } from '../common/types.js';
-import { ComparisonOperator, PostgresType } from '../common/types.js';
+import {
+  ComparisonOperator,
+  OrderDirection,
+  PostgresType,
+} from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
 const rank = { name: 'rank', values: ['bronze', 'silver', 'gold', 'platinum'] };
@@ -20,7 +24,7 @@ const SELECT =
   'select "id" as "id", "name" as "name", "active" as "active", "rank" as "rank" from "users" as "users"';
 
 function where(clause: WhereClause) {
-  const { sql, parameters } = buildSelect(users, clause);
+  const { sql, parameters } = buildSelect(users, { where: clause });
   expect(sql.startsWith(`${SELECT} where `)).toBe(true);
   return { condition: sql.slice(`${SELECT} where `.length), parameters };
 }
@@ -30,6 +34,10 @@ describe('buildSelect', () => {
     it('should select every column of the source, with no WHERE when there is no filter', () => {
       expect(buildSelect(users)).toEqual({ sql: SELECT, parameters: [] });
       expect(buildSelect(users, {})).toEqual({ sql: SELECT, parameters: [] });
+      expect(buildSelect(users, { where: {} })).toEqual({
+        sql: SELECT,
+        parameters: [],
+      });
     });
 
     it('should quote source and column names that contain quotes', () => {
@@ -38,7 +46,9 @@ describe('buildSelect', () => {
         primaryKeyField: 'we"ird',
         fields: [{ name: 'we"ird', type: PostgresType.Text }],
       };
-      expect(buildSelect(source, { 'we"ird': { _eq: 'x' } })).toEqual({
+      expect(
+        buildSelect(source, { where: { 'we"ird': { _eq: 'x' } } }),
+      ).toEqual({
         sql: 'select "we""ird" as "we""ird" from "odd""view" as "odd""view" where "we""ird" = $1',
         parameters: ['x'],
       });
@@ -131,6 +141,59 @@ describe('buildSelect', () => {
     });
   });
 
+  describe('order, limit and offset', () => {
+    it.each([
+      [OrderDirection.Asc, 'asc'],
+      [OrderDirection.AscNullsFirst, 'asc nulls first'],
+      [OrderDirection.AscNullsLast, 'asc nulls last'],
+      [OrderDirection.Desc, 'desc'],
+      [OrderDirection.DescNullsFirst, 'desc nulls first'],
+      [OrderDirection.DescNullsLast, 'desc nulls last'],
+    ])('should compile %s to ORDER BY ... %s', (direction, sqlDirection) => {
+      expect(buildSelect(users, { orderBy: [{ name: direction }] })).toEqual({
+        sql: `${SELECT} order by "name" ${sqlDirection}`,
+        parameters: [],
+      });
+    });
+
+    it('should order by each column in turn', () => {
+      expect(
+        buildSelect(users, {
+          orderBy: [{ rank: OrderDirection.Desc }, { id: OrderDirection.Asc }],
+        }).sql,
+      ).toBe(`${SELECT} order by "rank" desc, "id" asc`);
+    });
+
+    it('should pass the limit and offset as parameters, after the filter', () => {
+      expect(
+        buildSelect(users, {
+          where: { active: { _eq: true } },
+          orderBy: [{ id: OrderDirection.Asc }],
+          limit: 10,
+          offset: 20,
+        }),
+      ).toEqual({
+        sql: `${SELECT} where "active" = $1 order by "id" asc limit $2 offset $3`,
+        parameters: [true, 10, 20],
+      });
+    });
+
+    it('should reject ordering by a column the source does not have', () => {
+      expect(() =>
+        buildSelect(users, { orderBy: [{ nope: OrderDirection.Asc }] }),
+      ).toThrow("Unknown field 'nope' to order by");
+    });
+
+    it('should reject a negative limit or offset', () => {
+      expect(() => buildSelect(users, { limit: -1 })).toThrow(
+        "'limit' can't be negative",
+      );
+      expect(() => buildSelect(users, { offset: -1 })).toThrow(
+        "'offset' can't be negative",
+      );
+    });
+  });
+
   describe('logic', () => {
     it('should AND several operators on one field, and several fields', () => {
       expect(where({ id: { _gte: 18, _lt: 65 }, name: { _eq: 'a' } })).toEqual({
@@ -214,18 +277,18 @@ describe('buildSelect', () => {
     });
 
     it('should reject values the enum does not have', () => {
-      expect(() => buildSelect(users, { rank: { _eq: 'diamond' } })).toThrow(
-        "Invalid value 'diamond' for enum 'rank' on 'rank'",
-      );
       expect(() =>
-        buildSelect(users, { rank: { _in: ['gold', 'diamond'] } }),
+        buildSelect(users, { where: { rank: { _eq: 'diamond' } } }),
+      ).toThrow("Invalid value 'diamond' for enum 'rank' on 'rank'");
+      expect(() =>
+        buildSelect(users, { where: { rank: { _in: ['gold', 'diamond'] } } }),
       ).toThrow("Invalid value 'diamond'");
     });
   });
 
   describe('validation', () => {
     it('should reject unknown fields before building any SQL', () => {
-      expect(() => buildSelect(users, { nope: { _eq: 1 } })).toThrow(
+      expect(() => buildSelect(users, { where: { nope: { _eq: 1 } } })).toThrow(
         "Unknown field 'nope'",
       );
     });
@@ -239,17 +302,17 @@ describe('buildSelect', () => {
         { _nin: [null] },
         { _like: null },
       ]) {
-        expect(() => buildSelect(users, { name: comparison })).toThrow(
-          "can't compare with null; use '_is_null'",
-        );
+        expect(() =>
+          buildSelect(users, { where: { name: comparison } }),
+        ).toThrow("can't compare with null; use '_is_null'");
       }
     });
 
     it('should reject unknown operators, such as _similar, which Materialize lacks', () => {
       expect(() =>
         buildSelect(users, {
-          name: { _similar: 'a' },
-        } as unknown as WhereClause),
+          where: { name: { _similar: 'a' } } as unknown as WhereClause,
+        }),
       ).toThrow("Unknown operator '_similar' on 'name'");
     });
   });
