@@ -93,11 +93,10 @@ type query_root {
     limit: Int
     offset: Int
   ): [trades!]!
-  trades_by_pk(id: Int!): trades
 }
 ```
 
-- **`<source>_by_pk`** takes the primary key and returns the row, or null. Every source has a primary key, so every source gets one.
+- **No `_by_pk`:** `trades(where: { id: { _eq: 1 } })` does the same (Chris, 9 Nov).
 - **`order_by`** is a list of `<source>_order_by`, applied in order; each field takes Hasura's `order_by` enum: `asc`, `asc_nulls_first`, `asc_nulls_last`, `desc`, `desc_nulls_first`, `desc_nulls_last`.
 - **`limit` and `offset`** as in SQL.
 
@@ -105,7 +104,7 @@ type query_root {
 
 Hasura's subscriptions send the whole result again on every change, or, for `_stream`, the new rows of an append-only table. tycostream's send what changed, keyed by row, so a client knows what moved (Chris, 8 Nov).
 
-- **Hasura's root fields and arguments, our own return type:** `trades(where, order_by, limit, offset)` and `trades_by_pk(id)`, each returning `[trades_update!]!`, one list of updates per timestamp, as since [#18](https://github.com/tycoworks/tycostream/pull/18). The update type itself only takes Hasura's style of name.
+- **Hasura's root fields and arguments, our own return type:** `trades(where, order_by, limit, offset)`, returning `[trades_update!]!`, one list of updates per timestamp, as since [#18](https://github.com/tycoworks/tycostream/pull/18). The update type itself only takes Hasura's style of name.
 - **A whole result on every change is a live query,** which is what Hasura's subscriptions are. If tycostream offers one, it's The Guild's way: `@live` on a query, `query @live { trades { … } }`, not a subscription (Chris, 8 Nov).
 - **`order_by`, `limit` and `offset`** choose which rows the subscription covers: rows entering and leaving the window arrive as inserts and deletes. A client sorts the changes itself.
 
@@ -134,6 +133,5 @@ Each a commit, leaving tycostream building and its tests passing; all released t
    - **3a, Postgres types throughout:** the `PostgresType` list, Postgres's names in `schema.yaml`, the generator reading `pg_catalog`, and the API's one table to GraphQL. Arrays dropped for now.
    - **3b, parsing by the database's own types,** with the overrides above: the database layer's type switch goes, `json` and `jsonb` arrive as JSON, and timestamps in ISO 8601.
    - **3c, arrays, as GraphQL lists** (Chris, 9 Nov): node-postgres already turns them into lists once it parses by the database's types.
-4. **`_by_pk`,** for queries and subscriptions.
-5. **`order_by`, `limit` and `offset`,** for queries, then subscriptions.
-6. **Docs:** README, `architecture.md`, `filters.md`, `roadmap.md`. positions-app moves to the new API after the release.
+4. **`order_by`, `limit` and `offset`,** for queries, then subscriptions.
+5. **Docs:** README, `architecture.md`, `filters.md`, `roadmap.md`. positions-app moves to the new API after the release.
