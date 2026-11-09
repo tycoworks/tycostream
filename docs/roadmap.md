@@ -4,21 +4,20 @@
 
 - ✅ NestJS modular architecture: GraphQL + stream ingestion with dependency injection
 - ✅ Snapshot + incremental live updates via Materialize `SUBSCRIBE`
-- ✅ Each client's filter pushed down to Materialize as its own `SUBSCRIBE`
-- ✅ Whole timestamps only: a client never sees half a transaction
+- ✅ Each client's selection pushed down to Materialize as its own `SUBSCRIBE`
+- ✅ One message per timestamp: a client never sees half a transaction
 - ✅ Sends updates for changed fields only
 - ✅ A database error ends one subscription, not the server
 
-## 📊 GraphQL Subscriptions
+## 📊 GraphQL API
 
-- ✅ GraphQL Subscriptions over SSE using @nestjs/graphql and GraphQL Yoga
+- ✅ [Queries](./design/queries.md) and subscriptions per source, over SSE, using @nestjs/graphql and GraphQL Yoga
 - ✅ Compatible with Apollo Client and other standard GraphQL clients
-- ✅ Simple YAML config defining sources and schema
-- ✅ GraphQL schema auto-generated from YAML
-- ✅ Support for custom GraphQL types and fields
-- ✅ Hasura-style filters
-- ✅ Multiple sources per database
-- ✅ Multiple concurrent clients supported
+- ✅ GraphQL schema auto-generated from a YAML config of sources
+- ✅ [Hasura-compatible](./design/hasura_compatibility.md) names, scalars and operators
+- ✅ `where`, `order_by`, `limit` and `offset`
+- ✅ Enums, with ordering
+- ✅ Multiple sources per database, and many concurrent clients
 
 ## 🚀 Developer Experience
 
@@ -30,12 +29,10 @@
 
 ## Backlog
 
-- [Queries per source](./design/queries.md)
 - **Relationships between sources:** nested GraphQL fields, such as a position's trades, each pushed down to Materialize as one `SUBSCRIBE` of a join, so every level of the result stays at one timestamp. The main reason for the hollow-out.
-- `limit`, `offset` and `order_by` for queries
-- [Calculated states](./design/calculated_states.md)
+- **Arrays, as GraphQL lists** (parked): node-postgres already parses them into lists; arrays of timestamps and dates need their own conversions, and Hasura's handling needs checking first
+- **Column types read from the database at startup,** with Kysely's built-in catalog reader, as kysely-codegen does, so `schema.yaml` declares only keys and enums
 - Row-level security
 - [Observability](./design/observability.md)
 - Database reconnection
-- Timestamps on updates, so a client can apply each timestamp whole
 - [Client reconnection](./design/client_reconnection.md)

@@ -337,6 +337,80 @@ describe('Integration Test', () => {
         signal,
       });
 
+    it('should filter and return custom scalars, such as bigint, numeric, uuid, timestamps and jsonb, in their JSON forms', async () => {
+      await testEnv.executeSql(`
+        INSERT INTO all_types (id, smallint_val, bigint_val, numeric_val, double_val, uuid_val, timestamptz_val, timestamp_val, date_val, jsonb_val) VALUES
+          (1, 7, 9007199254740993, 12345678901234567890.123, 2.5, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '2026-01-01 09:30:00+02', '2026-01-01 09:30:00.5', '2026-01-02', '{"side": "buy", "lots": [1, 2]}'),
+          (2, 8, 1, 0.5, 1.5, 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '2027-01-01 09:30:00+00', NULL, NULL, NULL)
+      `);
+
+      const response = await graphql(`
+        {
+          all_types(
+            where: {
+              bigint_val: { _eq: "9007199254740993" }
+              numeric_val: { _gt: "1" }
+              uuid_val: { _eq: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" }
+              timestamptz_val: { _lt: "2026-06-01T00:00:00Z" }
+              smallint_val: { _in: [7] }
+              double_val: { _gte: 2.5 }
+            }
+          ) {
+            id
+            bigint_val
+            numeric_val
+            uuid_val
+            timestamptz_val
+            timestamp_val
+            date_val
+            jsonb_val
+          }
+        }
+      `);
+
+      expect(await response.json()).toEqual({
+        data: {
+          all_types: [
+            {
+              id: 1,
+              bigint_val: '9007199254740993',
+              numeric_val: '12345678901234567890.123',
+              uuid_val: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+              // ISO 8601, as Postgres writes timestamps in JSON
+              timestamptz_val: '2026-01-01T07:30:00+00:00',
+              timestamp_val: '2026-01-01T09:30:00.5',
+              date_val: '2026-01-02',
+              // JSON, not its text
+              jsonb_val: { side: 'buy', lots: [1, 2] },
+            },
+          ],
+        },
+      });
+    });
+
+    it('should return the rows in order, up to the limit', async () => {
+      await testEnv.executeSql(`
+        INSERT INTO users (user_id, name) VALUES
+          (9201, 'carol'), (9202, 'alice'), (9203, 'bob')
+      `);
+
+      const response = await graphql(`
+        {
+          users(
+            where: { user_id: { _in: [9201, 9202, 9203] } }
+            order_by: [{ name: asc }]
+            limit: 2
+          ) {
+            name
+          }
+        }
+      `);
+
+      expect(await response.json()).toEqual({
+        data: { users: [{ name: 'alice' }, { name: 'bob' }] },
+      });
+    });
+
     it("should return a source's current rows that match the filter, typed as the schema says", async () => {
       await testEnv.executeSql(`
         INSERT INTO users (user_id, name, active, rank) VALUES

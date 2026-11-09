@@ -9,7 +9,11 @@ import type {
   EnumType,
   SourceConfiguration,
 } from './source.types.js';
-import { DataType } from '../common/types.js';
+import {
+  PostgresType,
+  postgresTypeName,
+  postgresTypeNamed,
+} from '../common/types.js';
 
 const logger = new Logger('SourcesConfig');
 
@@ -83,17 +87,13 @@ export default registerAs('sources', (): SourceConfiguration => {
             // This is an enum field
             field = {
               name,
-              dataType: DataType.String, // Enums are strings at runtime
+              type: PostgresType.Text, // Enums are text in the database
               enumType: enumDef,
             };
           } else {
-            // Not an enum, try to parse as a DataType
+            // Not an enum, so a Postgres type
             try {
-              const dataType = getDataType(typeString);
-              field = {
-                name,
-                dataType,
-              };
+              field = { name, type: readColumnType(typeString) };
             } catch (error) {
               // Provide better error context
               throw new Error(
@@ -144,36 +144,16 @@ export default registerAs('sources', (): SourceConfiguration => {
 });
 
 /**
- * Convert a type string from YAML to our internal DataType
- * Expects exact DataType enum names in the YAML file
+ * A column's Postgres type, from its name in schema.yaml, which is its name
+ * in Postgres's catalog, such as int4 or timestamptz
  */
-function getDataType(typeName: string): DataType {
-  switch (typeName) {
-    case 'Integer':
-      return DataType.Integer;
-    case 'Float':
-      return DataType.Float;
-    case 'BigInt':
-      return DataType.BigInt;
-    case 'String':
-      return DataType.String;
-    case 'UUID':
-      return DataType.UUID;
-    case 'Timestamp':
-      return DataType.Timestamp;
-    case 'Date':
-      return DataType.Date;
-    case 'Time':
-      return DataType.Time;
-    case 'Boolean':
-      return DataType.Boolean;
-    case 'JSON':
-      return DataType.JSON;
-    case 'Array':
-      return DataType.Array;
-    default:
-      throw new Error(
-        `Unknown type in configuration: ${typeName}. Valid types are: Integer, Float, BigInt, String, UUID, Timestamp, Date, Time, Boolean, JSON, Array`,
-      );
+function readColumnType(typeName: string): PostgresType {
+  const type = postgresTypeNamed(typeName);
+  if (type === undefined) {
+    const supported = Object.values(PostgresType).map(postgresTypeName);
+    throw new Error(
+      `Unsupported type in configuration: ${typeName}. Supported types are: ${supported.join(', ')}`,
+    );
   }
+  return type;
 }

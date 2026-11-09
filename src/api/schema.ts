@@ -6,8 +6,9 @@ import type {
 } from '../config/source.types.js';
 import {
   ComparisonOperator,
-  DataType,
   LogicalOperator,
+  OrderDirection,
+  PostgresType,
 } from '../common/types.js';
 import { GraphQLRowOperation } from './api.service.js';
 import {
@@ -15,42 +16,118 @@ import {
   GraphQLInt,
   GraphQLFloat,
   GraphQLBoolean,
-  GraphQLID,
 } from 'graphql';
-import type { GraphQLScalarType } from 'graphql';
 
 /**
- * Comparison input type names for GraphQL schema
+ * The root types' names
  */
-enum ComparisonInputType {
-  String = 'StringComparison',
-  Int = 'IntComparison',
-  Float = 'FloatComparison',
-  Boolean = 'BooleanComparison',
+export enum RootType {
+  Query = 'query_root',
+  Subscription = 'subscription_root',
 }
 
 /**
- * The comparison operators each kind of field offers in a where filter
+ * The arguments every root field takes: a selection of a source's rows
  */
-const EQUALITY_OPERATORS = [
+export enum RootFieldArgument {
+  Where = 'where',
+  OrderBy = 'order_by',
+  Limit = 'limit',
+  Offset = 'offset',
+}
+
+// The generated types' names
+const ROW_OPERATION_TYPE = 'row_operation';
+const ORDER_DIRECTION_TYPE = 'order_by';
+const orderByTypeName = (sourceName: string) => `${sourceName}_order_by`;
+const boolExpTypeName = (sourceName: string) => `${sourceName}_bool_exp`;
+const comparisonTypeName = (typeName: string) => `${typeName}_comparison_exp`;
+const updateTypeName = (sourceName: string) => `${sourceName}_update`;
+
+/**
+ * The GraphQL scalars tycostream declares, for the Postgres types GraphQL's
+ * own scalars don't fit, each named after its Postgres type
+ */
+enum CustomScalar {
+  SmallInt = 'smallint',
+  BigInt = 'bigint',
+  Float8 = 'float8',
+  Numeric = 'numeric',
+  Bpchar = 'bpchar',
+  Uuid = 'uuid',
+  Timestamp = 'timestamp',
+  Timestamptz = 'timestamptz',
+  Date = 'date',
+  Time = 'time',
+  Interval = 'interval',
+  Json = 'json',
+  Jsonb = 'jsonb',
+  Bytea = 'bytea',
+}
+const CUSTOM_SCALARS: ReadonlySet<string> = new Set(
+  Object.values(CustomScalar),
+);
+
+/**
+ * Each Postgres type's GraphQL scalar: GraphQL's own where one fits, and a
+ * custom one for the rest
+ */
+const SCALARS: Record<PostgresType, string> = {
+  [PostgresType.Int2]: CustomScalar.SmallInt,
+  [PostgresType.Int4]: GraphQLInt.name,
+  [PostgresType.Int8]: CustomScalar.BigInt,
+  [PostgresType.Float4]: GraphQLFloat.name,
+  [PostgresType.Float8]: CustomScalar.Float8,
+  [PostgresType.Numeric]: CustomScalar.Numeric,
+  [PostgresType.Text]: GraphQLString.name,
+  [PostgresType.Varchar]: GraphQLString.name,
+  [PostgresType.Bpchar]: CustomScalar.Bpchar,
+  [PostgresType.Bool]: GraphQLBoolean.name,
+  [PostgresType.Uuid]: CustomScalar.Uuid,
+  [PostgresType.Timestamp]: CustomScalar.Timestamp,
+  [PostgresType.Timestamptz]: CustomScalar.Timestamptz,
+  [PostgresType.Date]: CustomScalar.Date,
+  [PostgresType.Time]: CustomScalar.Time,
+  [PostgresType.Interval]: CustomScalar.Interval,
+  [PostgresType.Json]: CustomScalar.Json,
+  [PostgresType.Jsonb]: CustomScalar.Jsonb,
+  [PostgresType.Bytea]: CustomScalar.Bytea,
+};
+
+// The text types, whose comparisons add the patterns
+const TEXT_TYPES: ReadonlySet<PostgresType> = new Set([
+  PostgresType.Text,
+  PostgresType.Varchar,
+  PostgresType.Bpchar,
+]);
+
+/**
+ * The comparison operators each kind of field offers in a where filter:
+ * every scalar and enum has the base set, and text adds patterns
+ */
+const BASE_OPERATORS = [
   ComparisonOperator.Eq,
   ComparisonOperator.Neq,
-  ComparisonOperator.IsNull,
-];
-const SET_OPERATORS = [ComparisonOperator.In, ComparisonOperator.Nin];
-const ORDERING_OPERATORS = [
   ComparisonOperator.Gt,
   ComparisonOperator.Gte,
   ComparisonOperator.Lt,
   ComparisonOperator.Lte,
+  ComparisonOperator.In,
+  ComparisonOperator.Nin,
+  ComparisonOperator.IsNull,
 ];
-const BOOLEAN_OPERATORS = EQUALITY_OPERATORS;
-const STRING_OPERATORS = [...EQUALITY_OPERATORS, ...SET_OPERATORS];
-const ORDERED_OPERATORS = [
-  ...EQUALITY_OPERATORS,
-  ...ORDERING_OPERATORS,
-  ...SET_OPERATORS,
+// Materialize has no SIMILAR TO, so there's no _similar or _nsimilar
+const PATTERN_OPERATORS = [
+  ComparisonOperator.Like,
+  ComparisonOperator.Nlike,
+  ComparisonOperator.Ilike,
+  ComparisonOperator.Nilike,
+  ComparisonOperator.Regex,
+  ComparisonOperator.Nregex,
+  ComparisonOperator.Iregex,
+  ComparisonOperator.Niregex,
 ];
+const STRING_OPERATORS = [...BASE_OPERATORS, ...PATTERN_OPERATORS];
 
 /**
  * Builds a comparison input type: each operator takes a value of the field's
@@ -87,8 +164,11 @@ export function generateSchema(config: SourceConfiguration): string {
   // Build all the dynamic parts
   const enumTypeDefinitions = buildEnumTypes(enums);
   const enumComparisonTypes = buildEnumComparisonTypes(enums);
-  const comparisonTypes = buildComparisonTypes();
+  const scalars = scalarsUsed(sources);
+  const scalarDeclarations = buildScalarDeclarations(scalars);
+  const comparisonTypes = buildComparisonTypes(scalars);
   const expressionInputTypes = buildExpressionInputTypes(sources);
+  const orderByInputTypes = buildOrderByInputTypes(sources);
   const sourceTypes = buildSourceTypes(sources);
   const queryFields = buildRootFields(
     sources,
@@ -96,20 +176,29 @@ export function generateSchema(config: SourceConfiguration): string {
   );
   const subscriptionFields = buildRootFields(
     sources,
-    (sourceName) => `[${sourceName}Update!]!`,
+    (sourceName) => `[${updateTypeName(sourceName)}!]!`,
   );
 
   const schema = `
     # ================== ENUMS & BASE TYPES ==================
 
     # Row operation types for subscriptions
-    enum RowOperation {
+    enum ${ROW_OPERATION_TYPE} {
       ${GraphQLRowOperation.Insert}
       ${GraphQLRowOperation.Update}
       ${GraphQLRowOperation.Delete}
     }
 
+    # The ways a column can sort
+    enum ${ORDER_DIRECTION_TYPE} {
+${Object.values(OrderDirection)
+  .map((direction) => `      ${direction}`)
+  .join('\n')}
+    }
+
     ${enumTypeDefinitions}
+
+${scalarDeclarations}
     
     # ================== INPUT TYPES ==================
 
@@ -118,6 +207,8 @@ ${comparisonTypes}
 ${enumComparisonTypes}
 
 ${expressionInputTypes}
+
+${orderByInputTypes}
     
     # ================== OBJECT TYPES ==================
     
@@ -125,14 +216,19 @@ ${sourceTypes}
     
     # ================== ROOT TYPES ==================
     
+    schema {
+      query: ${RootType.Query}
+      subscription: ${RootType.Subscription}
+    }
+
     # Queries: each source's current rows, once
-    type Query {
+    type ${RootType.Query} {
 ${queryFields}
     }
     
     # Subscriptions: each source's current rows, then every change, as one
     # list of updates per timestamp
-    type Subscription {
+    type ${RootType.Subscription} {
 ${subscriptionFields}
     }`;
 
@@ -176,9 +272,9 @@ function buildEnumComparisonTypes(enumTypes: Map<string, EnumType>): string {
     comparisonTypes.push(
       `    # Comparison operators for ${enumName} enum\n` +
         buildComparisonInput(
-          `${enumName}Comparison`,
+          comparisonTypeName(enumName),
           enumName,
-          ORDERED_OPERATORS,
+          BASE_OPERATORS,
         ),
     );
   }
@@ -187,33 +283,50 @@ function buildEnumComparisonTypes(enumTypes: Map<string, EnumType>): string {
 }
 
 /**
- * Build comparison types for filtering
- * Creates comparison input types for different data types
+ * The scalars the sources' columns use, apart from enums, in a fixed order,
+ * each with the operators its comparisons offer: the base set, and for text
+ * its patterns too. The schema declares and compares only these.
  */
-function buildComparisonTypes(): string {
-  return [
-    `    # Comparison operators\n` +
-      buildComparisonInput(
-        ComparisonInputType.String,
-        GraphQLString.name,
-        STRING_OPERATORS,
-      ),
-    buildComparisonInput(
-      ComparisonInputType.Int,
-      GraphQLInt.name,
-      ORDERED_OPERATORS,
-    ),
-    buildComparisonInput(
-      ComparisonInputType.Float,
-      GraphQLFloat.name,
-      ORDERED_OPERATORS,
-    ),
-    buildComparisonInput(
-      ComparisonInputType.Boolean,
-      GraphQLBoolean.name,
-      BOOLEAN_OPERATORS,
-    ),
-  ].join('\n\n');
+function scalarsUsed(
+  sources: Map<string, SourceDefinition>,
+): Map<string, ComparisonOperator[]> {
+  const used = new Map<string, ComparisonOperator[]>();
+  for (const source of sources.values()) {
+    for (const field of source.fields) {
+      if (!field.enumType) {
+        used.set(
+          SCALARS[field.type],
+          TEXT_TYPES.has(field.type) ? STRING_OPERATORS : BASE_OPERATORS,
+        );
+      }
+    }
+  }
+  return new Map([...used].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
+ * Declares the scalars that aren't GraphQL's own, such as bigint
+ */
+function buildScalarDeclarations(
+  scalars: Map<string, ComparisonOperator[]>,
+): string {
+  return [...scalars.keys()]
+    .filter((scalar) => CUSTOM_SCALARS.has(scalar))
+    .map((scalar) => `    scalar ${scalar}`)
+    .join('\n');
+}
+
+/**
+ * Builds each scalar's comparison input
+ */
+function buildComparisonTypes(
+  scalars: Map<string, ComparisonOperator[]>,
+): string {
+  return [...scalars]
+    .map(([scalar, operators]) =>
+      buildComparisonInput(comparisonTypeName(scalar), scalar, operators),
+    )
+    .join('\n\n');
 }
 
 /**
@@ -232,8 +345,8 @@ ${fields}
     }
     
     # ${sourceName} update event
-    type ${sourceName}Update {
-      operation: RowOperation!
+    type ${updateTypeName(sourceName)} {
+      operation: ${ROW_OPERATION_TYPE}!
       data: ${sourceName}
       fields: [${GraphQLString.name}!]!
     }`);
@@ -243,8 +356,9 @@ ${fields}
 }
 
 /**
- * Build a root type's fields: one per source, named after it, filtered by
- * its expression, and returning the given type
+ * Build a root type's fields: one per source, named after it, taking a
+ * selection of its rows (where, order_by, limit and offset), and returning
+ * the given type
  */
 function buildRootFields(
   sources: Map<string, SourceDefinition>,
@@ -253,9 +367,32 @@ function buildRootFields(
   return Array.from(sources.keys())
     .map(
       (sourceName) =>
-        `      ${sourceName}(where: ${sourceName}Expression): ${returnType(sourceName)}`,
+        `      ${sourceName}(` +
+        `${RootFieldArgument.Where}: ${boolExpTypeName(sourceName)}, ` +
+        `${RootFieldArgument.OrderBy}: [${orderByTypeName(sourceName)}!], ` +
+        `${RootFieldArgument.Limit}: ${GraphQLInt.name}, ` +
+        `${RootFieldArgument.Offset}: ${GraphQLInt.name}` +
+        `): ${returnType(sourceName)}`,
     )
     .join('\n');
+}
+
+/**
+ * Builds each source's order_by input: each column, and the way it sorts
+ */
+function buildOrderByInputTypes(
+  sources: Map<string, SourceDefinition>,
+): string {
+  return Array.from(sources.values())
+    .map(
+      (source) =>
+        `    input ${orderByTypeName(source.name)} {\n` +
+        source.fields
+          .map((field) => `      ${field.name}: ${ORDER_DIRECTION_TYPE}`)
+          .join('\n') +
+        '\n    }',
+    )
+    .join('\n\n');
 }
 
 /**
@@ -276,12 +413,12 @@ function buildExpressionInputTypes(
       })
       .join('\n');
 
-    inputTypes.push(`    # ${sourceName} expression conditions (for subscriptions)
-    input ${sourceName}Expression {
+    inputTypes.push(`    # ${sourceName} filter, for its query and subscription
+    input ${boolExpTypeName(sourceName)} {
 ${fieldComparisons}
-      ${LogicalOperator.And}: [${sourceName}Expression!]
-      ${LogicalOperator.Or}: [${sourceName}Expression!]
-      ${LogicalOperator.Not}: ${sourceName}Expression
+      ${LogicalOperator.And}: [${boolExpTypeName(sourceName)}!]
+      ${LogicalOperator.Or}: [${boolExpTypeName(sourceName)}!]
+      ${LogicalOperator.Not}: ${boolExpTypeName(sourceName)}
     }`);
   }
 
@@ -294,24 +431,10 @@ ${fieldComparisons}
 function getComparisonType(field: SourceField): string {
   // Enums use their specific comparison type
   if (field.enumType) {
-    return `${field.enumType.name}Comparison`;
+    return comparisonTypeName(field.enumType.name);
   }
 
-  const graphqlTypeName = getGraphQLScalarType(field.dataType).name;
-  switch (graphqlTypeName) {
-    case GraphQLString.name:
-    case GraphQLID.name:
-      return ComparisonInputType.String;
-    case GraphQLInt.name:
-      return ComparisonInputType.Int;
-    case GraphQLFloat.name:
-      return ComparisonInputType.Float;
-    case GraphQLBoolean.name:
-      return ComparisonInputType.Boolean;
-    default:
-      // Any other types (shouldn't happen with our current type mappings)
-      return ComparisonInputType.String;
-  }
+  return comparisonTypeName(SCALARS[field.type]);
 }
 
 /**
@@ -324,49 +447,10 @@ function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
       // Use enum type if this field has one, otherwise use scalar type
       const graphqlTypeName = field.enumType
         ? field.enumType.name
-        : getGraphQLScalarType(field.dataType).name;
+        : SCALARS[field.type];
       const nullable =
         field.name !== sourceDefinition.primaryKeyField ? '' : '!';
       return `      ${field.name}: ${graphqlTypeName}${nullable}`;
     })
     .join('\n');
-}
-
-/**
- * Get the GraphQL scalar type for a runtime type
- * Maps our internal DataType to GraphQL scalar types
- */
-function getGraphQLScalarType(dataType: DataType): GraphQLScalarType {
-  switch (dataType) {
-    // Numeric types
-    case DataType.Integer:
-      return GraphQLInt;
-    case DataType.Float:
-      return GraphQLFloat;
-    case DataType.BigInt:
-      return GraphQLString; // BigInt as string to preserve precision
-
-    // String types
-    case DataType.String:
-      return GraphQLString;
-    case DataType.UUID:
-      return GraphQLID;
-
-    // Temporal types (all as strings)
-    case DataType.Timestamp:
-    case DataType.Date:
-    case DataType.Time:
-      return GraphQLString;
-
-    // Other types
-    case DataType.Boolean:
-      return GraphQLBoolean;
-    case DataType.JSON:
-    case DataType.Array:
-      return GraphQLString; // JSON/Arrays as strings
-
-    default:
-      // Fallback to string
-      return GraphQLString;
-  }
 }

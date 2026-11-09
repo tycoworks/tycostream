@@ -15,7 +15,7 @@ sources:
   stress_test:
     primary_key: id
     columns:
-      id: Integer
-      value: Float
+      id: int4
+      value: float8
       status: status      # Enum field
       department: department  # Enum field

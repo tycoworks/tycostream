@@ -14,19 +14,25 @@ import type {
   RowUpdateEvent,
   WhereClause,
 } from '../src/common/types.js';
-import { DataType, RowUpdateType, StreamMode } from '../src/common/types.js';
+import {
+  OrderDirection,
+  RowUpdateType,
+  StreamMode,
+  PostgresType,
+} from '../src/common/types.js';
 
 // Each test reads its own table, so they don't see each other's rows
 const tradesTable = (name: string): SourceDefinition => ({
   name,
   primaryKeyField: 'id',
   fields: [
-    { name: 'id', dataType: DataType.Integer },
-    { name: 'symbol', dataType: DataType.String },
-    { name: 'qty', dataType: DataType.Float },
-    { name: 'big', dataType: DataType.BigInt },
-    { name: 'live', dataType: DataType.Boolean },
-    { name: 'at', dataType: DataType.Timestamp },
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'symbol', type: PostgresType.Text },
+    { name: 'qty', type: PostgresType.Float8 },
+    { name: 'big', type: PostgresType.Int8 },
+    { name: 'live', type: PostgresType.Bool },
+    { name: 'at', type: PostgresType.Timestamp },
+    { name: 'price', type: PostgresType.Numeric },
   ],
 });
 
@@ -73,10 +79,10 @@ describe('DatabaseService on Materialize', () => {
   const sql = (statement: string) => admin.query(statement);
   const createTable = (name: string) =>
     sql(
-      `CREATE TABLE ${name} (id INT, symbol TEXT, qty NUMERIC, big BIGINT, live BOOLEAN, at TIMESTAMP)`,
+      `CREATE TABLE ${name} (id INT, symbol TEXT, qty DOUBLE PRECISION, big BIGINT, live BOOLEAN, at TIMESTAMP, price NUMERIC)`,
     );
   const subscribe = (source: SourceDefinition, where?: WhereClause) =>
-    databaseService.stream(source, where, StreamMode.Live);
+    databaseService.stream(source, { where }, StreamMode.Live);
   // A snapshot stream's rows, collected
   const snapshotFrom = async (
     service: DatabaseService,
@@ -86,7 +92,7 @@ describe('DatabaseService on Materialize', () => {
     const rows: Row[] = [];
     for await (const batch of service.stream(
       source,
-      where,
+      { where },
       StreamMode.Snapshot,
     )) {
       rows.push(...batch.events.map((event) => event.row));
@@ -148,9 +154,9 @@ describe('DatabaseService on Materialize', () => {
     it('should send the snapshot as one batch of inserts, with values typed as the schema says', async () => {
       await createTable('snapshot');
       await sql(`INSERT INTO snapshot VALUES
-        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00'),
-        (2, 'MSFT', 20, 1, false, '2026-01-02 16:00:00'),
-        (3, NULL, NULL, NULL, NULL, NULL)`);
+        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00', 12345678901234567890.123),
+        (2, 'MSFT', 20, 1, false, '2026-01-02 16:00:00', 0.1),
+        (3, NULL, NULL, NULL, NULL, NULL, NULL)`);
 
       const batches = subscribe(tradesTable('snapshot'));
       try {
@@ -164,7 +170,9 @@ describe('DatabaseService on Materialize', () => {
               qty: 1.5,
               big: '9007199254740993',
               live: true,
-              at: '2026-01-01 09:30:00',
+              at: '2026-01-01T09:30:00',
+              // numeric keeps every digit
+              price: '12345678901234567890.123',
             },
           },
           {
@@ -176,7 +184,8 @@ describe('DatabaseService on Materialize', () => {
               qty: 20,
               big: '1',
               live: false,
-              at: '2026-01-02 16:00:00',
+              at: '2026-01-02T16:00:00',
+              price: '0.1',
             },
           },
           {
@@ -189,6 +198,7 @@ describe('DatabaseService on Materialize', () => {
               big: null,
               live: null,
               at: null,
+              price: null,
             },
           },
         ]);
@@ -270,6 +280,26 @@ describe('DatabaseService on Materialize', () => {
       }
     });
 
+    it('should filter by text patterns, as Materialize matches them', async () => {
+      await createTable('patterns');
+      await sql(
+        `INSERT INTO patterns (id, symbol) VALUES (1, 'AAPL'), (2, 'amzn'), (3, 'MSFT'), (4, 'META')`,
+      );
+      const byPattern = async (where: WhereClause) => {
+        const batches = subscribe(tradesTable('patterns'), where);
+        try {
+          return byId(await nextEvents(batches)).map((e) => e.row.id);
+        } finally {
+          await batches.return();
+        }
+      };
+
+      expect(await byPattern({ symbol: { _ilike: 'a%' } })).toEqual([1, 2]);
+      expect(await byPattern({ symbol: { _nlike: 'M%' } })).toEqual([1, 2]);
+      expect(await byPattern({ symbol: { _regex: '^M.*T$' } })).toEqual([3]);
+      expect(await byPattern({ symbol: { _niregex: '^m' } })).toEqual([1, 2]);
+    });
+
     it('should send a row entering the filter as an insert and one leaving it as a delete', async () => {
       await createTable('filtered');
       await sql(`INSERT INTO filtered (id, qty) VALUES (1, 5)`);
@@ -283,6 +313,34 @@ describe('DatabaseService on Materialize', () => {
         await sql(`UPDATE filtered SET qty = 1 WHERE id = 1`);
         expect((await nextEvents(batches)).map((e) => e.type)).toEqual([
           RowUpdateType.Delete,
+        ]);
+      } finally {
+        await batches.return();
+      }
+    });
+
+    it('should keep a window of the top rows: a row leaving it arrives as a delete, and one entering it as an insert', async () => {
+      await createTable('top');
+      await sql(`INSERT INTO top (id, qty) VALUES (1, 10), (2, 20), (3, 30)`);
+      const batches = databaseService.stream(
+        tradesTable('top'),
+        { orderBy: [{ qty: OrderDirection.Desc }], limit: 2 },
+        StreamMode.Live,
+      );
+      try {
+        expect(
+          byId(await nextEvents(batches)).map((e) => [e.type, e.row.id]),
+        ).toEqual([
+          [RowUpdateType.Insert, 2],
+          [RowUpdateType.Insert, 3],
+        ]);
+
+        await sql(`INSERT INTO top (id, qty) VALUES (4, 25)`);
+        expect(
+          byId(await nextEvents(batches)).map((e) => [e.type, e.row.id]),
+        ).toEqual([
+          [RowUpdateType.Delete, 2],
+          [RowUpdateType.Insert, 4],
         ]);
       } finally {
         await batches.return();
@@ -438,7 +496,7 @@ describe('DatabaseService on Materialize', () => {
     const slowSource: SourceDefinition = {
       name: 'slow_count',
       primaryKeyField: 'id',
-      fields: [{ name: 'id', dataType: DataType.Integer }],
+      fields: [{ name: 'id', type: PostgresType.Int4 }],
     };
     const queriesRunning = async () => {
       const result = await admin.query<{ n: string }>(
@@ -467,9 +525,9 @@ describe('DatabaseService on Materialize', () => {
     it("should return the same typed rows as a live stream's snapshot", async () => {
       await createTable('queried');
       await sql(`INSERT INTO queried VALUES
-        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00'),
-        (2, NULL, NULL, NULL, NULL, NULL),
-        (3, 'MSFT', 20, 1, false, '2026-01-02 16:00:00')`);
+        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00', 12345678901234567890.123),
+        (2, NULL, NULL, NULL, NULL, NULL, NULL),
+        (3, 'MSFT', 20, 1, false, '2026-01-02 16:00:00', 0.1)`);
       const where: WhereClause = { id: { _lt: 3 } };
 
       const batches = subscribe(tradesTable('queried'), where);
@@ -487,9 +545,18 @@ describe('DatabaseService on Materialize', () => {
             qty: 1.5,
             big: '9007199254740993',
             live: true,
-            at: '2026-01-01 09:30:00',
+            at: '2026-01-01T09:30:00',
+            price: '12345678901234567890.123',
           },
-          { id: 2, symbol: null, qty: null, big: null, live: null, at: null },
+          {
+            id: 2,
+            symbol: null,
+            qty: null,
+            big: null,
+            live: null,
+            at: null,
+            price: null,
+          },
         ]);
       } finally {
         await batches.return();
@@ -501,13 +568,31 @@ describe('DatabaseService on Materialize', () => {
       const batches: RowUpdateBatch[] = [];
       for await (const batch of databaseService.stream(
         tradesTable('query_empty'),
-        undefined,
+        {},
         StreamMode.Snapshot,
       )) {
         batches.push(batch);
       }
 
       expect(batches).toEqual([{ events: [] }]);
+    });
+
+    it('should return the rows in order, from the offset, up to the limit', async () => {
+      await createTable('query_ordered');
+      await sql(
+        `INSERT INTO query_ordered (id, qty) VALUES (1, 10), (2, 20), (3, 30)`,
+      );
+
+      const rows: Row[] = [];
+      for await (const batch of databaseService.stream(
+        tradesTable('query_ordered'),
+        { orderBy: [{ qty: OrderDirection.Desc }], limit: 2, offset: 1 },
+        StreamMode.Snapshot,
+      )) {
+        rows.push(...batch.events.map((event) => event.row));
+      }
+
+      expect(rows.map((row) => row.id)).toEqual([2, 1]);
     });
 
     it('should bind filter values as parameters', async () => {
@@ -519,6 +604,19 @@ describe('DatabaseService on Materialize', () => {
 
       const rows = await snapshot(tradesTable('query_params'), {
         symbol: { _eq: tricky },
+      });
+
+      expect(rows.map((row) => row.id)).toEqual([2]);
+    });
+
+    it('should filter by text patterns', async () => {
+      await createTable('query_patterns');
+      await sql(
+        `INSERT INTO query_patterns (id, symbol) VALUES (1, 'AAPL'), (2, 'MSFT')`,
+      );
+
+      const rows = await snapshot(tradesTable('query_patterns'), {
+        symbol: { _iregex: '^ms' },
       });
 
       expect(rows.map((row) => row.id)).toEqual([2]);
@@ -540,7 +638,7 @@ describe('DatabaseService on Materialize', () => {
     it('should end a snapshot whose client leaves, and Materialize stops it', async () => {
       const batches = databaseService.stream(
         slowSource,
-        undefined,
+        {},
         StreamMode.Snapshot,
       );
       void batches.next();
@@ -569,16 +667,8 @@ describe('DatabaseService on Materialize', () => {
       const service = new DatabaseService(capped, new MaterializeAdapter());
       await createTable('capped');
       await sql(`INSERT INTO capped (id) VALUES (1)`);
-      const first = service.stream(
-        tradesTable('capped'),
-        undefined,
-        StreamMode.Live,
-      );
-      const second = service.stream(
-        tradesTable('capped'),
-        undefined,
-        StreamMode.Live,
-      );
+      const first = service.stream(tradesTable('capped'), {}, StreamMode.Live);
+      const second = service.stream(tradesTable('capped'), {}, StreamMode.Live);
       try {
         // Both connections are held
         await nextEvents(first);
@@ -587,11 +677,7 @@ describe('DatabaseService on Materialize', () => {
         // pg's error when no connection comes free in time
         const NO_FREE_CONNECTION = 'timeout exceeded when trying to connect';
         const started = Date.now();
-        const live = service.stream(
-          tradesTable('capped'),
-          undefined,
-          StreamMode.Live,
-        );
+        const live = service.stream(tradesTable('capped'), {}, StreamMode.Live);
         await Promise.all([
           expect(live.next()).rejects.toThrow(NO_FREE_CONNECTION),
           expect(snapshotFrom(service, tradesTable('capped'))).rejects.toThrow(

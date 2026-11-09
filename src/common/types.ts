@@ -1,32 +1,58 @@
-/**
- * Our internal type system for field types
- * This maintains semantic information needed across layers
- * without being tied to any specific layer's type system
- */
+import { builtins } from 'pg-types';
 
 /**
- * Internal data types that maintain semantic distinctions
- * These preserve the fidelity needed for correct type mapping
+ * The Postgres types tycostream serves, each with the type ID Postgres gives
+ * it, which every Postgres-compatible database reports. tycostream uses these
+ * throughout, until the API presents them as GraphQL. This is the only place
+ * that uses pg-types.
  */
-export enum DataType {
-  // Numeric types
-  Integer,
-  Float,
-  BigInt, // Special handling - stored as string to preserve precision
+export const PostgresType = {
+  Int2: builtins.INT2,
+  Int4: builtins.INT4,
+  Int8: builtins.INT8,
+  Float4: builtins.FLOAT4,
+  Float8: builtins.FLOAT8,
+  Numeric: builtins.NUMERIC,
+  Text: builtins.TEXT,
+  Varchar: builtins.VARCHAR,
+  Bpchar: builtins.BPCHAR,
+  Bool: builtins.BOOL,
+  Uuid: builtins.UUID,
+  Timestamp: builtins.TIMESTAMP,
+  Timestamptz: builtins.TIMESTAMPTZ,
+  Date: builtins.DATE,
+  Time: builtins.TIME,
+  Interval: builtins.INTERVAL,
+  Json: builtins.JSON,
+  Jsonb: builtins.JSONB,
+  Bytea: builtins.BYTEA,
+} as const;
+export type PostgresType = (typeof PostgresType)[keyof typeof PostgresType];
 
-  // String types
-  String,
-  UUID,
+// Each served type's name in Postgres's catalog (pg_type.typname), such as
+// int4, as pg-types gives it, in capitals
+const SERVED = new Set<number>(Object.values(PostgresType));
+const NAMES = new Map<PostgresType, string>(
+  (Object.entries(builtins) as [string, number][])
+    .filter(([, type]) => SERVED.has(type))
+    .map(([name, type]) => [type, name.toLowerCase()]),
+);
+const TYPES_BY_NAME = new Map<string, PostgresType>(
+  [...NAMES].map(([type, name]) => [name, type]),
+);
 
-  // Temporal types
-  Timestamp,
-  Date,
-  Time,
+/**
+ * A Postgres type's name, as its catalog writes it: int4, timestamptz, ...
+ */
+export function postgresTypeName(type: PostgresType): string {
+  return NAMES.get(type)!;
+}
 
-  // Other types
-  Boolean,
-  JSON, // JSON/JSONB data
-  Array, // Array types
+/**
+ * The served Postgres type of that name, as its catalog writes it, if any
+ */
+export function postgresTypeNamed(name: string): PostgresType | undefined {
+  return TYPES_BY_NAME.get(name);
 }
 
 /**
@@ -42,6 +68,16 @@ export enum ComparisonOperator {
   In = '_in',
   Nin = '_nin',
   IsNull = '_is_null',
+  // Text patterns: LIKE's wildcards, case-sensitive or not, and regular
+  // expressions, case-sensitive or not; each with its negation
+  Like = '_like',
+  Nlike = '_nlike',
+  Ilike = '_ilike',
+  Nilike = '_nilike',
+  Regex = '_regex',
+  Nregex = '_nregex',
+  Iregex = '_iregex',
+  Niregex = '_niregex',
 }
 
 /**
@@ -54,7 +90,8 @@ export enum LogicalOperator {
 }
 
 /**
- * A client's filter, as it arrives in a subscription's `where` argument
+ * A client's filter, as it arrives in a query's or subscription's `where`
+ * argument
  */
 export type WhereClause = {
   [LogicalOperator.And]?: WhereClause[];
@@ -72,8 +109,36 @@ export type FieldComparison = {
 };
 
 /**
+ * Which way a column sorts, and where its nulls go
+ */
+export enum OrderDirection {
+  Asc = 'asc',
+  AscNullsFirst = 'asc_nulls_first',
+  AscNullsLast = 'asc_nulls_last',
+  Desc = 'desc',
+  DescNullsFirst = 'desc_nulls_first',
+  DescNullsLast = 'desc_nulls_last',
+}
+
+/**
+ * A client's ordering: columns and their directions, applied in turn
+ */
+export type OrderBy = Record<string, OrderDirection>[];
+
+/**
+ * Which of a source's rows a client wants, in what order, and which slice of
+ * them, as a SELECT would say: its filter, its order, and its limit and offset
+ */
+export interface Selection {
+  where?: WhereClause;
+  orderBy?: OrderBy;
+  limit?: number;
+  offset?: number;
+}
+
+/**
  * Row update event types sent to GraphQL clients
- * Maps to GraphQL's RowOperation enum (INSERT/UPDATE/DELETE)
+ * Maps to GraphQL's row_operation enum (INSERT/UPDATE/DELETE)
  */
 export enum RowUpdateType {
   Insert,
@@ -114,7 +179,7 @@ export interface RowUpdateBatch {
 
 /**
  * How a stream on a source runs. Both start with the snapshot: the source's
- * current rows that match the filter, as one batch of inserts.
+ * current rows that its selection selects, as one batch of inserts.
  */
 export enum StreamMode {
   // The snapshot, then the stream ends: a GraphQL query

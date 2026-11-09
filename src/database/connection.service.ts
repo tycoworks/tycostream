@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import pg from 'pg';
 import type { DatabaseConfig } from '../config/database.config.js';
 import { StreamMode } from '../common/types.js';
-import { TEXT_ONLY } from './postgres.js';
+import { TYPE_PARSERS } from './postgres.js';
 
 // Allows for network latency, and also bounds the wait for a free connection
 const DB_CONNECTION_TIMEOUT_MS = 10000;
@@ -76,7 +76,7 @@ export class DatabaseConnectionService
       connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
       keepAlive: true,
       keepAliveInitialDelayMillis: DB_KEEP_ALIVE_DELAY_MS,
-      types: TEXT_ONLY,
+      types: TYPE_PARSERS,
       max: config.maxConnections,
     });
     this.pool.on('error', this.logConnectionError);

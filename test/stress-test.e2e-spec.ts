@@ -221,7 +221,7 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
     await testEnv.executeSql(`
       CREATE TABLE IF NOT EXISTS stress_test (
         id INTEGER NOT NULL,
-        value NUMERIC NOT NULL,
+        value DOUBLE PRECISION NOT NULL,
         status VARCHAR(10) NOT NULL,
         department VARCHAR(20) NOT NULL
       )

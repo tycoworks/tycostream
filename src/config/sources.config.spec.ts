@@ -1,7 +1,7 @@
 import * as fs from 'fs';
+import { PostgresType } from '../common/types.js';
 import * as yaml from 'js-yaml';
 import sourcesConfig from './sources.config.js';
-import { DataType } from '../common/types.js';
 import type { Mock } from 'vitest';
 
 vi.mock('fs');
@@ -13,17 +13,17 @@ sources:
   trades:
     primary_key: id
     columns:
-      id: integer
-      instrument_id: integer
-      quantity: integer
+      id: int4
+      instrument_id: int4
+      quantity: int4
       price: numeric
-      executed_at: timestamp without time zone
+      executed_at: timestamp
   live_pnl:
     primary_key: instrument_id
     columns:
-      instrument_id: integer
+      instrument_id: int4
       symbol: text
-      net_position: bigint
+      net_position: int8
 `;
 
   afterEach(() => {
@@ -37,19 +37,19 @@ sources:
         trades: {
           primary_key: 'id',
           columns: {
-            id: 'Integer',
-            instrument_id: 'Integer',
-            quantity: 'Integer',
-            price: 'Float',
-            executed_at: 'Timestamp',
+            id: 'int4',
+            instrument_id: 'int4',
+            quantity: 'int4',
+            price: 'numeric',
+            executed_at: 'timestamp',
           },
         },
         live_pnl: {
           primary_key: 'instrument_id',
           columns: {
-            instrument_id: 'Integer',
-            symbol: 'String',
-            net_position: 'BigInt',
+            instrument_id: 'int4',
+            symbol: 'text',
+            net_position: 'int8',
           },
         },
       },
@@ -98,7 +98,7 @@ sources:
         invalid: {
           primary_key: 'missing_field',
           columns: {
-            id: 'Integer',
+            id: 'int4',
           },
         },
       },
@@ -109,7 +109,7 @@ sources:
     );
   });
 
-  it('should throw error for invalid DataType names', () => {
+  it('should throw error for invalid type names', () => {
     (fs.readFileSync as Mock).mockReturnValue('sources with invalid type');
     (yaml.load as Mock).mockReturnValue({
       sources: {
@@ -117,33 +117,51 @@ sources:
           primary_key: 'id',
           columns: {
             id: 'NotAType',
-            value: 'Integer',
+            value: 'int4',
           },
         },
       },
     });
 
     expect(() => sourcesConfig()).toThrow(
-      "Invalid type 'NotAType' for column 'id' in source 'test': Unknown type in configuration: NotAType",
+      "Invalid type 'NotAType' for column 'id' in source 'test': Unsupported type in configuration: NotAType",
     );
   });
 
-  it('should throw error for case-sensitive type names', () => {
-    (fs.readFileSync as Mock).mockReturnValue('sources with wrong case');
+  // A one-column source of the given type, as schema.yaml would give it
+  const loadColumnOfType = (typeName: string) => {
+    (fs.readFileSync as Mock).mockReturnValue('one column');
     (yaml.load as Mock).mockReturnValue({
-      sources: {
-        test: {
-          primary_key: 'id',
-          columns: {
-            id: 'integer', // lowercase, should be 'Integer'
-            name: 'string', // lowercase, should be 'String'
-          },
-        },
-      },
+      sources: { test: { primary_key: 'id', columns: { id: typeName } } },
     });
+    return sourcesConfig().sources.get('test')!.fields[0];
+  };
 
-    expect(() => sourcesConfig()).toThrow(
-      "Invalid type 'integer' for column 'id' in source 'test': Unknown type in configuration: integer",
+  it.each([
+    ['int4', PostgresType.Int4],
+    ['int8', PostgresType.Int8],
+    ['numeric', PostgresType.Numeric],
+    ['varchar', PostgresType.Varchar],
+    ['timestamptz', PostgresType.Timestamptz],
+    ['jsonb', PostgresType.Jsonb],
+  ])(
+    "should read a column's type by its name in Postgres's catalog, such as %s",
+    (typeName, type) => {
+      expect(loadColumnOfType(typeName)).toEqual({ name: 'id', type });
+    },
+  );
+
+  it.each([
+    // The SQL name, rather than the catalog's
+    'integer',
+    // tycostream's old name
+    'Integer',
+    // Postgres types tycostream doesn't serve, including arrays for now
+    'money',
+    '_int4',
+  ])("should reject '%s', listing the types it serves", (typeName) => {
+    expect(() => loadColumnOfType(typeName)).toThrow(
+      `Unsupported type in configuration: ${typeName}. Supported types are: int2, int4,`,
     );
   });
 
@@ -158,10 +176,10 @@ sources:
         trades: {
           primary_key: 'id',
           columns: {
-            id: 'Integer',
+            id: 'int4',
             side: 'trade_side', // Direct reference to enum
             status: 'order_status', // Direct reference to enum
-            notes: 'String', // Regular string field
+            notes: 'text', // Regular text field
           },
         },
       },
@@ -180,7 +198,7 @@ sources:
 
     // Check side field has trade_side enum metadata
     const sideField = trades?.fields.find((f) => f.name === 'side');
-    expect(sideField?.dataType).toBe(DataType.String); // Enums are strings at runtime
+    expect(sideField?.type).toBe(PostgresType.Text); // Enums are strings at runtime
     expect(sideField?.enumType).toEqual({
       name: 'trade_side',
       values: ['buy', 'sell'],
@@ -188,7 +206,7 @@ sources:
 
     // Check status field has order_status enum metadata
     const statusField = trades?.fields.find((f) => f.name === 'status');
-    expect(statusField?.dataType).toBe(DataType.String); // Enums are strings at runtime
+    expect(statusField?.type).toBe(PostgresType.Text); // Enums are strings at runtime
     expect(statusField?.enumType).toEqual({
       name: 'order_status',
       values: ['pending', 'filled', 'cancelled'],
@@ -196,7 +214,7 @@ sources:
 
     // Check notes field is regular string without enum
     const notesField = trades?.fields.find((f) => f.name === 'notes');
-    expect(notesField?.dataType).toBe(DataType.String);
+    expect(notesField?.type).toBe(PostgresType.Text);
     expect(notesField?.enumType).toBeUndefined();
   });
 
@@ -210,7 +228,7 @@ sources:
         test: {
           primary_key: 'id',
           columns: {
-            id: 'Integer',
+            id: 'int4',
           },
         },
       },

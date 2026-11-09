@@ -37,10 +37,7 @@ import { ApiService } from './api.service.js';
         logger.log(`Generated GraphQL SDL:\n${typeDefs}`);
 
         const apiService = new ApiService(viewService);
-        const { Query, Subscription } = buildResolvers(
-          sourceConfig.sources,
-          apiService,
-        );
+        const resolvers = buildResolvers(sourceConfig.sources, apiService);
 
         const graphqlConfig = configService.get('graphql');
         logger.log(
@@ -52,7 +49,7 @@ import { ApiService } from './api.service.js';
         return {
           typeDefs,
           graphiql: graphqlConfig.playground, // GRAPHQL_UI turns on the GraphiQL UI
-          resolvers: { Query, Subscription },
+          resolvers,
         };
       },
       inject: [ConfigService, ViewService],

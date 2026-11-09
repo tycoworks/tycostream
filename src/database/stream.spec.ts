@@ -6,7 +6,7 @@ import type {
   ConnectionLease,
 } from './connection.service.js';
 import type { DatabaseAdapter } from './types.js';
-import { DataType, RowUpdateType, StreamMode } from '../common/types.js';
+import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 
@@ -15,7 +15,7 @@ const SELECT = { sql: 'select 1', parameters: [] };
 const TRADES: SourceDefinition = {
   name: 'trades',
   primaryKeyField: 'id',
-  fields: [{ name: 'id', dataType: DataType.Integer }],
+  fields: [{ name: 'id', type: PostgresType.Int4 }],
 };
 
 const insert = (id: number): RowUpdateEvent => ({
