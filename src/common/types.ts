@@ -126,10 +126,13 @@ export enum OrderDirection {
 export type OrderBy = Record<string, OrderDirection>[];
 
 /**
- * Which of a source's rows a client wants, in what order, and which slice of
- * them, as a SELECT would say: its filter, its order, and its limit and offset
+ * Which of a source's columns and rows a client wants, in what order, and
+ * which slice of them, as a SELECT would say: its columns, its filter, its
+ * order, and its limit and offset
  */
 export interface Selection {
+  // Every column when absent; the key is always selected
+  columns?: string[];
   where?: WhereClause;
   orderBy?: OrderBy;
   limit?: number;

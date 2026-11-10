@@ -261,8 +261,9 @@ describe('Integration Test', () => {
     await testEnv.waitUntil(async () => (await subscriptions()) === before);
   }, 30000);
 
-  it("should send one SSE message per timestamp: the snapshot, even when empty, then each later timestamp's updates together", async () => {
-    type Updates = { operation: string; data: { user_id: number } }[];
+  // A subscription over SSE, as a browser opens one, and its messages one at
+  // a time: each `next` message's updates of the source, skipping keep-alives
+  const subscribeOverSse = async <Update>(query: string, source: string) => {
     const controller = new AbortController();
     const response = await fetch(`http://localhost:${testEnv.port}/graphql`, {
       method: 'POST',
@@ -270,19 +271,14 @@ describe('Integration Test', () => {
         'content-type': 'application/json',
         accept: 'text/event-stream',
       },
-      body: JSON.stringify({
-        // Rows no other test writes, so the snapshot is empty
-        query:
-          'subscription { users(where: { user_id: { _gte: 8000, _lt: 9000 } }) { operation data { user_id } } }',
-      }),
+      body: JSON.stringify({ query }),
       signal: controller.signal,
     });
     const reader = response
       .body!.pipeThrough(new TextDecoderStream())
       .getReader();
     let buffered = '';
-    // The next SSE `next` message's updates, skipping keep-alives
-    const nextMessage = async (): Promise<Updates> => {
+    const next = async (): Promise<Update[]> => {
       for (;;) {
         const end = buffered.indexOf('\n\n');
         if (end >= 0) {
@@ -294,9 +290,9 @@ describe('Integration Test', () => {
           if (message.startsWith('event: next') && data) {
             return (
               JSON.parse(data.slice('data:'.length)) as {
-                data: { users: Updates };
+                data: Record<string, Update[]>;
               }
-            ).data.users;
+            ).data[source];
           }
           continue;
         }
@@ -307,16 +303,26 @@ describe('Integration Test', () => {
         buffered += value;
       }
     };
+    return { next, close: () => controller.abort() };
+  };
+
+  it("should send one SSE message per timestamp: the snapshot, even when empty, then each later timestamp's updates together", async () => {
+    type Update = { operation: string; data: { user_id: number } };
+    // Rows no other test writes, so the snapshot is empty
+    const subscription = await subscribeOverSse<Update>(
+      'subscription { users(where: { user_id: { _gte: 8000, _lt: 9000 } }) { operation data { user_id } } }',
+      'users',
+    );
 
     try {
-      expect(await nextMessage()).toEqual([]);
+      expect(await subscription.next()).toEqual([]);
 
       // Two rows in one statement share a timestamp, so they arrive together
       await testEnv.executeSql(
         `INSERT INTO users (user_id, name) VALUES (8001, 'a'), (8002, 'b')`,
       );
       expect(
-        (await nextMessage())
+        (await subscription.next())
           .map((update) => [update.operation, update.data.user_id])
           .sort(),
       ).toEqual([
@@ -324,7 +330,61 @@ describe('Integration Test', () => {
         ['INSERT', 8002],
       ]);
     } finally {
-      controller.abort();
+      subscription.close();
+    }
+  }, 30000);
+
+  it('should send only the columns a subscription selects, so a change to any other column sends nothing', async () => {
+    type Update = {
+      operation: string;
+      data: { id: number; name: string };
+      fields: string[];
+    };
+    // Rows no other test writes. The columns are selected through an alias
+    // and a fragment, as clients write them.
+    const subscription = await subscribeOverSse<Update>(
+      `subscription {
+        users(where: { user_id: { _gte: 7000, _lt: 8000 } }) {
+          operation
+          data { id: user_id ...named }
+          fields
+        }
+      }
+      fragment named on users { name }`,
+      'users',
+    );
+
+    try {
+      expect(await subscription.next()).toEqual([]);
+
+      await testEnv.executeSql(
+        `INSERT INTO users (user_id, name, email) VALUES (7001, 'a', 'a@test.com')`,
+      );
+      expect(await subscription.next()).toEqual([
+        {
+          operation: 'INSERT',
+          data: { id: 7001, name: 'a' },
+          fields: ['user_id', 'name'],
+        },
+      ]);
+
+      // email isn't selected, so its change sends nothing, and the next
+      // message is name's change
+      await testEnv.executeSql(
+        `UPDATE users SET email = 'b@test.com' WHERE user_id = 7001`,
+      );
+      await testEnv.executeSql(
+        `UPDATE users SET name = 'b' WHERE user_id = 7001`,
+      );
+      expect(await subscription.next()).toEqual([
+        {
+          operation: 'UPDATE',
+          data: { id: 7001, name: 'b' },
+          fields: ['user_id', 'name'],
+        },
+      ]);
+    } finally {
+      subscription.close();
     }
   }, 30000);
 

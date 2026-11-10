@@ -10,7 +10,7 @@ import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 
-const SELECT = { sql: 'select 1', parameters: [] };
+const SELECT = { sql: 'select 1', parameters: [], columns: ['id'] };
 
 const TRADES: SourceDefinition = {
   name: 'trades',

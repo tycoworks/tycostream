@@ -31,13 +31,37 @@ function where(clause: WhereClause) {
 
 describe('buildSelect', () => {
   describe('the statement', () => {
-    it('should select every column of the source, with no WHERE when there is no filter', () => {
-      expect(buildSelect(users)).toEqual({ sql: SELECT, parameters: [] });
-      expect(buildSelect(users, {})).toEqual({ sql: SELECT, parameters: [] });
-      expect(buildSelect(users, { where: {} })).toEqual({
+    it('should select every column of the source when the selection names none, with no WHERE when there is no filter', () => {
+      const all = {
         sql: SELECT,
         parameters: [],
+        columns: ['id', 'name', 'active', 'rank'],
+      };
+      expect(buildSelect(users)).toEqual(all);
+      expect(buildSelect(users, {})).toEqual(all);
+      expect(buildSelect(users, { where: {} })).toEqual(all);
+    });
+
+    it("should select only the columns named, and the key, in the source's order", () => {
+      expect(buildSelect(users, { columns: ['rank', 'name'] })).toEqual({
+        sql: 'select "id" as "id", "name" as "name", "rank" as "rank" from "users" as "users"',
+        parameters: [],
+        columns: ['id', 'name', 'rank'],
       });
+    });
+
+    it('should select the key alone when the selection names no columns', () => {
+      expect(buildSelect(users, { columns: [] })).toEqual({
+        sql: 'select "id" as "id" from "users" as "users"',
+        parameters: [],
+        columns: ['id'],
+      });
+    });
+
+    it('should reject selecting a column the source does not have', () => {
+      expect(() => buildSelect(users, { columns: ['nope'] })).toThrow(
+        "Unknown field 'nope' to select",
+      );
     });
 
     it('should quote source and column names that contain quotes', () => {
@@ -48,7 +72,7 @@ describe('buildSelect', () => {
       };
       expect(
         buildSelect(source, { where: { 'we"ird': { _eq: 'x' } } }),
-      ).toEqual({
+      ).toMatchObject({
         sql: 'select "we""ird" as "we""ird" from "odd""view" as "odd""view" where "we""ird" = $1',
         parameters: ['x'],
       });
@@ -150,7 +174,9 @@ describe('buildSelect', () => {
       [OrderDirection.DescNullsFirst, 'desc nulls first'],
       [OrderDirection.DescNullsLast, 'desc nulls last'],
     ])('should compile %s to ORDER BY ... %s', (direction, sqlDirection) => {
-      expect(buildSelect(users, { orderBy: [{ name: direction }] })).toEqual({
+      expect(
+        buildSelect(users, { orderBy: [{ name: direction }] }),
+      ).toMatchObject({
         sql: `${SELECT} order by "name" ${sqlDirection}`,
         parameters: [],
       });
@@ -172,7 +198,7 @@ describe('buildSelect', () => {
           limit: 10,
           offset: 20,
         }),
-      ).toEqual({
+      ).toMatchObject({
         sql: `${SELECT} where "active" = $1 order by "id" asc limit $2 offset $3`,
         parameters: [true, 10, 20],
       });

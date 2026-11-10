@@ -4,6 +4,8 @@ import { defineConfig } from 'vitest/config';
 // SWC compiles the TypeScript, so Nest's decorator metadata is emitted as tsc would.
 const shared = {
   plugins: [swc.vite({ module: { type: 'es6' } })],
+  // Packages resolve as Node resolves them, so tests load one graphql, as Nest does
+  ssr: { resolve: { conditions: ['module', 'node'] } },
 };
 
 export default defineConfig({

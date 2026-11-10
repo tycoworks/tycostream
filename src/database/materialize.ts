@@ -34,9 +34,6 @@ enum SubscribeColumn {
   Diff = 'mz_diff',
 }
 
-// Joins a row's values into one key; no value's text can contain it
-const VALUE_SEPARATOR = '\u0000';
-
 // FETCH waits until rows exist, so a bigger batch only helps a busy view
 const FETCH_SIZE = 1000;
 
@@ -53,7 +50,7 @@ export class MaterializeAdapter extends DatabaseAdapter {
     mode: StreamMode,
   ): AsyncIterable<RowUpdateBatch> {
     return mode === StreamMode.Snapshot
-      ? readSnapshot(client, source, select)
+      ? readSnapshot(client, select)
       : this.readLive(client, source, select);
   }
 
@@ -78,16 +75,18 @@ export class MaterializeAdapter extends DatabaseAdapter {
     );
 
     // FETCH without a timeout returns as soon as rows exist
-    const batcher = new ProgressBatcher(source);
-    const { primaryKeyField, fields } = source;
-    const fieldNames = fields.map((field) => field.name);
+    const batcher = new ProgressBatcher(select.columns);
     let snapshot = true;
     while (true) {
       const { rows } = await client.query<RawRow>(
         `FETCH ${FETCH_SIZE} ${CURSOR}`,
       );
       for (const { timestamp, rows: changes } of batcher.take(rows)) {
-        const events = pairChanges(changes, primaryKeyField, fieldNames);
+        const events = pairChanges(
+          changes,
+          source.primaryKeyField,
+          select.columns,
+        );
         // The snapshot is sent even when empty; after it, a timestamp whose
         // changes cancel out has nothing to send
         if (snapshot || events.length > 0) {
@@ -101,13 +100,13 @@ export class MaterializeAdapter extends DatabaseAdapter {
 
 /**
  * Holds a live stream's rows until a progress row says their timestamp is
- * complete, keeping only the source's columns
+ * complete, keeping only the SELECT's columns
  */
 export class ProgressBatcher {
   private readonly pending = new Map<bigint, DiffRow[]>();
   private started = false;
 
-  constructor(private readonly sourceDefinition: SourceDefinition) {}
+  constructor(private readonly columns: string[]) {}
 
   /**
    * Takes fetched rows and returns each timestamp they complete, oldest
@@ -137,7 +136,7 @@ export class ProgressBatcher {
         const batch = this.pending.get(timestamp) ?? [];
         batch.push({
           diff: Number(raw[SubscribeColumn.Diff]),
-          row: pickRow(this.sourceDefinition, raw),
+          row: pickRow(this.columns, raw),
         });
         this.pending.set(timestamp, batch);
       }
@@ -226,23 +225,16 @@ function toEvent(
 function netIdenticalRows(rows: DiffRow[], fieldNames: string[]): DiffRow[] {
   const netted = new Map<string, DiffRow>();
   for (const { diff, row } of rows) {
-    const id = fieldNames
-      .map((field) => valueKey(row[field]))
-      .join(VALUE_SEPARATOR);
+    const id = valueKey(fieldNames.map((field) => row[field]));
     const existing = netted.get(id);
     netted.set(id, { diff: (existing?.diff ?? 0) + diff, row });
   }
   return Array.from(netted.values()).filter((r) => r.diff !== 0);
 }
 
-// A comparable form of a value: Dates by instant, bigints by digits, and
-// null apart from the string 'null'
+// A comparable form of a value, or of a list of them. Every value is plain
+// JSON, as the parsers give it, so its JSON compares it, keeping null apart
+// from the text 'null'.
 function valueKey(value: unknown): string {
-  if (value instanceof Date) {
-    return `d:${value.toISOString()}`;
-  }
-  if (typeof value === 'bigint') {
-    return `n:${value.toString()}`;
-  }
-  return `j:${JSON.stringify(value) ?? 'undefined'}`;
+  return JSON.stringify(value);
 }
