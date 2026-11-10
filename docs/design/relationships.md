@@ -39,7 +39,7 @@ As in Postgres, a foreign key without columns references the target's primary ke
 - `trades.positions`, an object relationship: the trade's position;
 - `positions.trades`, an array relationship: the position's trades.
 
-At startup, reading a foreign key looks up its column and the referenced source, and says which is missing. A name that clashes, with a column, another relationship, or the update type's `operation`, `data` or `fields`, makes two fields of one name, which GraphQL refuses at startup; two foreign keys from one source to another do that. Types aren't compared: Postgres allows a foreign key between comparable types, such as `int4` and `int8`, and Materialize rejects a join of types it can't compare.
+At startup, tycostream derives both from each foreign key, once: each relationship is the other source, the column on each side that the join matches, and whether it holds one row or many. The two share one join condition, `trades.instrument_id = positions.instrument_id`; only one or many differs, and the rest of tycostream follows from that. Reading a foreign key looks up its column and the referenced source, and says which is missing; two foreign keys from one source to another would give two relationships of one name, and say so too. A relationship named like a column, or like the update type's `operation`, `data` or `fields`, makes two fields of one name, which GraphQL refuses at startup. Types aren't compared: Postgres allows a foreign key between comparable types, such as `int4` and `int8`, and Materialize rejects a join of types it can't compare.
 
 ### Object relationships
 
@@ -161,9 +161,10 @@ SELECT 1, k0, NULL::text, NULL::int8, id, quantity, price FROM l1
 
 - **`relationships` with `type: object` or `type: array` in `schema.yaml`:** those describe the API, and the file describes the database.
 - **The whole list in `data` whenever it changes,** as a live query does for its whole result. tycostream would have to keep every parent's children between timestamps to resend them, and every new trade would resend all of its position's trades.
-- **`jsonb_agg` in Materialize:** the same resending, done in Materialize, and values arrive as JSON, not typed by their column.
+- **JSON built in Materialize, with `jsonb_agg`:** the same resending: one new trade rebuilds its position's whole list, and the subscription sends it twice, old and new. And values arrive as JSON, which skips tycostream's conversions by column type: a timestamp inside JSON is `2025-06-02 10:00:00`, not the ISO form served elsewhere.
 - **One `SUBSCRIBE` per level, merged by timestamp:** a connection per level, a shared `AS OF` to choose, and progress to merge. One statement gets one timestamp from Materialize for free.
-- **One flat join for an array relationship:** a position's change repeats for every one of its trades.
+- **One flat join for an array relationship:** a position's change repeats for every one of its trades, and two lists under one position multiply, 10 trades by 10 orders making 100 rows.
+- **Blocks for object relationships too,** so every relationship goes one way: a trade with six lookups would be seven rows rather than one, and a lookup's block changes would need turning back into a field of the trade, each with its own case: a position appearing, going, or swapping for another, or arriving with a new trade. Joined, a lookup is one more value of the row, which the row's pairing, `fields`, inserts and deletes already handle; lists are blocks because they must be, and a block's rows carry their own lookups through the same join.
 
 ## Steps
 
