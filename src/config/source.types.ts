@@ -25,7 +25,7 @@ export interface SourceField {
  * Maps to a database view that we subscribe to and expose via GraphQL
  */
 export interface SourceDefinition {
-  name: string; // Source name (e.g., 'trades', 'live_pnl')
+  name: string; // Source name (e.g., 'trades', 'positions')
   primaryKeyField: string; // Which field is the primary key
   fields: SourceField[]; // All fields in this source
 }

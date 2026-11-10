@@ -7,7 +7,7 @@
 # Example:
 #   ./generate-schema.sh \
 #     -e side "buy,sell" \
-#     -s live_pnl -p instrument_id \
+#     -s positions -p instrument_id \
 #     -s trades -p id -c side:side > schema.yaml
 
 set -e

@@ -4,7 +4,7 @@ enums:
     - sell
 
 sources:
-  live_pnl:
+  positions:
     primary_key: instrument_id
     columns:
       instrument_id: Integer

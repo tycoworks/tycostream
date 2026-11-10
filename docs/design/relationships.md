@@ -4,7 +4,7 @@ Status: agreed, 10 Nov 2026. Step 1 done ([#22](https://github.com/tycoworks/tyc
 
 ## Goal
 
-positions-app opens one subscription and gets its positions with each one's trades nested under it, one message per timestamp, so a position and its trades never disagree. Today it opens two, one on `live_pnl` and one on the selected position's `trades`. `live_pnl` is computed from `trades`, so a new trade and the change it makes to its position arrive on different subscriptions, and the grids can show one without the other.
+positions-app opens one subscription and gets its positions with each one's trades nested under it, one message per timestamp, so a position and its trades never disagree. Today it opens two, one on `positions` and one on the selected position's `trades`. `positions` is computed from `trades`, so a new trade and the change it makes to its position arrive on different subscriptions, and the grids can show one without the other.
 
 The other direction comes too: a trade showing its position, as a trade blotter would.
 
@@ -31,35 +31,31 @@ sources:
     primary_key: id
     columns: { ... }
     foreign_keys:
-      instrument_id: live_pnl   # REFERENCES live_pnl, its primary key
+      instrument_id: positions   # REFERENCES positions, its primary key
 ```
 
 As in Postgres, a foreign key without columns references the target's primary key; a key here is one column. One foreign key gives both relationships, each named after the other source:
 
-- `trades.live_pnl`, an object relationship: the trade's position;
-- `live_pnl.trades`, an array relationship: the position's trades.
+- `trades.positions`, an object relationship: the trade's position;
+- `positions.trades`, an array relationship: the position's trades.
 
-Checked at startup:
-
-- the referenced source exists;
-- the column exists, with the same type as the referenced key;
-- no relationship's name is one of its source's columns, another of its relationships, or `operation`, `data` or `fields` (the update type's own fields). Two foreign keys from one source to another clash, so tycostream refuses to start, and says why.
+At startup, reading a foreign key looks up its column and the referenced source, and says which is missing. A name that clashes, with a column, another relationship, or the update type's `operation`, `data` or `fields`, makes two fields of one name, which GraphQL refuses at startup; two foreign keys from one source to another do that. Types aren't compared: Postgres allows a foreign key between comparable types, such as `int4` and `int8`, and Materialize rejects a join of types it can't compare.
 
 ### Object relationships
 
 ```graphql
 query {
-  trades { id quantity live_pnl { symbol latest_price } }
+  trades { id quantity price positions { symbol net_position latest_price } }
 }
 ```
 
-`trades.live_pnl: live_pnl`, null when no position matches. In a subscription it's a field inside `data`, like a column: when any of its selected columns changes, the update lists `live_pnl` in `fields` and sends the whole object. Only the selected columns are joined, so a blotter that shows `live_pnl { symbol }` gets nothing at a price tick; one that selects `latest_price` gets an update for every trade of that position, as it asked.
+`trades.positions: positions`, null when no position matches. In a subscription it's a field inside `data`, like a column: when any of its selected columns changes, the update lists `positions` in `fields` and sends the whole object. Only the selected columns are joined, so a blotter that shows `positions { symbol }` gets nothing at a price tick; one that selects `latest_price` gets an update for every trade of that position, as it asked.
 
 ### Array relationships in queries: as Hasura
 
 ```graphql
 query {
-  live_pnl {
+  positions {
     symbol
     net_position
     trades(order_by: {executed_at: desc}, limit: 20) { id quantity price }
@@ -67,13 +63,13 @@ query {
 }
 ```
 
-`live_pnl.trades(where, order_by, limit, offset): [trades!]!`, with the arguments applied per position. A Hasura query that uses relationships runs unchanged.
+`positions.trades(where, order_by, limit, offset): [trades!]!`, with the arguments applied per position. A Hasura query that uses relationships runs unchanged.
 
 ### Array relationships in subscriptions: every level is a list of updates
 
 ```graphql
 subscription {
-  live_pnl {
+  positions {
     operation
     fields
     data { instrument_id symbol net_position }
@@ -86,7 +82,7 @@ subscription {
 }
 ```
 
-An array relationship is a field of the update type, beside `data`: `live_pnl_update.trades(where, order_by, limit, offset): [trades_update!]!`. Each level's selection inside `data` is a Hasura selection; what's around it is ours. The message for one timestamp, here a new AAPL trade with `limit: 2`:
+An array relationship is a field of the update type, beside `data`: `positions_update.trades(where, order_by, limit, offset): [trades_update!]!`. Each level's selection inside `data` is a Hasura selection; what's around it is ours. The message for one timestamp, here a new AAPL trade with `limit: 2`:
 
 ```json
 [
@@ -129,7 +125,7 @@ One CTE per level: the root's selection, then each nested level joined `LATERAL`
 
 ```sql
 WITH l0 AS (
-  SELECT instrument_id, symbol, net_position FROM live_pnl
+  SELECT instrument_id, symbol, net_position FROM positions
 ),
 l1 AS (
   SELECT p.instrument_id AS k0, t.id, t.quantity, t.price
@@ -174,7 +170,7 @@ SELECT 1, k0, NULL::text, NULL::int8, id, quantity, price FROM l1
 Each its own pull request, and each useful on its own.
 
 1. **Select only what's selected.** Done in [#22](https://github.com/tycoworks/tycostream/pull/22).
-2. **Foreign keys, and object relationships,** in queries and subscriptions. `foreign_keys` in `schema.yaml` and its checks; the object relationships' fields; reading nested selections; the joins; folding the joined columns into objects. On its own: a live trade blotter that shows each trade's position. Tests: the checks and the SQL; end to end, a query and a subscription of `trades { live_pnl { … } }`, a trade with no position, two levels, and a price tick that sends nothing unless `latest_price` is selected.
+2. **Foreign keys, and object relationships,** in queries and subscriptions. `foreign_keys` in `schema.yaml`; the object relationships' fields; reading nested selections; the joins; folding the joined columns into objects. On its own: a live trade blotter that shows each trade's position. Tests: reading `foreign_keys`, and the SQL; end to end, a query and a subscription of `trades { positions { … } }`, a trade with no position, two levels, and a price tick that sends nothing unless `latest_price` is selected.
 3. **Array relationships in queries.** The row type's fields; the statement; assembling the tree in order. On its own: Hasura's nested queries, one consistent read in one round trip. Tests: the SQL; end to end, nested `where`, `order_by`, `limit` and `offset`, two aliases with different arguments, empty lists, two levels.
 4. **Array relationships in subscriptions.** The update type's fields, nesting each timestamp's events, and the error for an array relationship inside `data`. The goal. Tests end to end: a price tick (parent only); a new trade (parent and child at one timestamp); a position entering and leaving the top N with its trades; aliases; two levels.
 5. **positions-app on one subscription,** after releasing tycostream. It keeps each position's trades and shows the selected one's; each message is one transaction per grid.
@@ -185,7 +181,7 @@ On the roadmap, not needed for the goal:
 
 - **Filtering by relationships** (`EXISTS`), and ordering by an object relationship's columns.
 - **Aggregates** (`trades_aggregate`).
-- **Naming relationships,** if two foreign keys between the same sources ever need it.
+- **Exposing a source under another name,** such as `positions` as `position`, which names its relationships too; and naming relationships, if two foreign keys between the same sources ever need it.
 
 ## Open questions
 
