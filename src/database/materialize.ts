@@ -53,7 +53,7 @@ export class MaterializeAdapter extends DatabaseAdapter {
     mode: StreamMode,
   ): AsyncIterable<RowUpdateBatch> {
     return mode === StreamMode.Snapshot
-      ? readSnapshot(client, source, select)
+      ? readSnapshot(client, select)
       : this.readLive(client, source, select);
   }
 
@@ -78,16 +78,18 @@ export class MaterializeAdapter extends DatabaseAdapter {
     );
 
     // FETCH without a timeout returns as soon as rows exist
-    const batcher = new ProgressBatcher(source);
-    const { primaryKeyField, fields } = source;
-    const fieldNames = fields.map((field) => field.name);
+    const batcher = new ProgressBatcher(select.columns);
     let snapshot = true;
     while (true) {
       const { rows } = await client.query<RawRow>(
         `FETCH ${FETCH_SIZE} ${CURSOR}`,
       );
       for (const { timestamp, rows: changes } of batcher.take(rows)) {
-        const events = pairChanges(changes, primaryKeyField, fieldNames);
+        const events = pairChanges(
+          changes,
+          source.primaryKeyField,
+          select.columns,
+        );
         // The snapshot is sent even when empty; after it, a timestamp whose
         // changes cancel out has nothing to send
         if (snapshot || events.length > 0) {
@@ -101,13 +103,13 @@ export class MaterializeAdapter extends DatabaseAdapter {
 
 /**
  * Holds a live stream's rows until a progress row says their timestamp is
- * complete, keeping only the source's columns
+ * complete, keeping only the SELECT's columns
  */
 export class ProgressBatcher {
   private readonly pending = new Map<bigint, DiffRow[]>();
   private started = false;
 
-  constructor(private readonly sourceDefinition: SourceDefinition) {}
+  constructor(private readonly columns: string[]) {}
 
   /**
    * Takes fetched rows and returns each timestamp they complete, oldest
@@ -137,7 +139,7 @@ export class ProgressBatcher {
         const batch = this.pending.get(timestamp) ?? [];
         batch.push({
           diff: Number(raw[SubscribeColumn.Diff]),
-          row: pickRow(this.sourceDefinition, raw),
+          row: pickRow(this.columns, raw),
         });
         this.pending.set(timestamp, batch);
       }

@@ -36,6 +36,15 @@ export enum RootFieldArgument {
   Offset = 'offset',
 }
 
+/**
+ * The fields of every update type
+ */
+export enum UpdateField {
+  Operation = 'operation',
+  Data = 'data',
+  Fields = 'fields',
+}
+
 // The generated types' names
 const ROW_OPERATION_TYPE = 'row_operation';
 const ORDER_DIRECTION_TYPE = 'order_by';
@@ -346,9 +355,9 @@ ${fields}
     
     # ${sourceName} update event
     type ${updateTypeName(sourceName)} {
-      operation: ${ROW_OPERATION_TYPE}!
-      data: ${sourceName}
-      fields: [${GraphQLString.name}!]!
+      ${UpdateField.Operation}: ${ROW_OPERATION_TYPE}!
+      ${UpdateField.Data}: ${sourceName}
+      ${UpdateField.Fields}: [${GraphQLString.name}!]!
     }`);
   }
 

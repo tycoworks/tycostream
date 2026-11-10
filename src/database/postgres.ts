@@ -1,5 +1,4 @@
 import pg from 'pg';
-import type { SourceDefinition } from '../config/source.types.js';
 import { PostgresType, RowUpdateType } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import type { CompiledSelect } from './select.js';
@@ -66,12 +65,12 @@ export const TYPE_PARSERS = {
 };
 
 /**
- * A row with only the source's columns, already parsed; a row can carry
- * other columns too
+ * A row with only the given columns, already parsed; a row can carry other
+ * columns too
  */
-export function pickRow(source: SourceDefinition, raw: RawRow): Row {
+export function pickRow(columns: string[], raw: RawRow): Row {
   return Object.fromEntries(
-    source.fields.map((field) => [field.name, raw[field.name] ?? null]),
+    columns.map((column) => [column, raw[column] ?? null]),
   );
 }
 
@@ -89,14 +88,14 @@ export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
  */
 export async function* readSnapshot(
   client: pg.ClientBase,
-  source: SourceDefinition,
   select: CompiledSelect,
 ): AsyncGenerator<RowUpdateBatch> {
   const { rows } = await client.query<RawRow>(select.sql, [
     ...select.parameters,
   ]);
-  const fieldNames = source.fields.map((field) => field.name);
   yield {
-    events: rows.map((raw) => insertOf(pickRow(source, raw), fieldNames)),
+    events: rows.map((raw) =>
+      insertOf(pickRow(select.columns, raw), select.columns),
+    ),
   };
 }

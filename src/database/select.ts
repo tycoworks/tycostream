@@ -28,6 +28,8 @@ import type { SourceDefinition, SourceField } from '../config/source.types.js';
 export interface CompiledSelect {
   sql: string;
   parameters: readonly unknown[];
+  // The columns it returns, in the source's order, the key among them
+  columns: string[];
 }
 
 // Kysely only compiles here; tycostream runs the SQL itself
@@ -92,18 +94,19 @@ type Builder = ExpressionBuilder<any, any>;
 type Condition = Expression<SqlBool>;
 
 /**
- * Builds the SELECT for a source and a client's selection: its filter as the
- * WHERE, its order as the ORDER BY, and its limit and offset. Source and
- * column names are quoted, and every value is a bind parameter.
+ * Builds the SELECT for a source and a client's selection: its columns, its
+ * filter as the WHERE, its order as the ORDER BY, and its limit and offset.
+ * Source and column names are quoted, and every value is a bind parameter.
  */
 export function buildSelect(
   source: SourceDefinition,
-  { where, orderBy, limit, offset }: Selection = {},
+  { columns, where, orderBy, limit, offset }: Selection = {},
 ): CompiledSelect {
   const fields = new Map(source.fields.map((field) => [field.name, field]));
+  const selected = selectedColumns(source, fields, columns);
   let query = db
     .selectFrom(sql.id(source.name).as(source.name))
-    .select(source.fields.map((field) => sql.id(field.name).as(field.name)));
+    .select(selected.map((column) => sql.id(column).as(column)));
 
   if (where && Object.keys(where).length > 0) {
     query = query.where((eb) => buildCondition(eb, where, fields));
@@ -119,7 +122,32 @@ export function buildSelect(
   }
 
   const compiled = query.compile();
-  return { sql: compiled.sql, parameters: compiled.parameters };
+  return {
+    sql: compiled.sql,
+    parameters: compiled.parameters,
+    columns: selected,
+  };
+}
+
+// The columns to select, in the source's order: the ones asked for, or every
+// one when none are named, and always the key, which a live stream pairs its
+// rows by
+function selectedColumns(
+  source: SourceDefinition,
+  fields: Map<string, SourceField>,
+  columns?: string[],
+): string[] {
+  const names = source.fields.map((field) => field.name);
+  if (columns === undefined) {
+    return names;
+  }
+  for (const column of columns) {
+    if (!fields.has(column)) {
+      throw new Error(`Unknown field '${column}' to select`);
+    }
+  }
+  const wanted = new Set([source.primaryKeyField, ...columns]);
+  return names.filter((name) => wanted.has(name));
 }
 
 // The ordering's columns and directions, in turn, each a column of the source

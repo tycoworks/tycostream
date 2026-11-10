@@ -7,18 +7,8 @@ import {
   TYPE_PARSERS,
 } from './postgres.js';
 import type { RawRow } from './postgres.js';
-import type { SourceDefinition, EnumType } from '../config/source.types.js';
 import { RowUpdateType, PostgresType } from '../common/types.js';
 import type { RowUpdateBatch } from '../common/types.js';
-
-const idAndName: SourceDefinition = {
-  name: 'test',
-  primaryKeyField: 'id',
-  fields: [
-    { name: 'id', type: PostgresType.Int4 },
-    { name: 'name', type: PostgresType.Text },
-  ],
-};
 
 describe('readSnapshot', () => {
   const clientReturning = (rows: RawRow[]) => {
@@ -27,9 +17,10 @@ describe('readSnapshot', () => {
   };
   const readAll = async (client: pg.ClientBase) => {
     const batches: RowUpdateBatch[] = [];
-    for await (const batch of readSnapshot(client, idAndName, {
-      sql: 'select "id" from "test" where "id" = $1',
+    for await (const batch of readSnapshot(client, {
+      sql: 'select "id", "name" from "test" where "id" = $1',
       parameters: [7],
+      columns: ['id', 'name'],
     })) {
       batches.push(batch);
     }
@@ -42,7 +33,7 @@ describe('readSnapshot', () => {
     await readAll(client);
 
     expect(query).toHaveBeenCalledWith(
-      'select "id" from "test" where "id" = $1',
+      'select "id", "name" from "test" where "id" = $1',
       [7],
     );
   });
@@ -144,29 +135,10 @@ describe('isoTimestamp', () => {
 });
 
 describe('pickRow', () => {
-  it("should keep only the source's columns, as typed, with null for a missing value", () => {
+  it('should keep only the given columns, as typed, with null for a missing value', () => {
     expect(
-      pickRow(idAndName, { id: 7, name: null, mz_timestamp: '42' }),
+      pickRow(['id', 'name'], { id: 7, mz_timestamp: '42', email: 'a' }),
     ).toEqual({ id: 7, name: null });
-  });
-
-  it('should keep enum values as their strings', () => {
-    const status: EnumType = {
-      name: 'order_status',
-      values: ['pending', 'shipped'],
-    };
-    const orders: SourceDefinition = {
-      name: 'orders',
-      primaryKeyField: 'id',
-      fields: [
-        { name: 'id', type: PostgresType.Int4 },
-        { name: 'status', type: PostgresType.Text, enumType: status },
-      ],
-    };
-    expect(pickRow(orders, { id: 1, status: 'shipped' })).toEqual({
-      id: 1,
-      status: 'shipped',
-    });
   });
 });
 

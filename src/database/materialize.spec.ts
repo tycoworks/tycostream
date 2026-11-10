@@ -66,7 +66,11 @@ describe('MaterializeAdapter', () => {
       .read(client, source, select, StreamMode.Live)
       [Symbol.asyncIterator]();
   const readAll = (client: pg.ClientBase) =>
-    readLive(client, idAndName, { sql: 'select 1', parameters: [] });
+    readLive(client, idAndName, {
+      sql: 'select 1',
+      parameters: [],
+      columns: ['id', 'name'],
+    });
 
   describe('read, as a snapshot', () => {
     it('should run the SELECT alone, with no SUBSCRIBE, and yield its rows as inserts', async () => {
@@ -77,7 +81,7 @@ describe('MaterializeAdapter', () => {
       for await (const batch of adapter.read(
         { query } as unknown as pg.ClientBase,
         idAndName,
-        { sql: 'select 1', parameters: [] },
+        { sql: 'select 1', parameters: [], columns: ['id', 'name'] },
         StreamMode.Snapshot,
       )) {
         batches.push(batch);
@@ -104,6 +108,7 @@ describe('MaterializeAdapter', () => {
       const batches = readLive(client, idAndName, {
         sql: 'select "id" from "test" where "id" = $1',
         parameters: [7],
+        columns: ['id'],
       });
       void batches.next();
       await vi.waitFor(() => expect(queries.length).toBeGreaterThan(3));
@@ -164,6 +169,45 @@ describe('MaterializeAdapter', () => {
       });
     });
 
+    it("should keep only the SELECT's columns, so a change to any other column is no change", async () => {
+      const { client } = fakeClient([
+        [change(1, 1, { id: 1, name: 'a' }), progress(2)],
+        [
+          change(2, -1, { id: 1, name: 'a' }),
+          change(2, 1, { id: 1, name: 'b' }),
+          progress(3),
+        ],
+        [change(3, 1, { id: 2, name: 'c' }), progress(4)],
+      ]);
+      const batches = readLive(client, idAndName, {
+        sql: 'select "id" from "test"',
+        parameters: [],
+        columns: ['id'],
+      });
+
+      expect((await batches.next()).value).toEqual({
+        timestamp: 1n,
+        events: [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id']),
+            row: { id: 1 },
+          },
+        ],
+      });
+      // Timestamp 2 changed only name, so the next batch is timestamp 3's
+      expect((await batches.next()).value).toEqual({
+        timestamp: 3n,
+        events: [
+          {
+            type: RowUpdateType.Insert,
+            fields: new Set(['id']),
+            row: { id: 2 },
+          },
+        ],
+      });
+    });
+
     it('should yield an empty snapshot, then the changes after it', async () => {
       // Materialize sends the snapshot's timestamp first, as a progress row
       const { client } = fakeClient([
@@ -204,10 +248,12 @@ describe('MaterializeAdapter', () => {
       const firstBatches = readLive(first.client, idAndName, {
         sql: 'select 1',
         parameters: [],
+        columns: ['id', 'name'],
       });
       const secondBatches = readLive(second.client, prices, {
         sql: 'select 2',
         parameters: [],
+        columns: ['symbol', 'price'],
       });
 
       // Interleaved, so a batcher shared between them would mix their rows
@@ -278,14 +324,10 @@ describe('MaterializeAdapter', () => {
 });
 
 describe('ProgressBatcher', () => {
-  const idAndName = source([
-    { name: 'id', type: PostgresType.Int4 },
-    { name: 'name', type: PostgresType.Text },
-  ]);
   let batcher: ProgressBatcher;
 
   beforeEach(() => {
-    batcher = new ProgressBatcher(idAndName);
+    batcher = new ProgressBatcher(['id', 'name']);
   });
 
   describe('batching by progress', () => {
@@ -364,8 +406,8 @@ describe('ProgressBatcher', () => {
     });
   });
 
-  it("should keep only the source's columns of each row", () => {
-    batcher.take([change(1, 1, { id: 7, name: 'a' })]);
+  it("should keep only the SELECT's columns of each row", () => {
+    batcher.take([change(1, 1, { id: 7, name: 'a', email: 'a@b.c' })]);
     const [
       {
         rows: [{ row }],
