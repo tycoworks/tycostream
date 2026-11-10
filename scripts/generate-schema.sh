@@ -88,7 +88,7 @@ while [[ $# -gt 0 ]]; do
                     PRIMARY_KEYS="$PRIMARY_KEYS|"
                 fi
                 current_source="$2"
-                ((current_index++))
+                current_index=$((current_index + 1))
                 shift 2
             else
                 echo "Error: -s requires a source name" >&2
@@ -232,7 +232,7 @@ for source in "${SOURCE_ARRAY[@]}"; do
         fi
     done <<< "$COLUMNS"
 
-    ((index++))
+    index=$((index + 1))
 done
 
 echo "✅ Generated schema for ${#SOURCE_ARRAY[@]} source(s)" >&2
