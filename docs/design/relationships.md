@@ -292,14 +292,18 @@ Not measured: performance at positions-app's scale, and what Materialize keeps p
 
 ## Steps
 
-One branch and one pull request. Each step is one commit, passes the tests, and changes nothing that isn't its own:
+One branch and one pull request. Each step is one commit, passes every test, and adds only what it needs:
 
-1. **The layers,** on main's features. `Statement` plans, builds and unpacks; `filter.ts` holds the `where` conditions; changes carry `path` and `keys`; pairing serves snapshots and live streams alike; `tree.ts` builds the response; the adapter and stream take the statement. No change for clients, except that a key that isn't unique now fails a query too.
-2. **JSON rows.** Every statement built the same way; `char(n)` loses its padding; queries without relationships lose the index fast path. Tests: every served type through the JSON, `char(n)` included.
-3. **Foreign keys, and relationships to one row,** in queries and subscriptions. `foreign_keys`, both relationships from each, their fields; the `LEFT JOIN`s; folding in the API. Useful on its own: a trade blotter showing each trade's position.
-4. **Relationships to many rows, in queries.** Their fields and arguments; the CTEs; nesting in the API; `[]` from the resolvers. Useful on its own: Hasura's nested queries, in one consistent read.
-5. **Relationships to many rows, in subscriptions:** the goal. The update types' fields, reading a subscription's selection, the key-only UPDATE, the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels. End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
-6. **The README.**
+1. **`filter.ts`:** the `where` conditions move out of `select.ts`. A pure move.
+2. **`Statement`:** `buildSelect` becomes `new Statement(source, selection, mode)`, and the adapter and stream take the statement alone. No change for clients.
+3. **JSON rows, for one source:** rows come back as `__source`, `__keys` and `__row`, every statement is built the same way, and `statement.unpack(row)` parses each value by type. `char(n)` loses its padding, and queries lose the index fast path. Tests: every served type through the JSON.
+4. **Foreign keys:** `foreign_keys` in `schema.yaml`, both relationships derived from each, and the startup checks. Not in the API yet.
+5. **Relationships to one row,** in queries and subscriptions: their fields, nested selections, the `LEFT JOIN`s, and the API folding their columns into objects. Useful on its own: a trade blotter showing each trade's position.
+6. **Changes carry `path` and `keys`,** paired the same way for queries and subscriptions, in the database layer. A key that isn't unique now fails a query too.
+7. **The statement reads relationships to many rows:** planning several sources, and the `LATERAL` CTEs. Unit-tested, not yet reachable from GraphQL.
+8. **Relationships to many rows, in queries:** their fields and arguments, nesting in `tree.ts`, and `[]` from the resolvers. Useful on its own: Hasura's nested queries, in one consistent read.
+9. **Relationships to many rows, in subscriptions:** the goal. The update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels. End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
+10. **The README.**
 
 Then positions-app moves to one subscription, against a local build until a release.
 
