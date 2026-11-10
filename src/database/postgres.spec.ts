@@ -91,7 +91,7 @@ describe('TYPE_PARSERS', () => {
     expect(parse(PostgresType.Time, '16:00:01')).toBe('16:00:01');
   });
 
-  it('should make int8 and numeric numbers, as Hasura sends them by default, which keep about 15 significant digits', () => {
+  it('should make int8 and numeric numbers, which keep about 15 significant digits', () => {
     expect(parse(PostgresType.Int8, '9007199254740991')).toBe(9007199254740991);
     expect(parse(PostgresType.Numeric, '1234.5678')).toBe(1234.5678);
     // Beyond what a number holds, the last digits are lost

@@ -81,20 +81,53 @@ sources:
       return sourcesConfig();
     };
 
-    it('should give each source its foreign keys, each column with the source it references, declared before or after it', () => {
+    it('should give both sources a relationship from each foreign key, sharing its join: the source one row of the source it references, and that source many of its rows', () => {
       const config = load({
         primary_key: 'id',
         columns: { id: 'int4', instrument_id: 'int4', quantity: 'int4' },
         foreign_keys: { instrument_id: 'positions' },
       });
+      const trades = config.sources.get('trades');
+      const positions = config.sources.get('positions');
 
-      expect(config.sources.get('trades')?.foreignKeys).toEqual([
-        {
-          column: 'instrument_id',
-          references: config.sources.get('positions'),
-        },
-      ]);
-      expect(config.sources.get('positions')?.foreignKeys).toEqual([]);
+      expect(trades?.relationships).toEqual(
+        new Map([
+          [
+            'positions',
+            {
+              source: positions,
+              column: 'instrument_id',
+              relatedColumn: 'instrument_id',
+              many: false,
+            },
+          ],
+        ]),
+      );
+      expect(positions?.relationships).toEqual(
+        new Map([
+          [
+            'trades',
+            {
+              source: trades,
+              column: 'instrument_id',
+              relatedColumn: 'instrument_id',
+              many: true,
+            },
+          ],
+        ]),
+      );
+    });
+
+    it('should throw when two foreign keys would give relationships of one name, as two between the same sources do', () => {
+      expect(() =>
+        load({
+          primary_key: 'id',
+          columns: { id: 'int4', instrument_id: 'int4', hedge_id: 'int4' },
+          foreign_keys: { instrument_id: 'positions', hedge_id: 'positions' },
+        }),
+      ).toThrow(
+        "Source 'trades' would have two relationships named 'positions'",
+      );
     });
 
     it("should throw on a foreign key column the source doesn't have", () => {

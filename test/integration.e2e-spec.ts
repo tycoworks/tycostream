@@ -443,7 +443,7 @@ describe('Integration Test', () => {
           all_types: [
             {
               id: 1,
-              // JSON numbers, as Hasura sends them by default
+              // JSON numbers
               bigint_val: 9007199254740991,
               numeric_val: 1234.5678,
               uuid_val: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',

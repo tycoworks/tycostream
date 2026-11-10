@@ -184,26 +184,23 @@ function selectRow(
     ),
   );
   for (const [field, selection] of Object.entries(joins)) {
-    const foreignKey = source.foreignKeys?.find(
-      ({ references }) => references.name === field,
-    );
-    if (!foreignKey) {
+    const relationship = source.relationships?.get(field);
+    if (!relationship) {
       throw new Error(`Unknown relationship '${field}' of '${source.name}'`);
     }
-    const { references } = foreignKey;
+    if (relationship.many) {
+      throw new Error(
+        `'${field}' of '${source.name}' is many rows, which can't be joined yet`,
+      );
+    }
+    const related = relationship.source;
     const joinedTable = [table, field].join(PATH_SEPARATOR);
-    query = query.leftJoin(sql.id(references.name).as(joinedTable), (join) =>
+    query = query.leftJoin(sql.id(related.name).as(joinedTable), (join) =>
       join.on(
-        sql<SqlBool>`${sql.id(joinedTable, references.primaryKeyField)} = ${sql.id(table, foreignKey.column)}`,
+        sql<SqlBool>`${sql.id(joinedTable, relationship.relatedColumn)} = ${sql.id(table, relationship.column)}`,
       ),
     );
-    query = selectRow(
-      query,
-      references,
-      joinedTable,
-      [...path, field],
-      selection,
-    );
+    query = selectRow(query, related, joinedTable, [...path, field], selection);
   }
   return query;
 }

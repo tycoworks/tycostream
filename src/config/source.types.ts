@@ -21,12 +21,16 @@ export interface SourceField {
 }
 
 /**
- * A column of a source that references another source's primary key, as a
- * foreign key does in Postgres
+ * A field of a source holding the rows of another source that a foreign key
+ * relates to it: one row, by the source's own foreign key, as a trade's
+ * position, or many, by the other source's, as a position's trades. Both
+ * directions of a foreign key share its join condition.
  */
-export interface ForeignKey {
-  column: string;
-  references: SourceDefinition;
+export interface Relationship {
+  source: SourceDefinition; // The related rows' source
+  column: string; // This source's column the join matches
+  relatedColumn: string; // The related source's column it matches
+  many: boolean; // Many related rows, or at most one
 }
 
 /**
@@ -37,7 +41,7 @@ export interface SourceDefinition {
   name: string; // Source name (e.g., 'trades', 'positions')
   primaryKeyField: string; // Which field is the primary key
   fields: SourceField[]; // All fields in this source
-  foreignKeys?: ForeignKey[]; // Its columns that reference other sources
+  relationships?: Map<string, Relationship>; // By field name
 }
 
 /**

@@ -39,8 +39,8 @@ const asText: Parser = (text) => text;
 const asNumber: Parser = (text) => Number(text);
 
 // The types tycostream parses its own way. node-postgres would keep int8 and
-// numeric as strings; they're numbers, as Hasura sends them by default, which
-// keep about 15 significant digits. It would turn the others into a Date, an
+// numeric as strings; they're JSON numbers instead, which keep about 15
+// significant digits. It would turn the others into a Date, an
 // interval object or a Buffer; they're text instead, timestamps in ISO 8601.
 const OWN_PARSERS = new Map<number, Parser>([
   [PostgresType.Int8, asNumber],

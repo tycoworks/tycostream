@@ -133,7 +133,7 @@ export type OrderBy = Record<string, OrderDirection>[];
 export interface Selection {
   // Every column when absent; the key is always selected
   columns?: string[];
-  // Each row a foreign key of it references, joined, by the row's field
+  // The selection of each related row it joins, by the relationship's field
   joins?: Record<string, Selection>;
   where?: WhereClause;
   orderBy?: OrderBy;

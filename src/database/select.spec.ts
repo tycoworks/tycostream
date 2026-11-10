@@ -5,7 +5,15 @@ import {
   OrderDirection,
   PostgresType,
 } from '../common/types.js';
-import type { SourceDefinition } from '../config/source.types.js';
+import type { Relationship, SourceDefinition } from '../config/source.types.js';
+
+// A relationship to the one row of the source a column references
+const toOne = (source: SourceDefinition, column: string): Relationship => ({
+  source,
+  column,
+  relatedColumn: source.primaryKeyField,
+  many: false,
+});
 
 const rank = { name: 'rank', values: ['bronze', 'silver', 'gold', 'platinum'] };
 
@@ -89,7 +97,9 @@ describe('buildSelect', () => {
         { name: 'instrument_id', type: PostgresType.Int4 },
         { name: 'net_position', type: PostgresType.Int8 },
       ],
-      foreignKeys: [{ column: 'instrument_id', references: instruments }],
+      relationships: new Map([
+        ['instruments', toOne(instruments, 'instrument_id')],
+      ]),
     };
     const trades: SourceDefinition = {
       name: 'trades',
@@ -99,7 +109,9 @@ describe('buildSelect', () => {
         { name: 'instrument_id', type: PostgresType.Int4 },
         { name: 'quantity', type: PostgresType.Int4 },
       ],
-      foreignKeys: [{ column: 'instrument_id', references: positions }],
+      relationships: new Map([
+        ['positions', toOne(positions, 'instrument_id')],
+      ]),
     };
 
     it('should left join each row a selected foreign key references, on its key, at any depth, each table and column named by its path', () => {
@@ -145,7 +157,9 @@ describe('buildSelect', () => {
           { name: 'manager_id', type: PostgresType.Int4 },
         ],
       };
-      employees.foreignKeys = [{ column: 'manager_id', references: employees }];
+      employees.relationships = new Map([
+        ['employees', toOne(employees, 'manager_id')],
+      ]);
 
       expect(
         buildSelect(employees, {
@@ -159,7 +173,29 @@ describe('buildSelect', () => {
       );
     });
 
-    it("should reject joining a field that isn't a foreign key's", () => {
+    it("should reject joining many rows, which only one row's relationship can be", () => {
+      const withTrades: SourceDefinition = {
+        ...positions,
+        relationships: new Map([
+          [
+            'trades',
+            {
+              source: trades,
+              column: 'instrument_id',
+              relatedColumn: 'instrument_id',
+              many: true,
+            },
+          ],
+        ]),
+      };
+      expect(() =>
+        buildSelect(withTrades, { joins: { trades: { columns: ['id'] } } }),
+      ).toThrow(
+        "'trades' of 'positions' is many rows, which can't be joined yet",
+      );
+    });
+
+    it("should reject joining a field that isn't a relationship's", () => {
       expect(() =>
         buildSelect(positions, { joins: { trades: { columns: ['id'] } } }),
       ).toThrow("Unknown relationship 'trades' of 'positions'");

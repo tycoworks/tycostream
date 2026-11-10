@@ -4,7 +4,15 @@ import { buildResolvers } from './api.resolver.js';
 import { OrderDirection, PostgresType } from '../common/types.js';
 import type { ApiService } from './api.service.js';
 import { RootType, generateSchema } from './schema.js';
-import type { SourceDefinition } from '../config/source.types.js';
+import type { Relationship, SourceDefinition } from '../config/source.types.js';
+
+// A relationship to the one row of the source a column references
+const toOne = (source: SourceDefinition, column: string): Relationship => ({
+  source,
+  column,
+  relatedColumn: source.primaryKeyField,
+  many: false,
+});
 
 const instruments: SourceDefinition = {
   name: 'instruments',
@@ -22,7 +30,9 @@ const positions: SourceDefinition = {
     { name: 'symbol', type: PostgresType.Text },
     { name: 'net_position', type: PostgresType.Int8 },
   ],
-  foreignKeys: [{ column: 'instrument_id', references: instruments }],
+  relationships: new Map([
+    ['instruments', toOne(instruments, 'instrument_id')],
+  ]),
 };
 const trades: SourceDefinition = {
   name: 'trades',
@@ -33,7 +43,7 @@ const trades: SourceDefinition = {
     { name: 'quantity', type: PostgresType.Int4 },
     { name: 'price', type: PostgresType.Numeric },
   ],
-  foreignKeys: [{ column: 'instrument_id', references: positions }],
+  relationships: new Map([['positions', toOne(positions, 'instrument_id')]]),
 };
 
 describe('buildResolvers', () => {

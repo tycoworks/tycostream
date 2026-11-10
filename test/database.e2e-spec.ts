@@ -171,7 +171,7 @@ describe('DatabaseService on Materialize', () => {
               big: 9007199254740991,
               live: true,
               at: '2026-01-01T09:30:00',
-              // int8 and numeric as numbers, as Hasura sends them by default
+              // int8 and numeric as numbers
               price: 1234.5678,
             },
           },

@@ -338,7 +338,7 @@ describe('generateSchema', () => {
     expect(operators('Int_comparison_exp')).not.toContain('_ilike');
   });
 
-  describe('foreign keys', () => {
+  describe('relationships', () => {
     const positions: SourceDefinition = {
       name: 'positions',
       primaryKeyField: 'instrument_id',
@@ -351,33 +351,59 @@ describe('generateSchema', () => {
       name: 'trades',
       primaryKeyField: 'id',
       fields,
-      foreignKeys: [{ column: 'instrument_id', references: positions }],
+      relationships: new Map([
+        [
+          'positions',
+          {
+            source: positions,
+            column: 'instrument_id',
+            relatedColumn: 'instrument_id',
+            many: false,
+          },
+        ],
+      ]),
     });
+    const tradeColumns: SourceDefinition['fields'] = [
+      { name: 'id', type: PostgresType.Int4 },
+      { name: 'instrument_id', type: PostgresType.Int4 },
+    ];
 
-    it('should give a row a field of the row each foreign key references, named after its source, null when none matches', () => {
+    it('should give a row a field of the one row a relationship to one row holds, null when none matches, and no field yet for many rows', () => {
+      const withTrades: SourceDefinition = {
+        ...positions,
+        relationships: new Map([
+          [
+            'trades',
+            {
+              source: trades(tradeColumns),
+              column: 'instrument_id',
+              relatedColumn: 'instrument_id',
+              many: true,
+            },
+          ],
+        ]),
+      };
       const schema = buildSchema(
         generateSchema(
           createConfig(
             new Map([
-              ['positions', positions],
-              [
-                'trades',
-                trades([
-                  { name: 'id', type: PostgresType.Int4 },
-                  { name: 'instrument_id', type: PostgresType.Int4 },
-                ]),
-              ],
+              ['positions', withTrades],
+              ['trades', trades(tradeColumns)],
             ]),
           ),
         ),
       );
 
-      const field = (schema.getType('trades') as GraphQLObjectType).getFields()
-        .positions;
-      expect(String(field.type)).toBe('positions');
+      const tradeFields = (
+        schema.getType('trades') as GraphQLObjectType
+      ).getFields();
+      expect(String(tradeFields.positions.type)).toBe('positions');
+      expect(
+        (schema.getType('positions') as GraphQLObjectType).getFields().trades,
+      ).toBeUndefined();
     });
 
-    it('should leave it to GraphQL to refuse a foreign key whose field clashes with a column', () => {
+    it('should leave it to GraphQL to refuse a relationship whose field clashes with a column', () => {
       const sdl = generateSchema(
         createConfig(
           new Map([
@@ -385,8 +411,7 @@ describe('generateSchema', () => {
             [
               'trades',
               trades([
-                { name: 'id', type: PostgresType.Int4 },
-                { name: 'instrument_id', type: PostgresType.Int4 },
+                ...tradeColumns,
                 { name: 'positions', type: PostgresType.Text },
               ]),
             ],
