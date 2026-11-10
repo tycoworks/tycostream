@@ -18,17 +18,16 @@ const source = (fields: SourceDefinition['fields']): SourceDefinition => ({
   fields,
 });
 
-// The columns SUBSCRIBE adds to each row, then the row's own, as
-// node-postgres types them: mz_timestamp is numeric and mz_diff int8, so
-// both arrive as text
+// The columns SUBSCRIBE adds to each row, then the row's own, as tycostream
+// parses them: mz_timestamp is numeric and mz_diff int8, so both are numbers
 const change = (timestamp: number, diff: number, row: Row): RawRow => ({
-  mz_timestamp: String(timestamp),
+  mz_timestamp: timestamp,
   mz_progressed: false,
-  mz_diff: String(diff),
+  mz_diff: diff,
   ...row,
 });
 const progress = (timestamp: number): RawRow => ({
-  mz_timestamp: String(timestamp),
+  mz_timestamp: timestamp,
   mz_progressed: true,
   mz_diff: null,
 });

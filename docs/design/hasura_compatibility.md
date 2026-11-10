@@ -62,7 +62,7 @@ Instead, tycostream uses Postgres's types throughout (Chris, 9 Nov), and turns t
 | `json`, `jsonb`, `bytea` | the same names | `String` |
 | arrays | not served for now | `String` |
 
-- **`int8` and `numeric` are sent as strings,** to keep their precision, as Hasura does with `HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES` (not its default). JSON can carry every digit, but a JavaScript client parses a JSON number into a 64-bit float, exact only to 2^53. That mode also sends `float8` as a string; we don't, since a 64-bit float holds a `float8` exactly. As inputs, these scalars take a number or a string; a client sends an `int8` beyond 2^53 as a string.
+- **`int8` and `numeric` are sent as JSON numbers,** as Hasura sends them by default (Chris, 9 Nov), so a client needs to know nothing about them. tycostream parses them into numbers as it reads them, with its other conversions (`postgres.ts`); a number keeps about 15 significant digits, so a larger value loses its last ones. Hasura's option to send them as strings (`HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES`) isn't offered. As inputs, these scalars take a number or a string; a client sends an `int8` beyond 2^53 as a string.
 - **`NaN` and `Infinity`** can't travel as GraphQL's `Float`, which raises a field error for them, and a `float8` sends them as `null`. A known limit: Postgres only gives them when asked to.
 - **Arrays aren't served for now.** They were sent as text (`{1,2}`), which was half a feature; they come back as GraphQL lists, on the roadmap, which parsing by the database's own types makes cheap.
 - **Timestamps as Hasura sends them,** in ISO 8601 (`2026-11-08T10:00:00+00:00`), not the text form, which has a space; and `json` and `jsonb` as JSON values (step 3b).

@@ -119,8 +119,9 @@ export class ProgressBatcher {
   take(rows: RawRow[]): TimestampRows[] {
     const complete: TimestampRows[] = [];
     for (const raw of rows) {
-      // Materialize reports mz_timestamp as numeric, which arrives as text
-      const timestamp = BigInt(raw[SubscribeColumn.Timestamp] as string);
+      // Materialize reports mz_timestamp as numeric, so it arrives as a
+      // number, which holds its milliseconds exactly
+      const timestamp = BigInt(raw[SubscribeColumn.Timestamp] as number);
       if (!this.started) {
         this.pending.set(timestamp, []);
         this.started = true;

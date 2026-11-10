@@ -36,10 +36,15 @@ export function isoTimestamp(text: string): string {
 }
 
 const asText: Parser = (text) => text;
+const asNumber: Parser = (text) => Number(text);
 
-// The types node-postgres would turn into a Date, an interval object or a
-// Buffer, kept as text instead: timestamps in ISO 8601, the rest as written
-const KEPT_AS_TEXT = new Map<number, Parser>([
+// The types tycostream parses its own way. node-postgres would keep int8 and
+// numeric as strings; they're numbers, as Hasura sends them by default, which
+// keep about 15 significant digits. It would turn the others into a Date, an
+// interval object or a Buffer; they're text instead, timestamps in ISO 8601.
+const OWN_PARSERS = new Map<number, Parser>([
+  [PostgresType.Int8, asNumber],
+  [PostgresType.Numeric, asNumber],
   [PostgresType.Timestamp, isoTimestamp],
   [PostgresType.Timestamptz, isoTimestamp],
   [PostgresType.Date, asText],
@@ -49,13 +54,13 @@ const KEPT_AS_TEXT = new Map<number, Parser>([
 
 /**
  * How node-postgres parses each value, by the type the database reports for
- * its column: with its own parsers, which suit the other types (int8 and
- * numeric stay strings, so they keep every digit; json and jsonb become
- * JSON), except for the types kept as text
+ * its column: with its own parsers, which suit the other types (integers and
+ * floats become numbers, booleans booleans, and json and jsonb JSON), except
+ * for the types tycostream parses its own way
  */
 export const TYPE_PARSERS = {
   getTypeParser: (type: number): Parser =>
-    KEPT_AS_TEXT.get(type) ??
+    OWN_PARSERS.get(type) ??
     // node-postgres types its parsers as any
     (pg.types.getTypeParser(type, 'text') as Parser),
 };
