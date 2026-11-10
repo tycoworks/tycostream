@@ -154,7 +154,7 @@ describe('DatabaseService on Materialize', () => {
     it('should send the snapshot as one batch of inserts, with values typed as the schema says', async () => {
       await createTable('snapshot');
       await sql(`INSERT INTO snapshot VALUES
-        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00', 12345678901234567890.123),
+        (1, 'AAPL', 1.5, 9007199254740991, true, '2026-01-01 09:30:00', 1234.5678),
         (2, 'MSFT', 20, 1, false, '2026-01-02 16:00:00', 0.1),
         (3, NULL, NULL, NULL, NULL, NULL, NULL)`);
 
@@ -168,11 +168,11 @@ describe('DatabaseService on Materialize', () => {
               id: 1,
               symbol: 'AAPL',
               qty: 1.5,
-              big: '9007199254740993',
+              big: 9007199254740991,
               live: true,
               at: '2026-01-01T09:30:00',
-              // numeric keeps every digit
-              price: '12345678901234567890.123',
+              // int8 and numeric as numbers, as Hasura sends them by default
+              price: 1234.5678,
             },
           },
           {
@@ -182,10 +182,10 @@ describe('DatabaseService on Materialize', () => {
               id: 2,
               symbol: 'MSFT',
               qty: 20,
-              big: '1',
+              big: 1,
               live: false,
               at: '2026-01-02T16:00:00',
-              price: '0.1',
+              price: 0.1,
             },
           },
           {
@@ -525,7 +525,7 @@ describe('DatabaseService on Materialize', () => {
     it("should return the same typed rows as a live stream's snapshot", async () => {
       await createTable('queried');
       await sql(`INSERT INTO queried VALUES
-        (1, 'AAPL', 1.5, 9007199254740993, true, '2026-01-01 09:30:00', 12345678901234567890.123),
+        (1, 'AAPL', 1.5, 9007199254740991, true, '2026-01-01 09:30:00', 1234.5678),
         (2, NULL, NULL, NULL, NULL, NULL, NULL),
         (3, 'MSFT', 20, 1, false, '2026-01-02 16:00:00', 0.1)`);
       const where: WhereClause = { id: { _lt: 3 } };
@@ -543,10 +543,10 @@ describe('DatabaseService on Materialize', () => {
             id: 1,
             symbol: 'AAPL',
             qty: 1.5,
-            big: '9007199254740993',
+            big: 9007199254740991,
             live: true,
             at: '2026-01-01T09:30:00',
-            price: '12345678901234567890.123',
+            price: 1234.5678,
           },
           {
             id: 2,

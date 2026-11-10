@@ -83,19 +83,13 @@ describe('TYPE_PARSERS', () => {
   const parse = (type: PostgresType, text: string) =>
     TYPE_PARSERS.getTypeParser(type)(text);
 
-  it("should keep node-postgres's conversions where they suit: numbers, booleans and JSON, with int8 and numeric as strings", () => {
+  it("should keep node-postgres's conversions where they suit: numbers, booleans and JSON", () => {
     expect(parse(PostgresType.Int2, '-7')).toBe(-7);
     expect(parse(PostgresType.Int4, '42')).toBe(42);
     expect(parse(PostgresType.Float4, '-4.56e-3')).toBe(-4.56e-3);
     expect(parse(PostgresType.Float8, '2.25')).toBe(2.25);
     expect(parse(PostgresType.Bool, 't')).toBe(true);
     expect(parse(PostgresType.Bool, 'f')).toBe(false);
-    expect(parse(PostgresType.Int8, '9223372036854775807')).toBe(
-      '9223372036854775807',
-    );
-    expect(parse(PostgresType.Numeric, '12345678901234567890.123')).toBe(
-      '12345678901234567890.123',
-    );
     expect(parse(PostgresType.Jsonb, '{"a":1,"b":[true]}')).toEqual({
       a: 1,
       b: [true],
@@ -106,6 +100,13 @@ describe('TYPE_PARSERS', () => {
       parse(PostgresType.Uuid, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'),
     ).toBe('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
     expect(parse(PostgresType.Time, '16:00:01')).toBe('16:00:01');
+  });
+
+  it('should make int8 and numeric numbers, as Hasura sends them by default, which keep about 15 significant digits', () => {
+    expect(parse(PostgresType.Int8, '9007199254740991')).toBe(9007199254740991);
+    expect(parse(PostgresType.Numeric, '1234.5678')).toBe(1234.5678);
+    // Beyond what a number holds, the last digits are lost
+    expect(parse(PostgresType.Int8, '9007199254740993')).toBe(9007199254740992);
   });
 
   it('should send timestamps in ISO 8601, as Postgres writes them in JSON, rather than as Dates', () => {
