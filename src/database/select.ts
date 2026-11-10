@@ -10,6 +10,7 @@ import type {
   Expression,
   ExpressionBuilder,
   OrderByItemBuilder,
+  SelectQueryBuilder,
   SqlBool,
 } from 'kysely';
 import {
@@ -20,6 +21,7 @@ import {
 import type {
   FieldComparison,
   OrderBy,
+  Row,
   Selection,
   WhereClause,
 } from '../common/types.js';
@@ -28,9 +30,11 @@ import type { SourceDefinition, SourceField } from '../config/source.types.js';
 export interface CompiledSelect {
   sql: string;
   parameters: readonly unknown[];
-  // The columns it returns, in the source's order, the key among them
-  columns: string[];
 }
+
+// Joins the fields on the path to a joined row's column, as in
+// positions.symbol, and to its table; no GraphQL name contains it
+const PATH_SEPARATOR = '.';
 
 // Kysely only compiles here; tycostream runs the SQL itself
 const db = new Kysely<any>({
@@ -92,27 +96,35 @@ const SQL_DIRECTIONS: Record<
 
 type Builder = ExpressionBuilder<any, any>;
 type Condition = Expression<SqlBool>;
+type Query = SelectQueryBuilder<any, any, any>;
 
 /**
- * Builds the SELECT for a source and a client's selection: its columns, its
- * filter as the WHERE, its order as the ORDER BY, and its limit and offset.
- * Source and column names are quoted, and every value is a bind parameter.
+ * Builds the SELECT for a source and a client's selection: its columns, and
+ * each row it joins through a foreign key, its filter as the WHERE, its order
+ * as the ORDER BY, and its limit and offset. Every column is qualified by its
+ * table, as joined tables can share column names. Source and column names
+ * are quoted, and every value is a bind parameter.
  */
 export function buildSelect(
   source: SourceDefinition,
-  { columns, where, orderBy, limit, offset }: Selection = {},
+  selection: Selection = {},
 ): CompiledSelect {
+  const { where, orderBy, limit, offset } = selection;
   const fields = new Map(source.fields.map((field) => [field.name, field]));
-  const selected = selectedColumns(source, fields, columns);
-  let query = db
-    .selectFrom(sql.id(source.name).as(source.name))
-    .select(selected.map((column) => sql.id(column).as(column)));
+  const table = source.name;
+  let query = selectRow(
+    db.selectFrom(sql.id(source.name).as(table)),
+    source,
+    table,
+    [],
+    selection,
+  );
 
   if (where && Object.keys(where).length > 0) {
-    query = query.where((eb) => buildCondition(eb, where, fields));
+    query = query.where((eb) => buildCondition(eb, table, where, fields));
   }
   for (const [column, direction] of orderedColumns(orderBy, fields)) {
-    query = query.orderBy(sql.id(column), SQL_DIRECTIONS[direction]);
+    query = query.orderBy(sql.id(table, column), SQL_DIRECTIONS[direction]);
   }
   if (limit !== undefined) {
     query = query.limit(checkNotNegative('limit', limit));
@@ -122,19 +134,85 @@ export function buildSelect(
   }
 
   const compiled = query.compile();
-  return {
-    sql: compiled.sql,
-    parameters: compiled.parameters,
-    columns: selected,
-  };
+  return { sql: compiled.sql, parameters: compiled.parameters };
+}
+
+/**
+ * Folds a row's path-named columns back into objects, at any depth:
+ * { id: 1, 'positions.net_position': 600 } becomes
+ * { id: 1, positions: { net_position: 600 } }. A joined row whose columns
+ * are all null is null: nothing matched, since its key is always selected.
+ */
+export function nestRow(flat: Record<string, unknown>): Row {
+  const row: Row = {};
+  const joined = new Map<string, Record<string, unknown>>();
+  for (const [name, value] of Object.entries(flat)) {
+    const [field, ...path] = name.split(PATH_SEPARATOR);
+    if (path.length === 0) {
+      row[field] = value;
+    } else {
+      const columns = joined.get(field) ?? {};
+      columns[path.join(PATH_SEPARATOR)] = value;
+      joined.set(field, columns);
+    }
+  }
+  for (const [field, columns] of joined) {
+    row[field] = Object.values(columns).every((value) => value === null)
+      ? null
+      : nestRow(columns);
+  }
+  return row;
+}
+
+// Selects a source's columns, named by their path, and left joins each row
+// the selection joins, on its foreign key, in a table named by its path, then
+// selects that row the same way. For trades joining positions:
+//   "trades"."quantity" as "quantity",
+//   "trades.positions"."net_position" as "positions.net_position"
+//   ... left join "positions" as "trades.positions"
+//         on "trades.positions"."instrument_id" = "trades"."instrument_id"
+function selectRow(
+  query: Query,
+  source: SourceDefinition,
+  table: string,
+  path: string[],
+  { columns, joins = {} }: Selection,
+): Query {
+  query = query.select(
+    selectedColumns(source, columns).map((column) =>
+      sql.id(table, column).as([...path, column].join(PATH_SEPARATOR)),
+    ),
+  );
+  for (const [field, selection] of Object.entries(joins)) {
+    const foreignKey = source.foreignKeys?.find(
+      ({ references }) => references.name === field,
+    );
+    if (!foreignKey) {
+      throw new Error(`Unknown relationship '${field}' of '${source.name}'`);
+    }
+    const { references } = foreignKey;
+    const joinedTable = [table, field].join(PATH_SEPARATOR);
+    query = query.leftJoin(sql.id(references.name).as(joinedTable), (join) =>
+      join.on(
+        sql<SqlBool>`${sql.id(joinedTable, references.primaryKeyField)} = ${sql.id(table, foreignKey.column)}`,
+      ),
+    );
+    query = selectRow(
+      query,
+      references,
+      joinedTable,
+      [...path, field],
+      selection,
+    );
+  }
+  return query;
 }
 
 // The columns to select, in the source's order: the ones asked for, or every
 // one when none are named, and always the key, which a live stream pairs its
-// rows by
+// rows by, and which tells a joined row from none
 function selectedColumns(
   source: SourceDefinition,
-  fields: Map<string, SourceField>,
   columns?: string[],
 ): string[] {
   const names = source.fields.map((field) => field.name);
@@ -142,7 +220,7 @@ function selectedColumns(
     return names;
   }
   for (const column of columns) {
-    if (!fields.has(column)) {
+    if (!names.includes(column)) {
       throw new Error(`Unknown field '${column}' to select`);
     }
   }
@@ -173,6 +251,7 @@ function checkNotNegative(argument: string, value: number): number {
 
 function buildCondition(
   eb: Builder,
+  table: string,
   where: WhereClause,
   fields: Map<string, SourceField>,
 ): Condition {
@@ -183,20 +262,22 @@ function buildCondition(
       case LogicalOperator.And:
       case LogicalOperator.Or: {
         const children = (value as WhereClause[]).map((w) =>
-          buildCondition(eb, w, fields),
+          buildCondition(eb, table, w, fields),
         );
         return [
           operator === LogicalOperator.And ? eb.and(children) : eb.or(children),
         ];
       }
       case LogicalOperator.Not:
-        return [eb.not(buildCondition(eb, value as WhereClause, fields))];
+        return [
+          eb.not(buildCondition(eb, table, value as WhereClause, fields)),
+        ];
       default: {
         const field = fields.get(key);
         if (!field) {
           throw new Error(`Unknown field '${key}'`);
         }
-        return buildComparisons(eb, field, value as FieldComparison);
+        return buildComparisons(eb, table, field, value as FieldComparison);
       }
     }
   });
@@ -205,10 +286,11 @@ function buildCondition(
 
 function buildComparisons(
   eb: Builder,
+  table: string,
   field: SourceField,
   comparison: FieldComparison,
 ): Condition[] {
-  const column = sql.id(field.name);
+  const column = sql.id(table, field.name);
   const enumValues = field.enumType?.values;
 
   return Object.entries(comparison).map(([key, value]) => {

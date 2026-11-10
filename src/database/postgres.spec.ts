@@ -2,7 +2,6 @@ import type pg from 'pg';
 import {
   insertOf,
   isoTimestamp,
-  pickRow,
   readSnapshot,
   TYPE_PARSERS,
 } from './postgres.js';
@@ -20,7 +19,6 @@ describe('readSnapshot', () => {
     for await (const batch of readSnapshot(client, {
       sql: 'select "id", "name" from "test" where "id" = $1',
       parameters: [7],
-      columns: ['id', 'name'],
     })) {
       batches.push(batch);
     }
@@ -38,10 +36,10 @@ describe('readSnapshot', () => {
     );
   });
 
-  it('should yield the rows as one batch of inserts with no timestamp, then end', async () => {
+  it('should yield the rows as one batch of inserts with no timestamp, each joined row folded into an object, then end', async () => {
     const { client } = clientReturning([
-      { id: 1, name: 'a', extra: 'dropped' },
-      { id: 2, name: null },
+      { id: 1, name: 'a', 'positions.symbol': 'AAPL' },
+      { id: 2, name: null, 'positions.symbol': null },
     ]);
 
     expect(await readAll(client)).toEqual([
@@ -49,13 +47,13 @@ describe('readSnapshot', () => {
         events: [
           {
             type: RowUpdateType.Insert,
-            fields: new Set(['id', 'name']),
-            row: { id: 1, name: 'a' },
+            fields: new Set(['id', 'name', 'positions']),
+            row: { id: 1, name: 'a', positions: { symbol: 'AAPL' } },
           },
           {
             type: RowUpdateType.Insert,
-            fields: new Set(['id', 'name']),
-            row: { id: 2, name: null },
+            fields: new Set(['id', 'name', 'positions']),
+            row: { id: 2, name: null, positions: null },
           },
         ],
       },
@@ -134,17 +132,9 @@ describe('isoTimestamp', () => {
   });
 });
 
-describe('pickRow', () => {
-  it('should keep only the given columns, as typed, with null for a missing value', () => {
-    expect(
-      pickRow(['id', 'name'], { id: 7, mz_timestamp: '42', email: 'a' }),
-    ).toEqual({ id: 7, name: null });
-  });
-});
-
 describe('insertOf', () => {
   it('should make a row an insert of every column', () => {
-    expect(insertOf({ id: 1, name: 'a' }, ['id', 'name'])).toEqual({
+    expect(insertOf({ id: 1, name: 'a' })).toEqual({
       type: RowUpdateType.Insert,
       fields: new Set(['id', 'name']),
       row: { id: 1, name: 'a' },

@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { PostgresType, RowUpdateType } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
+import { nestRow } from './select.js';
 import type { CompiledSelect } from './select.js';
 
 /**
@@ -65,20 +66,10 @@ export const TYPE_PARSERS = {
 };
 
 /**
- * A row with only the given columns, already parsed; a row can carry other
- * columns too
- */
-export function pickRow(columns: string[], raw: RawRow): Row {
-  return Object.fromEntries(
-    columns.map((column) => [column, raw[column] ?? null]),
-  );
-}
-
-/**
  * A row arriving whole: an insert of every column
  */
-export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
-  return { type: RowUpdateType.Insert, fields: new Set(fieldNames), row };
+export function insertOf(row: Row): RowUpdateEvent {
+  return { type: RowUpdateType.Insert, fields: new Set(Object.keys(row)), row };
 }
 
 /**
@@ -93,9 +84,5 @@ export async function* readSnapshot(
   const { rows } = await client.query<RawRow>(select.sql, [
     ...select.parameters,
   ]);
-  yield {
-    events: rows.map((raw) =>
-      insertOf(pickRow(select.columns, raw), select.columns),
-    ),
-  };
+  yield { events: rows.map((raw) => insertOf(nestRow(raw))) };
 }

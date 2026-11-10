@@ -6,18 +6,38 @@ import type { ApiService } from './api.service.js';
 import { RootType, generateSchema } from './schema.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
-const source = (name: string): SourceDefinition => ({
-  name,
+const instruments: SourceDefinition = {
+  name: 'instruments',
   primaryKeyField: 'id',
   fields: [
     { name: 'id', type: PostgresType.Int4 },
+    { name: 'name', type: PostgresType.Text },
+  ],
+};
+const positions: SourceDefinition = {
+  name: 'positions',
+  primaryKeyField: 'instrument_id',
+  fields: [
+    { name: 'instrument_id', type: PostgresType.Int4 },
     { name: 'symbol', type: PostgresType.Text },
+    { name: 'net_position', type: PostgresType.Int8 },
+  ],
+  foreignKeys: [{ column: 'instrument_id', references: instruments }],
+};
+const trades: SourceDefinition = {
+  name: 'trades',
+  primaryKeyField: 'id',
+  fields: [
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'instrument_id', type: PostgresType.Int4 },
+    { name: 'quantity', type: PostgresType.Int4 },
     { name: 'price', type: PostgresType.Numeric },
   ],
-});
+  foreignKeys: [{ column: 'instrument_id', references: positions }],
+};
 
 describe('buildResolvers', () => {
-  const rows = [{ id: 1, symbol: 'AAPL', price: 200 }];
+  const rows = [{ id: 1, instrument_id: 1, quantity: 500, price: 198.4 }];
   // An idle subscription's updates
   const updates = {
     [Symbol.asyncIterator]() {
@@ -31,8 +51,9 @@ describe('buildResolvers', () => {
     subscribe: vi.fn(() => updates),
   } as unknown as ApiService;
   const sources = new Map([
-    ['trades', source('trades')],
-    ['prices', source('prices')],
+    ['instruments', instruments],
+    ['positions', positions],
+    ['trades', trades],
   ]);
   const resolvers = buildResolvers(sources, apiService);
   // The schema the server runs: the generated SDL with these resolvers
@@ -70,12 +91,14 @@ describe('buildResolvers', () => {
   it('should give every source a query and a subscription, under query_root and subscription_root', () => {
     expect(Object.keys(resolvers)).toEqual(['query_root', 'subscription_root']);
     expect(Object.keys(resolvers[RootType.Query])).toEqual([
+      'instruments',
+      'positions',
       'trades',
-      'prices',
     ]);
     expect(Object.keys(resolvers[RootType.Subscription])).toEqual([
+      'instruments',
+      'positions',
       'trades',
-      'prices',
     ]);
   });
 
@@ -86,19 +109,23 @@ describe('buildResolvers', () => {
       const result = await graphql({
         schema,
         source: `{
-          trades(where: { id: { _eq: 1 } }, order_by: [{ id: desc }], limit: 10, offset: 20) {
-            symbol
+          trades(where: { quantity: { _gt: 0 } }, order_by: [{ id: desc }], limit: 10, offset: 20) {
+            quantity
+            price
           }
         }`,
         contextValue: { request: { signal: cancel.signal } },
       });
 
-      expect(result).toEqual({ data: { trades: [{ symbol: 'AAPL' }] } });
+      expect(result).toEqual({
+        data: { trades: [{ quantity: 500, price: 198.4 }] },
+      });
       expect(apiService.query).toHaveBeenCalledWith(
-        sources.get('trades'),
+        trades,
         {
-          columns: ['symbol'],
-          where: { id: { _eq: 1 } },
+          columns: ['quantity', 'price'],
+          joins: {},
+          where: { quantity: { _gt: 0 } },
           orderBy: [{ id: OrderDirection.Desc }],
           limit: 10,
           offset: 20,
@@ -109,17 +136,17 @@ describe('buildResolvers', () => {
 
     it('should select the fields selected, in order, each once, whatever its aliases', async () => {
       expect(
-        await queried('{ trades { a: symbol b: symbol id symbol } }'),
-      ).toMatchObject({ columns: ['symbol', 'id'] });
+        await queried('{ trades { qty: quantity px: price id quantity } }'),
+      ).toMatchObject({ columns: ['quantity', 'price', 'id'] });
     });
 
     it("should select fragments' fields, named and inline, and not __typename", async () => {
       expect(
         await queried(`
-          { trades { __typename ...named ... on trades { price } } }
-          fragment named on trades { symbol }
+          { trades { __typename ...sized ... on trades { price } } }
+          fragment sized on trades { quantity }
         `),
-      ).toMatchObject({ columns: ['symbol', 'price'] });
+      ).toMatchObject({ columns: ['quantity', 'price'] });
     });
 
     it('should leave out the fields @skip and @include leave out, with literals or variables, on fields and fragments', async () => {
@@ -127,41 +154,64 @@ describe('buildResolvers', () => {
         await queried(`{
           trades {
             id @skip(if: true)
-            symbol @include(if: false)
+            quantity @include(if: false)
             price @include(if: true) @skip(if: false)
           }
         }`),
       ).toMatchObject({ columns: ['price'] });
 
       const operation = `
-        query ($withPrice: Boolean!, $skipNamed: Boolean!) {
-          trades { id price @include(if: $withPrice) ...named @skip(if: $skipNamed) }
+        query ($withPrice: Boolean!, $skipSized: Boolean!) {
+          trades { id price @include(if: $withPrice) ...sized @skip(if: $skipSized) }
         }
-        fragment named on trades { symbol }
+        fragment sized on trades { quantity }
       `;
       expect(
-        await queried(operation, { withPrice: false, skipNamed: true }),
+        await queried(operation, { withPrice: false, skipSized: true }),
       ).toMatchObject({ columns: ['id'] });
       expect(
-        await queried(operation, { withPrice: true, skipNamed: false }),
-      ).toMatchObject({ columns: ['id', 'price', 'symbol'] });
+        await queried(operation, { withPrice: true, skipSized: false }),
+      ).toMatchObject({ columns: ['id', 'price', 'quantity'] });
+    });
+
+    it('should select what each joined row selects, at any depth, across each time it is selected', async () => {
+      expect(
+        await queried(`{
+          trades {
+            quantity
+            positions { symbol net_position }
+            positions { instruments { name } }
+          }
+        }`),
+      ).toEqual(
+        expect.objectContaining({
+          columns: ['quantity'],
+          joins: {
+            positions: {
+              columns: ['symbol', 'net_position'],
+              joins: { instruments: { columns: ['name'], joins: {} } },
+            },
+          },
+        }),
+      );
     });
   });
 
   describe('subscriptions', () => {
     it("should open a source's subscription with the selection its arguments and its updates' data make, across each time data is selected", async () => {
       const { selection, subscription } = await subscribed(`subscription {
-        prices(where: { id: { _eq: 1 } }, limit: 10) {
+        trades(where: { quantity: { _gt: 0 } }, limit: 10) {
           operation
-          data { id }
-          data { symbol }
+          data { id quantity }
+          data { price positions { net_position } }
           fields
         }
       }`);
 
       expect(selection).toEqual({
-        columns: ['id', 'symbol'],
-        where: { id: { _eq: 1 } },
+        columns: ['id', 'quantity', 'price'],
+        joins: { positions: { columns: ['net_position'], joins: {} } },
+        where: { quantity: { _gt: 0 } },
         orderBy: undefined,
         limit: 10,
         offset: undefined,
@@ -171,18 +221,18 @@ describe('buildResolvers', () => {
 
     it('should select no columns when the updates select no data, or skip it', async () => {
       for (const operation of [
-        'subscription { prices { operation } }',
-        'subscription { prices { data @skip(if: true) { id } } }',
+        'subscription { positions { operation } }',
+        'subscription { positions { data @skip(if: true) { symbol } } }',
       ]) {
         const { selection, subscription } = await subscribed(operation);
-        expect(selection).toMatchObject({ columns: [] });
+        expect(selection).toMatchObject({ columns: [], joins: {} });
         await subscription.return(undefined);
       }
     });
 
     it("should close the source's subscription at once when the client leaves, so it's handed to GraphQL itself", async () => {
       const { subscription } = await subscribed(
-        'subscription { prices { operation } }',
+        'subscription { positions { operation } }',
       );
       updates.return.mockClear();
 
@@ -193,7 +243,9 @@ describe('buildResolvers', () => {
 
     it("should give each timestamp's updates as the field's value", () => {
       const sent = [{ operation: 'INSERT', data: {}, fields: [] }] as never;
-      expect(resolvers[RootType.Subscription].prices.resolve(sent)).toBe(sent);
+      expect(resolvers[RootType.Subscription].positions.resolve(sent)).toBe(
+        sent,
+      );
     });
   });
 });

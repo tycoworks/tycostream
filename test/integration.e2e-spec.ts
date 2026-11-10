@@ -58,6 +58,16 @@ describe('Integration Test', () => {
         jsonb_val JSONB
       )
     `);
+
+    // A trade blotter's sources: each trade references its position, and
+    // each position its instrument
+    await testEnv.executeSql('CREATE TABLE instruments (id INT, name TEXT)');
+    await testEnv.executeSql(
+      'CREATE TABLE positions (instrument_id INT, symbol TEXT, net_position BIGINT, latest_price NUMERIC)',
+    );
+    await testEnv.executeSql(
+      'CREATE TABLE trades (id INT, instrument_id INT, quantity INT, price NUMERIC)',
+    );
   }, 120000);
 
   afterAll(async () => {
@@ -525,6 +535,131 @@ describe('Integration Test', () => {
 
       // Well within the 30 s time limit that would otherwise end it
       await testEnv.waitUntil(async () => (await queriesRunning()) === 0);
+    }, 30000);
+  });
+  describe('relationships', () => {
+    it("should return each trade with the position its foreign key references, and that position's instrument, or null for no position", async () => {
+      await testEnv.executeSql(
+        `INSERT INTO instruments VALUES (1, 'Apple Inc.')`,
+      );
+      await testEnv.executeSql(
+        `INSERT INTO positions VALUES (1, 'AAPL', 600, 201)`,
+      );
+      await testEnv.executeSql(
+        'INSERT INTO trades VALUES (1, 1, 500, 198.4), (2, 1, 100, 201), (3, 99, 10, 5)',
+      );
+
+      const response = await fetch(`http://localhost:${testEnv.port}/graphql`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          query: `{
+            trades(where: { id: { _lte: 3 } }, order_by: [{ id: asc }]) {
+              id
+              quantity
+              positions { symbol net_position instruments { name } }
+            }
+          }`,
+        }),
+      });
+
+      expect(await response.json()).toEqual({
+        data: {
+          trades: [
+            {
+              id: 1,
+              quantity: 500,
+              positions: {
+                symbol: 'AAPL',
+                net_position: 600,
+                instruments: { name: 'Apple Inc.' },
+              },
+            },
+            {
+              id: 2,
+              quantity: 100,
+              positions: {
+                symbol: 'AAPL',
+                net_position: 600,
+                instruments: { name: 'Apple Inc.' },
+              },
+            },
+            { id: 3, quantity: 10, positions: null },
+          ],
+        },
+      });
+    });
+
+    it('should update each trade when the selected columns of its position change, and send nothing when others do', async () => {
+      type Update = {
+        operation: string;
+        data: {
+          id: number;
+          quantity?: number;
+          positions?: { symbol: string; net_position: number } | null;
+        };
+        fields: string[];
+      };
+      await testEnv.executeSql(
+        `INSERT INTO positions VALUES (2, 'GOOG', 350, 170)`,
+      );
+      await testEnv.executeSql(
+        'INSERT INTO trades VALUES (4, 2, 200, 172), (5, 2, 150, 174)',
+      );
+      const byId = (updates: Update[]) =>
+        [...updates].sort((a, b) => a.data.id - b.data.id);
+
+      const subscription = await subscribeOverSse<Update>(
+        `subscription {
+          trades(where: { instrument_id: { _eq: 2 } }) {
+            operation
+            fields
+            data { id quantity positions { symbol net_position } }
+          }
+        }`,
+        'trades',
+      );
+
+      try {
+        const goog = { symbol: 'GOOG', net_position: 350 };
+        expect(byId(await subscription.next())).toEqual([
+          {
+            operation: 'INSERT',
+            fields: ['id', 'quantity', 'positions'],
+            data: { id: 4, quantity: 200, positions: goog },
+          },
+          {
+            operation: 'INSERT',
+            fields: ['id', 'quantity', 'positions'],
+            data: { id: 5, quantity: 150, positions: goog },
+          },
+        ]);
+
+        // latest_price isn't selected, so its tick sends nothing, and the
+        // next message is net_position's change, to both trades at once. An
+        // update's unchanged fields come back null, as for any update.
+        await testEnv.executeSql(
+          'UPDATE positions SET latest_price = 171 WHERE instrument_id = 2',
+        );
+        await testEnv.executeSql(
+          'UPDATE positions SET net_position = 400 WHERE instrument_id = 2',
+        );
+        const moved = { symbol: 'GOOG', net_position: 400 };
+        expect(byId(await subscription.next())).toEqual([
+          {
+            operation: 'UPDATE',
+            fields: ['id', 'positions'],
+            data: { id: 4, quantity: null, positions: moved },
+          },
+          {
+            operation: 'UPDATE',
+            fields: ['id', 'positions'],
+            data: { id: 5, quantity: null, positions: moved },
+          },
+        ]);
+      } finally {
+        subscription.close();
+      }
     }, 30000);
   });
 });

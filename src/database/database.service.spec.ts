@@ -78,7 +78,7 @@ describe('DatabaseService', () => {
           mode,
           adapter,
           expect.objectContaining({
-            sql: expect.stringContaining('where "symbol" = $1'),
+            sql: expect.stringContaining('where "trades"."symbol" = $1'),
             parameters: ['AAPL'],
           }),
         );

@@ -1,4 +1,4 @@
-import { buildSelect } from './select.js';
+import { buildSelect, nestRow } from './select.js';
 import type { WhereClause } from '../common/types.js';
 import {
   ComparisonOperator,
@@ -21,7 +21,7 @@ const users: SourceDefinition = {
 };
 
 const SELECT =
-  'select "id" as "id", "name" as "name", "active" as "active", "rank" as "rank" from "users" as "users"';
+  'select "users"."id" as "id", "users"."name" as "name", "users"."active" as "active", "users"."rank" as "rank" from "users" as "users"';
 
 function where(clause: WhereClause) {
   const { sql, parameters } = buildSelect(users, { where: clause });
@@ -32,11 +32,7 @@ function where(clause: WhereClause) {
 describe('buildSelect', () => {
   describe('the statement', () => {
     it('should select every column of the source when the selection names none, with no WHERE when there is no filter', () => {
-      const all = {
-        sql: SELECT,
-        parameters: [],
-        columns: ['id', 'name', 'active', 'rank'],
-      };
+      const all = { sql: SELECT, parameters: [] };
       expect(buildSelect(users)).toEqual(all);
       expect(buildSelect(users, {})).toEqual(all);
       expect(buildSelect(users, { where: {} })).toEqual(all);
@@ -44,17 +40,15 @@ describe('buildSelect', () => {
 
     it("should select only the columns named, and the key, in the source's order", () => {
       expect(buildSelect(users, { columns: ['rank', 'name'] })).toEqual({
-        sql: 'select "id" as "id", "name" as "name", "rank" as "rank" from "users" as "users"',
+        sql: 'select "users"."id" as "id", "users"."name" as "name", "users"."rank" as "rank" from "users" as "users"',
         parameters: [],
-        columns: ['id', 'name', 'rank'],
       });
     });
 
     it('should select the key alone when the selection names no columns', () => {
       expect(buildSelect(users, { columns: [] })).toEqual({
-        sql: 'select "id" as "id" from "users" as "users"',
+        sql: 'select "users"."id" as "id" from "users" as "users"',
         parameters: [],
-        columns: ['id'],
       });
     });
 
@@ -73,9 +67,102 @@ describe('buildSelect', () => {
       expect(
         buildSelect(source, { where: { 'we"ird': { _eq: 'x' } } }),
       ).toMatchObject({
-        sql: 'select "we""ird" as "we""ird" from "odd""view" as "odd""view" where "we""ird" = $1',
+        sql: 'select "odd""view"."we""ird" as "we""ird" from "odd""view" as "odd""view" where "odd""view"."we""ird" = $1',
         parameters: ['x'],
       });
+    });
+  });
+
+  describe('joins', () => {
+    const instruments: SourceDefinition = {
+      name: 'instruments',
+      primaryKeyField: 'id',
+      fields: [
+        { name: 'id', type: PostgresType.Int4 },
+        { name: 'name', type: PostgresType.Text },
+      ],
+    };
+    const positions: SourceDefinition = {
+      name: 'positions',
+      primaryKeyField: 'instrument_id',
+      fields: [
+        { name: 'instrument_id', type: PostgresType.Int4 },
+        { name: 'net_position', type: PostgresType.Int8 },
+      ],
+      foreignKeys: [{ column: 'instrument_id', references: instruments }],
+    };
+    const trades: SourceDefinition = {
+      name: 'trades',
+      primaryKeyField: 'id',
+      fields: [
+        { name: 'id', type: PostgresType.Int4 },
+        { name: 'instrument_id', type: PostgresType.Int4 },
+        { name: 'quantity', type: PostgresType.Int4 },
+      ],
+      foreignKeys: [{ column: 'instrument_id', references: positions }],
+    };
+
+    it('should left join each row a selected foreign key references, on its key, at any depth, each table and column named by its path', () => {
+      expect(
+        buildSelect(trades, {
+          columns: ['quantity'],
+          joins: {
+            positions: {
+              columns: ['net_position'],
+              joins: { instruments: { columns: ['name'] } },
+            },
+          },
+        }),
+      ).toEqual({
+        sql:
+          'select "trades"."id" as "id", "trades"."quantity" as "quantity", ' +
+          '"trades.positions"."instrument_id" as "positions.instrument_id", "trades.positions"."net_position" as "positions.net_position", ' +
+          '"trades.positions.instruments"."id" as "positions.instruments.id", "trades.positions.instruments"."name" as "positions.instruments.name" ' +
+          'from "trades" as "trades" ' +
+          'left join "positions" as "trades.positions" on "trades.positions"."instrument_id" = "trades"."instrument_id" ' +
+          'left join "instruments" as "trades.positions.instruments" on "trades.positions.instruments"."id" = "trades.positions"."instrument_id"',
+        parameters: [],
+      });
+    });
+
+    it("should filter and order by the selected rows' own columns", () => {
+      expect(
+        buildSelect(trades, {
+          columns: ['quantity'],
+          joins: { positions: { columns: ['net_position'] } },
+          where: { quantity: { _gt: 0 } },
+          orderBy: [{ id: OrderDirection.Asc }],
+        }).sql,
+      ).toMatch(/ where "trades"."quantity" > \$1 order by "trades"."id" asc$/);
+    });
+
+    it('should join a source to itself under its own path', () => {
+      const employees: SourceDefinition = {
+        name: 'employees',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'manager_id', type: PostgresType.Int4 },
+        ],
+      };
+      employees.foreignKeys = [{ column: 'manager_id', references: employees }];
+
+      expect(
+        buildSelect(employees, {
+          columns: ['id'],
+          joins: { employees: { columns: ['id'] } },
+        }).sql,
+      ).toBe(
+        'select "employees"."id" as "id", "employees.employees"."id" as "employees.id" ' +
+          'from "employees" as "employees" ' +
+          'left join "employees" as "employees.employees" on "employees.employees"."id" = "employees"."manager_id"',
+      );
+    });
+
+    it("should reject joining a field that isn't a foreign key's", () => {
+      expect(() =>
+        buildSelect(positions, { joins: { trades: { columns: ['id'] } } }),
+      ).toThrow("Unknown relationship 'trades' of 'positions'");
     });
   });
 
@@ -89,7 +176,7 @@ describe('buildSelect', () => {
       [ComparisonOperator.Lte, '<='],
     ])('should compile %s to %s with the value as a parameter', (op, sqlOp) => {
       expect(where({ id: { [op]: 21 } })).toEqual({
-        condition: `"id" ${sqlOp} $1`,
+        condition: `"users"."id" ${sqlOp} $1`,
         parameters: [21],
       });
     });
@@ -107,7 +194,7 @@ describe('buildSelect', () => {
       'should compile %s to %s with the pattern as a parameter',
       (op, sqlOp) => {
         expect(where({ name: { [op]: 'A%' } })).toEqual({
-          condition: `"name" ${sqlOp} $1`,
+          condition: `"users"."name" ${sqlOp} $1`,
           parameters: ['A%'],
         });
       },
@@ -115,22 +202,22 @@ describe('buildSelect', () => {
 
     it('should order text and booleans, and match booleans against a set', () => {
       expect(where({ name: { _gt: 'm' } })).toEqual({
-        condition: '"name" > $1',
+        condition: '"users"."name" > $1',
         parameters: ['m'],
       });
       expect(where({ active: { _gte: false, _in: [true] } })).toEqual({
-        condition: '("active" >= $1 and "active" in ($2))',
+        condition: '("users"."active" >= $1 and "users"."active" in ($2))',
         parameters: [false, true],
       });
     });
 
     it('should compile _in and _nin to parameter lists', () => {
       expect(where({ name: { _in: ['a', 'b'] } })).toEqual({
-        condition: '"name" in ($1, $2)',
+        condition: '"users"."name" in ($1, $2)',
         parameters: ['a', 'b'],
       });
       expect(where({ name: { _nin: ['a'] } })).toEqual({
-        condition: '"name" not in ($1)',
+        condition: '"users"."name" not in ($1)',
         parameters: ['a'],
       });
     });
@@ -148,10 +235,10 @@ describe('buildSelect', () => {
 
     it('should compile _is_null', () => {
       expect(where({ name: { _is_null: true } }).condition).toBe(
-        '"name" is null',
+        '"users"."name" is null',
       );
       expect(where({ name: { _is_null: false } }).condition).toBe(
-        '"name" is not null',
+        '"users"."name" is not null',
       );
     });
 
@@ -159,7 +246,7 @@ describe('buildSelect', () => {
       expect(
         where({ active: { _eq: true }, name: { _eq: "x' or '1'='1" } }),
       ).toEqual({
-        condition: '("active" = $1 and "name" = $2)',
+        condition: '("users"."active" = $1 and "users"."name" = $2)',
         parameters: [true, "x' or '1'='1"],
       });
     });
@@ -177,7 +264,7 @@ describe('buildSelect', () => {
       expect(
         buildSelect(users, { orderBy: [{ name: direction }] }),
       ).toMatchObject({
-        sql: `${SELECT} order by "name" ${sqlDirection}`,
+        sql: `${SELECT} order by "users"."name" ${sqlDirection}`,
         parameters: [],
       });
     });
@@ -187,7 +274,7 @@ describe('buildSelect', () => {
         buildSelect(users, {
           orderBy: [{ rank: OrderDirection.Desc }, { id: OrderDirection.Asc }],
         }).sql,
-      ).toBe(`${SELECT} order by "rank" desc, "id" asc`);
+      ).toBe(`${SELECT} order by "users"."rank" desc, "users"."id" asc`);
     });
 
     it('should pass the limit and offset as parameters, after the filter', () => {
@@ -199,7 +286,7 @@ describe('buildSelect', () => {
           offset: 20,
         }),
       ).toMatchObject({
-        sql: `${SELECT} where "active" = $1 order by "id" asc limit $2 offset $3`,
+        sql: `${SELECT} where "users"."active" = $1 order by "users"."id" asc limit $2 offset $3`,
         parameters: [true, 10, 20],
       });
     });
@@ -223,7 +310,8 @@ describe('buildSelect', () => {
   describe('logic', () => {
     it('should AND several operators on one field, and several fields', () => {
       expect(where({ id: { _gte: 18, _lt: 65 }, name: { _eq: 'a' } })).toEqual({
-        condition: '("id" >= $1 and "id" < $2 and "name" = $3)',
+        condition:
+          '("users"."id" >= $1 and "users"."id" < $2 and "users"."name" = $3)',
         parameters: [18, 65, 'a'],
       });
     });
@@ -232,15 +320,15 @@ describe('buildSelect', () => {
       expect(
         where({ _and: [{ id: { _eq: 1 } }, { name: { _eq: 'a' } }] }),
       ).toEqual({
-        condition: '("id" = $1 and "name" = $2)',
+        condition: '("users"."id" = $1 and "users"."name" = $2)',
         parameters: [1, 'a'],
       });
       expect(where({ _or: [{ id: { _eq: 1 } }, { id: { _eq: 2 } }] })).toEqual({
-        condition: '("id" = $1 or "id" = $2)',
+        condition: '("users"."id" = $1 or "users"."id" = $2)',
         parameters: [1, 2],
       });
       expect(where({ _not: { name: { _eq: 'a' } } })).toEqual({
-        condition: 'not "name" = $1',
+        condition: 'not "users"."name" = $1',
         parameters: ['a'],
       });
     });
@@ -254,7 +342,8 @@ describe('buildSelect', () => {
           ],
         }),
       ).toEqual({
-        condition: '(("name" = $1 or "name" = $2) and not "id" < $3)',
+        condition:
+          '(("users"."name" = $1 or "users"."name" = $2) and not "users"."id" < $3)',
         parameters: ['a', 'b', 18],
       });
     });
@@ -263,11 +352,11 @@ describe('buildSelect', () => {
   describe('enums', () => {
     it('should compare equality and sets as text', () => {
       expect(where({ rank: { _eq: 'gold' } })).toEqual({
-        condition: '"rank" = $1',
+        condition: '"users"."rank" = $1',
         parameters: ['gold'],
       });
       expect(where({ rank: { _in: ['gold', 'bronze'] } })).toEqual({
-        condition: '"rank" in ($1, $2)',
+        condition: '"users"."rank" in ($1, $2)',
         parameters: ['gold', 'bronze'],
       });
     });
@@ -291,7 +380,7 @@ describe('buildSelect', () => {
       'should order by declared position: %s %s matches %j',
       (op, value, expected) => {
         expect(where({ rank: { [op]: value } })).toEqual({
-          condition: `"rank" in (${expected.map((_, i) => `$${i + 1}`).join(', ')})`,
+          condition: `"users"."rank" in (${expected.map((_, i) => `$${i + 1}`).join(', ')})`,
           parameters: expected,
         });
       },
@@ -341,5 +430,51 @@ describe('buildSelect', () => {
         }),
       ).toThrow("Unknown operator '_similar' on 'name'");
     });
+  });
+});
+
+describe('nestRow', () => {
+  it("should fold each joined row's columns, named by their path, into an object of its own, at any depth", () => {
+    expect(
+      nestRow({
+        id: 1,
+        quantity: 500,
+        'positions.instrument_id': 1,
+        'positions.net_position': 600,
+        'positions.instruments.id': 1,
+        'positions.instruments.name': 'Apple Inc.',
+      }),
+    ).toEqual({
+      id: 1,
+      quantity: 500,
+      positions: {
+        instrument_id: 1,
+        net_position: 600,
+        instruments: { id: 1, name: 'Apple Inc.' },
+      },
+    });
+  });
+
+  it('should make a joined row whose columns are all null, as when nothing matched, null', () => {
+    expect(
+      nestRow({
+        id: 3,
+        quantity: 10,
+        'positions.instrument_id': null,
+        'positions.net_position': null,
+        'positions.instruments.id': null,
+        'positions.instruments.name': null,
+      }),
+    ).toEqual({ id: 3, quantity: 10, positions: null });
+  });
+
+  it('should keep a joined row whose key is its only non-null column', () => {
+    expect(
+      nestRow({
+        id: 1,
+        'positions.instrument_id': 1,
+        'positions.net_position': null,
+      }),
+    ).toEqual({ id: 1, positions: { instrument_id: 1, net_position: null } });
   });
 });

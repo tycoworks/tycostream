@@ -55,3 +55,31 @@ sources:
     primary_key: id
     columns:
       id: int4
+
+  # A trade blotter's sources: each trade references its position, and each
+  # position its instrument
+  instruments:
+    primary_key: id
+    columns:
+      id: int4
+      name: text
+
+  positions:
+    primary_key: instrument_id
+    columns:
+      instrument_id: int4
+      symbol: text
+      net_position: int8
+      latest_price: numeric
+    foreign_keys:
+      instrument_id: instruments
+
+  trades:
+    primary_key: id
+    columns:
+      id: int4
+      instrument_id: int4
+      quantity: int4
+      price: numeric
+    foreign_keys:
+      instrument_id: positions

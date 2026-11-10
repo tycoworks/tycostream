@@ -3,6 +3,8 @@ import { readFileSync } from 'fs';
 import { load } from 'js-yaml';
 import { Logger } from '@nestjs/common';
 import type {
+  ForeignKey,
+  YamlSourceConfig,
   YamlSourcesFile,
   SourceDefinition,
   SourceField,
@@ -114,6 +116,15 @@ export default registerAs('sources', (): SourceConfiguration => {
       });
     }
 
+    // Foreign keys, once every source they can reference exists
+    for (const [sourceName, sourceConfig] of Object.entries(yamlData.sources)) {
+      sources.get(sourceName)!.foreignKeys = readForeignKeys(
+        sourceName,
+        sourceConfig,
+        sources,
+      );
+    }
+
     logger.log(
       `Loaded ${sources.size} source definitions: ${Array.from(sources.keys()).join(', ')}`,
     );
@@ -156,4 +167,31 @@ function readColumnType(typeName: string): PostgresType {
     );
   }
   return type;
+}
+
+/**
+ * A source's foreign keys: each column, which must be one of its own, and
+ * the source it references, which must exist
+ */
+function readForeignKeys(
+  sourceName: string,
+  sourceConfig: YamlSourceConfig,
+  sources: Map<string, SourceDefinition>,
+): ForeignKey[] {
+  return Object.entries(sourceConfig.foreign_keys ?? {}).map(
+    ([column, referenced]) => {
+      if (!sourceConfig.columns[column]) {
+        throw new Error(
+          `Foreign key '${column}' not found in columns for source '${sourceName}'`,
+        );
+      }
+      const references = sources.get(referenced);
+      if (!references) {
+        throw new Error(
+          `Foreign key '${column}' of source '${sourceName}' references unknown source '${referenced}'`,
+        );
+      }
+      return { column, references };
+    },
+  );
 }

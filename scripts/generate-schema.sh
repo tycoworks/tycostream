@@ -3,21 +3,22 @@
 # Generate schema.yaml from a Postgres-compatible database
 # Supports tables and views as sources, writing each column's type as
 # Postgres's catalog names it (pg_type.typname): int4, timestamptz, _int4...
-# Usage: ./generate-schema.sh [-e enum_name "value1,value2"] -s source1 -p pk1 [-c column:enum] [-s source2 -p pk2 ...] > schema.yaml
+# Usage: ./generate-schema.sh [-e enum_name "value1,value2"] -s source1 -p pk1 [-c column:enum] [-f column:source] [-s source2 -p pk2 ...] > schema.yaml
 # Example:
 #   ./generate-schema.sh \
 #     -e side "buy,sell" \
 #     -s positions -p instrument_id \
-#     -s trades -p id -c side:side > schema.yaml
+#     -s trades -p id -c side:side -f instrument_id:positions > schema.yaml
 
 set -e
 
 # Check arguments
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 [-e enum_name \"value1,value2\"] -s source -p primary_key [-c column:enum] ..." >&2
+    echo "Usage: $0 [-e enum_name \"value1,value2\"] -s source -p primary_key [-c column:enum] [-f column:source] ..." >&2
     echo "Example: $0 -e status \"pending,active\" -s users -p id -c user_status:status > schema.yaml" >&2
     echo "Note: Primary key is required for each source" >&2
     echo "      Use -c to map columns to enums (e.g., -c status:status or -c order_status:status)" >&2
+    echo "      Use -f for a column that references another source's key (e.g., -f instrument_id:positions)" >&2
     exit 1
 fi
 
@@ -41,7 +42,8 @@ PSQL="psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -t -A -q"
 SOURCES=""
 PRIMARY_KEYS=""
 ENUMS=""
-COLUMN_MAPPINGS=""  # Pipe-separated list of source|column:enum mappings
+COLUMN_MAPPINGS=""  # Comma-separated list of source|column:enum mappings
+FOREIGN_KEYS=""  # Comma-separated list of source|column:referenced_source
 current_source=""
 current_enum=""
 current_index=0
@@ -133,9 +135,28 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
+        -f|--foreign-key)
+            if [ -z "$current_source" ]; then
+                echo "Error: -f must come after -s" >&2
+                exit 1
+            fi
+            if [ -n "$2" ] && [[ ! "$2" =~ ^- ]]; then
+                # Add a foreign key for current source
+                if [ -z "$FOREIGN_KEYS" ]; then
+                    FOREIGN_KEYS="$current_source|$2"
+                else
+                    FOREIGN_KEYS="$FOREIGN_KEYS,$current_source|$2"
+                fi
+                shift 2
+            else
+                echo "Error: -f requires a column:source foreign key" >&2
+                echo "Example: -f instrument_id:positions" >&2
+                exit 1
+            fi
+            ;;
         *)
             echo "Error: Unknown option $1" >&2
-            echo "Usage: $0 [-e enum_name \"values\"] -s source -p primary_key [-c column:enum] ..." >&2
+            echo "Usage: $0 [-e enum_name \"values\"] -s source -p primary_key [-c column:enum] [-f column:source] ..." >&2
             exit 1
             ;;
     esac
@@ -151,7 +172,7 @@ fi
 
 if [ -z "$SOURCES" ]; then
     echo "Error: No sources specified" >&2
-    echo "Usage: $0 [-e enum_name \"values\"] -s source -p primary_key [-c column:enum] ..." >&2
+    echo "Usage: $0 [-e enum_name \"values\"] -s source -p primary_key [-c column:enum] [-f column:source] ..." >&2
     exit 1
 fi
 
@@ -231,6 +252,23 @@ for source in "${SOURCE_ARRAY[@]}"; do
             echo "      $name: $type"
         fi
     done <<< "$COLUMNS"
+
+    # Add this source's foreign keys, each column with the source it references
+    if [ -n "$FOREIGN_KEYS" ]; then
+        IFS=',' read -ra FK_ARRAY <<< "$FOREIGN_KEYS"
+        fk_header_written=""
+        for fk in "${FK_ARRAY[@]}"; do
+            IFS='|' read -r fk_source fk_col_ref <<< "$fk"
+            if [ "$fk_source" = "$source" ]; then
+                IFS=':' read -r col_name referenced <<< "$fk_col_ref"
+                if [ -z "$fk_header_written" ]; then
+                    echo "    foreign_keys:"
+                    fk_header_written="yes"
+                fi
+                echo "      $col_name: $referenced"
+            fi
+        done
+    fi
 
     index=$((index + 1))
 done

@@ -338,6 +338,68 @@ describe('generateSchema', () => {
     expect(operators('Int_comparison_exp')).not.toContain('_ilike');
   });
 
+  describe('foreign keys', () => {
+    const positions: SourceDefinition = {
+      name: 'positions',
+      primaryKeyField: 'instrument_id',
+      fields: [
+        { name: 'instrument_id', type: PostgresType.Int4 },
+        { name: 'net_position', type: PostgresType.Int8 },
+      ],
+    };
+    const trades = (fields: SourceDefinition['fields']): SourceDefinition => ({
+      name: 'trades',
+      primaryKeyField: 'id',
+      fields,
+      foreignKeys: [{ column: 'instrument_id', references: positions }],
+    });
+
+    it('should give a row a field of the row each foreign key references, named after its source, null when none matches', () => {
+      const schema = buildSchema(
+        generateSchema(
+          createConfig(
+            new Map([
+              ['positions', positions],
+              [
+                'trades',
+                trades([
+                  { name: 'id', type: PostgresType.Int4 },
+                  { name: 'instrument_id', type: PostgresType.Int4 },
+                ]),
+              ],
+            ]),
+          ),
+        ),
+      );
+
+      const field = (schema.getType('trades') as GraphQLObjectType).getFields()
+        .positions;
+      expect(String(field.type)).toBe('positions');
+    });
+
+    it('should leave it to GraphQL to refuse a foreign key whose field clashes with a column', () => {
+      const sdl = generateSchema(
+        createConfig(
+          new Map([
+            ['positions', positions],
+            [
+              'trades',
+              trades([
+                { name: 'id', type: PostgresType.Int4 },
+                { name: 'instrument_id', type: PostgresType.Int4 },
+                { name: 'positions', type: PostgresType.Text },
+              ]),
+            ],
+          ]),
+        ),
+      );
+
+      expect(() => buildSchema(sdl)).toThrow(
+        'Field "trades.positions" can only be defined once.',
+      );
+    });
+  });
+
   it('should handle underscored source names', () => {
     const sources = new Map<string, SourceDefinition>([
       [

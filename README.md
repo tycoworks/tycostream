@@ -66,7 +66,11 @@ sources:
       executed_at: timestamp
 ```
 
-Names must match the database exactly, including case. Types are Postgres's (`int4`, `numeric`, `timestamptz`), or an enum's name. Each client's subscription runs as its own query in Materialize, so index the views you serve, or make them materialized views, so a subscription doesn't recompute its view from scratch.
+Notes:
+- Names must match the database exactly, including case.
+- Types are Postgres's (`int4`, `numeric`, `timestamptz`), or an enum's name.
+- `foreign_keys` names each column that references another source's primary key. `instrument_id: positions` gives each trade a `positions` field holding its position, as in `trades { quantity positions { symbol net_position } }`. The generator below writes one with `-f instrument_id:positions`.
+- Each client's subscription runs as its own query in Materialize, so index the views you serve, or make them materialized views, so a subscription doesn't recompute its view from scratch.
 
 You can use the bundled generator script to create schema files directly from your database. For the trades table example above, the command would look like this:
 

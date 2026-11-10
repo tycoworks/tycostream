@@ -70,6 +70,58 @@ sources:
     expect(config.enums.size).toBe(0); // No enums in this test
   });
 
+  describe('foreign keys', () => {
+    const positions = {
+      primary_key: 'instrument_id',
+      columns: { instrument_id: 'int4', symbol: 'text', net_position: 'int8' },
+    };
+    const load = (trades: object) => {
+      (fs.readFileSync as Mock).mockReturnValue('');
+      (yaml.load as Mock).mockReturnValue({ sources: { trades, positions } });
+      return sourcesConfig();
+    };
+
+    it('should give each source its foreign keys, each column with the source it references, declared before or after it', () => {
+      const config = load({
+        primary_key: 'id',
+        columns: { id: 'int4', instrument_id: 'int4', quantity: 'int4' },
+        foreign_keys: { instrument_id: 'positions' },
+      });
+
+      expect(config.sources.get('trades')?.foreignKeys).toEqual([
+        {
+          column: 'instrument_id',
+          references: config.sources.get('positions'),
+        },
+      ]);
+      expect(config.sources.get('positions')?.foreignKeys).toEqual([]);
+    });
+
+    it("should throw on a foreign key column the source doesn't have", () => {
+      expect(() =>
+        load({
+          primary_key: 'id',
+          columns: { id: 'int4', quantity: 'int4' },
+          foreign_keys: { instrument_id: 'positions' },
+        }),
+      ).toThrow(
+        "Foreign key 'instrument_id' not found in columns for source 'trades'",
+      );
+    });
+
+    it('should throw on a foreign key that references an unknown source', () => {
+      expect(() =>
+        load({
+          primary_key: 'id',
+          columns: { id: 'int4', instrument_id: 'int4' },
+          foreign_keys: { instrument_id: 'position' },
+        }),
+      ).toThrow(
+        "Foreign key 'instrument_id' of source 'trades' references unknown source 'position'",
+      );
+    });
+  });
+
   it('should throw error when schema file is missing', () => {
     const error = new Error('ENOENT') as NodeJS.ErrnoException;
     error.code = 'ENOENT';

@@ -1,5 +1,10 @@
 import { collectSubFields } from '@graphql-tools/utils';
-import { TypeNameMetaFieldDef, assertObjectType, getNamedType } from 'graphql';
+import {
+  TypeNameMetaFieldDef,
+  assertObjectType,
+  getNamedType,
+  isObjectType,
+} from 'graphql';
 import type {
   FieldNode,
   GraphQLObjectType,
@@ -112,15 +117,15 @@ export function buildResolvers(
   };
 }
 
-// The selection a root field makes: the columns it selects, or those within
-// one of its fields, and its arguments
+// The selection a root field makes: what it selects of its rows, or of those
+// within one of its fields, and its arguments
 function selectionOf(
   args: Args,
   info: GraphQLResolveInfo,
   within?: string,
 ): Selection {
   return {
-    columns: selectedColumns(info, within),
+    ...selectedRow(info, within),
     where: args[RootFieldArgument.Where],
     orderBy: args[RootFieldArgument.OrderBy],
     limit: args[RootFieldArgument.Limit],
@@ -128,10 +133,8 @@ function selectionOf(
   };
 }
 
-// The fields a root field selects, or those within one of its fields.
-// GraphQL's field collection follows fragments and applies @skip and
-// @include; aliases make no difference, and __typename isn't a column.
-function selectedColumns(info: GraphQLResolveInfo, within?: string): string[] {
+// What a root field selects of its rows, or of those within one of its fields
+function selectedRow(info: GraphQLResolveInfo, within?: string): Selection {
   let type = objectType(info.returnType);
   let fields: FieldNode[] = [...info.fieldNodes];
   if (within) {
@@ -140,10 +143,40 @@ function selectedColumns(info: GraphQLResolveInfo, within?: string): string[] {
     );
     type = objectType(type.getFields()[within].type);
   }
-  const names = subfields(info, type, fields)
-    .map((field) => field.name.value)
-    .filter((name) => name !== TypeNameMetaFieldDef.name);
-  return [...new Set(names)];
+  return rowSelection(info, type, fields);
+}
+
+// What the fields select of a row of the type: its columns, and each joined
+// row's selection, by its field. GraphQL's field collection follows fragments
+// and applies @skip and @include; aliases make no difference, and __typename
+// isn't a column.
+function rowSelection(
+  info: GraphQLResolveInfo,
+  type: GraphQLObjectType,
+  fields: FieldNode[],
+): Selection {
+  const columns = new Set<string>();
+  const joins = new Map<string, FieldNode[]>();
+  for (const field of subfields(info, type, fields)) {
+    const name = field.name.value;
+    if (name === TypeNameMetaFieldDef.name) {
+      continue;
+    }
+    if (isObjectType(getNamedType(type.getFields()[name].type))) {
+      joins.set(name, [...(joins.get(name) ?? []), field]);
+    } else {
+      columns.add(name);
+    }
+  }
+  return {
+    columns: [...columns],
+    joins: Object.fromEntries(
+      [...joins].map(([name, nodes]) => [
+        name,
+        rowSelection(info, objectType(type.getFields()[name].type), nodes),
+      ]),
+    ),
+  };
 }
 
 // The fields selected directly under the given ones, which are of the type

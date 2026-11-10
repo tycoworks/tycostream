@@ -127,12 +127,14 @@ export type OrderBy = Record<string, OrderDirection>[];
 
 /**
  * Which of a source's columns and rows a client wants, in what order, and
- * which slice of them, as a SELECT would say: its columns, its filter, its
- * order, and its limit and offset
+ * which slice of them, as a SELECT would say: its columns, the rows it
+ * joins, its filter, its order, and its limit and offset
  */
 export interface Selection {
   // Every column when absent; the key is always selected
   columns?: string[];
+  // Each row a foreign key of it references, joined, by the row's field
+  joins?: Record<string, Selection>;
   where?: WhereClause;
   orderBy?: OrderBy;
   limit?: number;

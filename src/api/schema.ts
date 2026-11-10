@@ -448,18 +448,21 @@ function getComparisonType(field: SourceField): string {
 
 /**
  * Build field definitions for a source type
- * Maps source fields to GraphQL fields with appropriate types and nullability
+ * Maps source fields to GraphQL fields with appropriate types and nullability,
+ * then gives each foreign key a field of the row it references, named after
+ * its source, null when none matches
  */
 function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
-  return sourceDefinition.fields
-    .map((field) => {
-      // Use enum type if this field has one, otherwise use scalar type
-      const graphqlTypeName = field.enumType
-        ? field.enumType.name
-        : SCALARS[field.type];
-      const nullable =
-        field.name !== sourceDefinition.primaryKeyField ? '' : '!';
-      return `      ${field.name}: ${graphqlTypeName}${nullable}`;
-    })
-    .join('\n');
+  const columns = sourceDefinition.fields.map((field) => {
+    // Use enum type if this field has one, otherwise use scalar type
+    const graphqlTypeName = field.enumType
+      ? field.enumType.name
+      : SCALARS[field.type];
+    const nullable = field.name !== sourceDefinition.primaryKeyField ? '' : '!';
+    return `      ${field.name}: ${graphqlTypeName}${nullable}`;
+  });
+  const joins = (sourceDefinition.foreignKeys ?? []).map(
+    ({ references }) => `      ${references.name}: ${references.name}`,
+  );
+  return [...columns, ...joins].join('\n');
 }

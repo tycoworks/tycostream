@@ -21,6 +21,15 @@ export interface SourceField {
 }
 
 /**
+ * A column of a source that references another source's primary key, as a
+ * foreign key does in Postgres
+ */
+export interface ForeignKey {
+  column: string;
+  references: SourceDefinition;
+}
+
+/**
  * Complete definition of a data source for streaming
  * Maps to a database view that we subscribe to and expose via GraphQL
  */
@@ -28,6 +37,7 @@ export interface SourceDefinition {
   name: string; // Source name (e.g., 'trades', 'positions')
   primaryKeyField: string; // Which field is the primary key
   fields: SourceField[]; // All fields in this source
+  foreignKeys?: ForeignKey[]; // Its columns that reference other sources
 }
 
 /**
@@ -41,11 +51,13 @@ export interface SourceConfiguration {
 
 /**
  * Structure of a single source in the YAML file
- * Contains primary_key and columns mapping
+ * Contains primary_key and columns mapping, and its foreign keys: each
+ * column that references another source, by that source's name
  */
 export interface YamlSourceConfig {
   primary_key: string;
   columns: Record<string, string>;
+  foreign_keys?: Record<string, string>;
 }
 
 /**

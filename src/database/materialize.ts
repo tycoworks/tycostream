@@ -3,8 +3,9 @@ import type pg from 'pg';
 import type { SourceDefinition } from '../config/source.types.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
-import { insertOf, pickRow, readSnapshot } from './postgres.js';
+import { insertOf, readSnapshot } from './postgres.js';
 import type { RawRow } from './postgres.js';
+import { nestRow } from './select.js';
 import type { CompiledSelect } from './select.js';
 import { DatabaseAdapter } from './types.js';
 
@@ -32,6 +33,17 @@ enum SubscribeColumn {
   Timestamp = 'mz_timestamp',
   Progressed = 'mz_progressed',
   Diff = 'mz_diff',
+}
+
+const SUBSCRIBE_COLUMNS: ReadonlySet<string> = new Set(
+  Object.values(SubscribeColumn),
+);
+
+// A SUBSCRIBE row's own columns, the SELECT's
+function withoutSubscribeColumns(raw: RawRow): RawRow {
+  return Object.fromEntries(
+    Object.entries(raw).filter(([name]) => !SUBSCRIBE_COLUMNS.has(name)),
+  );
 }
 
 // FETCH waits until rows exist, so a bigger batch only helps a busy view
@@ -75,18 +87,14 @@ export class MaterializeAdapter extends DatabaseAdapter {
     );
 
     // FETCH without a timeout returns as soon as rows exist
-    const batcher = new ProgressBatcher(select.columns);
+    const batcher = new ProgressBatcher();
     let snapshot = true;
     while (true) {
       const { rows } = await client.query<RawRow>(
         `FETCH ${FETCH_SIZE} ${CURSOR}`,
       );
       for (const { timestamp, rows: changes } of batcher.take(rows)) {
-        const events = pairChanges(
-          changes,
-          source.primaryKeyField,
-          select.columns,
-        );
+        const events = pairChanges(changes, source.primaryKeyField);
         // The snapshot is sent even when empty; after it, a timestamp whose
         // changes cancel out has nothing to send
         if (snapshot || events.length > 0) {
@@ -100,13 +108,11 @@ export class MaterializeAdapter extends DatabaseAdapter {
 
 /**
  * Holds a live stream's rows until a progress row says their timestamp is
- * complete, keeping only the SELECT's columns
+ * complete, each as the SELECT returns it, without SUBSCRIBE's own columns
  */
 export class ProgressBatcher {
   private readonly pending = new Map<bigint, DiffRow[]>();
   private started = false;
-
-  constructor(private readonly columns: string[]) {}
 
   /**
    * Takes fetched rows and returns each timestamp they complete, oldest
@@ -136,7 +142,7 @@ export class ProgressBatcher {
         const batch = this.pending.get(timestamp) ?? [];
         batch.push({
           diff: Number(raw[SubscribeColumn.Diff]),
-          row: pickRow(this.columns, raw),
+          row: nestRow(withoutSubscribeColumns(raw)),
         });
         this.pending.set(timestamp, batch);
       }
@@ -174,10 +180,9 @@ export class KeyViolationError extends Error {
 export function pairChanges(
   rows: DiffRow[],
   primaryKeyField: string,
-  fieldNames: string[],
 ): RowUpdateEvent[] {
   const byKey = new Map<string, DiffRow[]>();
-  for (const netted of netIdenticalRows(rows, fieldNames)) {
+  for (const netted of netIdenticalRows(rows)) {
     const key = valueKey(netted.row[primaryKeyField]);
     const forKey = byKey.get(key) ?? [];
     forKey.push(netted);
@@ -185,21 +190,17 @@ export function pairChanges(
   }
 
   return Array.from(byKey.values()).map((forKey) =>
-    toEvent(forKey, primaryKeyField, fieldNames),
+    toEvent(forKey, primaryKeyField),
   );
 }
 
-function toEvent(
-  forKey: DiffRow[],
-  primaryKeyField: string,
-  fieldNames: string[],
-): RowUpdateEvent {
+function toEvent(forKey: DiffRow[], primaryKeyField: string): RowUpdateEvent {
   const removed = forKey.find((r) => r.diff === -1);
   const added = forKey.find((r) => r.diff === 1);
   const key = forKey[0].row[primaryKeyField];
 
   if (forKey.length === 1 && added) {
-    return insertOf(added.row, fieldNames);
+    return insertOf(added.row);
   }
   if (forKey.length === 1 && removed) {
     return {
@@ -209,7 +210,7 @@ function toEvent(
     };
   }
   if (forKey.length === 2 && removed && added) {
-    const changed = fieldNames.filter(
+    const changed = Object.keys(added.row).filter(
       (field) => valueKey(removed.row[field]) !== valueKey(added.row[field]),
     );
     return {
@@ -222,19 +223,19 @@ function toEvent(
 }
 
 // Sums the diffs of identical rows, keeping each row's first appearance
-function netIdenticalRows(rows: DiffRow[], fieldNames: string[]): DiffRow[] {
+function netIdenticalRows(rows: DiffRow[]): DiffRow[] {
   const netted = new Map<string, DiffRow>();
   for (const { diff, row } of rows) {
-    const id = valueKey(fieldNames.map((field) => row[field]));
+    const id = valueKey(row);
     const existing = netted.get(id);
     netted.set(id, { diff: (existing?.diff ?? 0) + diff, row });
   }
   return Array.from(netted.values()).filter((r) => r.diff !== 0);
 }
 
-// A comparable form of a value, or of a list of them. Every value is plain
-// JSON, as the parsers give it, so its JSON compares it, keeping null apart
-// from the text 'null'.
+// A comparable form of a value, or of a whole row. Every value is plain JSON,
+// as the parsers give it, so its JSON compares it, keeping null apart from
+// the text 'null'. A SELECT's rows all have their fields in one order.
 function valueKey(value: unknown): string {
   return JSON.stringify(value);
 }
