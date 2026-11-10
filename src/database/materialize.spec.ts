@@ -496,31 +496,20 @@ describe('pairChanges', () => {
       ).toEqual(new Set(['id', 'qty']));
     });
 
-    it('should compare dates by instant and bigints by value', () => {
-      const at = (iso: string) => new Date(iso);
+    it('should compare JSON values by their content', () => {
       const before = {
         id: 1,
         symbol: 'AAPL',
-        qty: 10n,
-        traded_at: at('2026-01-01T00:00:00Z'),
+        qty: { lots: [1] },
+        traded_at: 'T1',
       };
-      const same = {
-        id: 1,
-        symbol: 'MSFT',
-        qty: 10n,
-        traded_at: at('2026-01-01T00:00:00Z'),
-      };
-      expect(pair([remove(before), add(same)])[0].fields).toEqual(
-        new Set(['id', 'symbol']),
-      );
-      const later = {
-        ...before,
-        qty: 11n,
-        traded_at: at('2026-01-02T00:00:00Z'),
-      };
-      expect(pair([remove(before), add(later)])[0].fields).toEqual(
-        new Set(['id', 'qty', 'traded_at']),
-      );
+      expect(
+        pair([remove(before), add({ ...before, qty: { lots: [1] } })]),
+      ).toEqual([]);
+      expect(
+        pair([remove(before), add({ ...before, qty: { lots: [2] } })])[0]
+          .fields,
+      ).toEqual(new Set(['id', 'qty']));
     });
   });
 
