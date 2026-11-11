@@ -74,7 +74,7 @@ Every column takes the first four rows of operators, and text columns (`text`, `
 | `_regex`, `_nregex` | A regular expression, or not |
 | `_iregex`, `_niregex` | A regular expression ignoring case, or not |
 
-Comparisons side by side in one object must all match. `_and` and `_or` take a list of conditions, and `_not` takes one. A null column matches only `_is_null`, as in SQL, and comparing a column with `null` is refused. An enum column compares in the order of the enum's values in `schema.yaml`. `int8` and `numeric` arguments take a number or a string, and a string keeps every digit.
+Materialize's regular expressions use Rust's syntax, not POSIX. Comparisons side by side in one object must all match. `_and` and `_or` take a list of conditions, and `_not` takes one. A null column matches only `_is_null`, as in SQL, and comparing a column with `null` is refused. An enum column compares in the order of the enum's values in `schema.yaml`. `int8` and `numeric` arguments take a number or a string, and a string keeps every digit.
 
 ## Sorting and paging
 
