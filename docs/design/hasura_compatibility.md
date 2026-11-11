@@ -1,6 +1,6 @@
 # Plan: a Hasura-compatible API
 
-Status: draft, 8 Nov 2026; not yet agreed. Branch: `hasura-compatibility`. Breaks clients, so it's released as `v0.4.0`. Follows one message per timestamp ([#18](https://github.com/tycoworks/tycostream/pull/18)); comes before relationships ([relationships.md](./relationships.md)).
+Status: draft, 8 Nov 2026; not yet agreed. Branch: `hasura-compatibility`. Breaks clients, so it's released as `v0.4.0`. Follows one message per timestamp ([#18](https://github.com/tycoworks/tycostream/pull/18)); comes before relationships ([#2](https://github.com/tycoworks/tycostream/issues/2)).
 
 ## Summary
 
@@ -113,7 +113,7 @@ Hasura's subscriptions send the whole result again on every change, or, for `_st
 - `distinct_on`, `_aggregate`, `_stream`, mutations.
 - `jsonb`'s own operators (`_contains`, `_has_key`…), and arrays as GraphQL lists.
 - Non-null columns other than the key. Hasura reads `NOT NULL` from the database; `schema.yaml` could say it later.
-- Relationships ([relationships.md](./relationships.md)).
+- Relationships ([#2](https://github.com/tycoworks/tycostream/issues/2)).
 
 ## To verify first
 
