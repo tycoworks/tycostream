@@ -1,11 +1,17 @@
 {
-  "name": "tycostream-core",
+  "name": "tycostream",
   "version": "0.4.1",
-  "description": "",
-  "author": "",
+  "description": "Turn Materialize views into real-time GraphQL APIs",
+  "author": "tycoworks",
+  "homepage": "https://github.com/tycoworks/tycostream",
+  "repository": "github:tycoworks/tycostream",
+  "bugs": "https://github.com/tycoworks/tycostream/issues",
   "private": true,
   "license": "MIT OR Apache-2.0",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "nest build",
     "start": "node dist/main",

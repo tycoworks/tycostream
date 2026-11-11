@@ -1,110 +1,31 @@
 # E2E Tests
 
-## Running E2E Tests
-
-The e2e tests automatically start a fresh Materialize container using testcontainers:
+The e2e tests run tycostream against a real Materialize, which [Testcontainers](https://node.testcontainers.org/) starts in Docker. The image, `materialize/materialized:v26.49.1`, is pulled on the first run.
 
 ```bash
-npm run test:e2e
+npm run e2e                                         # every suite
+npm run e2e -- integration                          # suites whose file name matches
+npm run e2e -- --exclude test/stress-test.e2e-spec.ts   # all but the stress test
 ```
 
-## Test Strategy
+## Suites
 
-Our E2E test suite is organized into different test categories, each serving a specific purpose:
-
-### 1. **Integration Test** (`integration.e2e-spec.ts`)
-- **Purpose**: Functional testing of the complete system
-- **Coverage**:
-  - All CRUD operations (INSERT, UPDATE, DELETE)
-  - Multiple concurrent SSE connections
-  - Late joiners receiving proper snapshots
-  - Complex operation sequences
-  - All supported data types
-  - Multiple sources in parallel
-  - Error handling for invalid queries
-- **Runtime**: ~30 seconds
-- **Use case**: Pull request validation, release testing
-
-### 2. **Stress Test** (`stress-test.e2e-spec.ts`)
-- **Purpose**: Validate system behavior under load
-- **Coverage**:
-  - High throughput (e.g. 10,000+ operations with mixed INSERT/UPDATE/DELETE)
-  - Many concurrent connections (30 SSE clients by default)
-  - Large snapshots (9,000+ rows)
-  - Late joining clients during heavy load
-  - Staggered client connections
-- **Runtime**: ~8 minutes for full test
-- **Configuration**: Use environment variables STRESS_TEST_ROWS, STRESS_TEST_CLIENTS, STRESS_TEST_DELAY
-- **Use case**: Performance validation, load testing
-
-### 3. **Resilience Test** (TODO)
-- **Purpose**: Test failure scenarios and recovery behavior
-- **Coverage**:
-  - Database disconnection (verify fail-fast behavior)
-  - Network interruptions
-  - Invalid data handling
-  - Resource exhaustion
-  - Graceful shutdown
-- **Runtime**: ~2 minutes
-- **Use case**: Pre-release testing
-
-
-## Current Failure Behavior
-
-Per our implementation standards, the system follows a **fail-fast philosophy**:
-- Database disconnections cause the affected source to error out
-- Errors are propagated to all GraphQL subscribers
-- No automatic reconnection attempts
-- The application continues running but the source becomes unavailable
-- Manual restart required to restore functionality
-
-## Test Coverage Status
-
-✅ **Implemented**:
-- Basic subscription functionality (snapshot and live updates)
-- Multiple source subscriptions
-- All PostgreSQL data types
-- Error handling for non-existent sources
-- Boolean value parsing (fixed)
-
-✅ **Additional Coverage**:
-- UPDATE operations
-- DELETE operations
-- Late joiners (subscribe after data exists)
-- Multiple concurrent connections
-- Complex operation sequences
-- Full `all_types` table testing
-
-## Data Types Tested
-
-The test schema includes two tables to ensure comprehensive type coverage:
-
-1. **users** table:
-   - Text and varchar
-   - Boolean
-   - Timestamps (with/without timezone)
-   - JSON data
-
-2. **all_types** table:
-   - Comprehensive type coverage including:
-   - Boolean types
-   - All numeric types (smallint, integer, bigint, decimal, numeric, real, double precision)
-   - String types (char, varchar, text)
-   - UUID type
-   - Date/time types (date, time, timestamp, timestamptz)
-   - JSON and JSONB types
-
-## Test Infrastructure
-
-The test suite uses a custom test infrastructure with:
-- **TestEnvironment**: Manages test infrastructure (database container, NestJS app, SQL execution)
-- **TestClient**: Manages individual SSE subscriptions with state tracking
-- **TestClientManager**: Manages multiple SSE test clients concurrently
-- **TestScenario**: Generates test operations and expected states for multiple iterations
+- **`database.e2e-spec.ts`**: `DatabaseService` on its own.
+  - Live streams: the snapshot, then one batch per timestamp; filters; a window of the top rows; a failed stream leaving the others running; Materialize dropping the subscription when the consumer stops.
+  - Snapshots: order, offset and limit; the time limit.
+  - The connection cap (`DATABASE_MAX_CONNECTIONS`).
+- **`integration.e2e-spec.ts`**: the whole server over HTTP.
+  - Subscriptions: filters, one SSE message per timestamp, and only the columns a client selects.
+  - Queries: filters, order and limit, and custom scalars in their JSON forms.
+  - Materialize ending a subscription or query as soon as its client leaves.
+- **`http.e2e-spec.ts`**: the HTTP layer, with no database. CORS, GraphiQL on and off, and a failed database connection ending one request with a GraphQL error while the server keeps serving.
+- **`late-joiner.e2e-spec.ts`**: a client that joins while another is still receiving a large snapshot gets every row.
+- **`stress-test.e2e-spec.ts`**: many clients, each subscribed to one department, while inserts, updates and deletes run; each client must end with its department's rows. It's the slow one. Tune it with:
+  - `STRESS_TEST_ITERATIONS`: rounds of operations (default 100)
+  - `STRESS_TEST_CLIENTS`: clients (default 10)
+  - `STRESS_TEST_DELAY`: milliseconds between operations (default 5)
 
 ## Requirements
 
-- Docker must be running
-- Port 4001 must be available for the test GraphQL server  
-- Port 4100 must be available for the stress test GraphQL server
-- The Materialize image (`materialize/materialized:v26.49.1`) will be automatically pulled if not present
+- Docker running. For a runtime other than Docker's default, see Testcontainers' [supported container runtimes](https://node.testcontainers.org/supported-container-runtimes/).
+- Ports 4001, 4003, 4100 and 4200 free. The suites run one at a time, since they share ports and Docker.

@@ -1,31 +1,33 @@
-FROM node:24-alpine
-
-# Install build dependencies
-RUN apk add --no-cache python3 make g++
+# Build: compile the TypeScript, with every dependency
+FROM node:24-alpine AS build
 
 WORKDIR /app
 
-# Copy package files first for better caching
 COPY package*.json ./
-
-# Install all dependencies
 RUN npm ci
 
-# Copy source files
-COPY tsconfig*.json ./
+COPY tsconfig*.json nest-cli.json ./
 COPY src ./src
-# Copy all yaml files to support different schema files
-COPY *.yaml ./
-
-# Build the application
 RUN npm run build
 
-# Remove dev dependencies and clean cache
+# Run: the compiled code and production dependencies only
+FROM node:24-alpine
+
+LABEL org.opencontainers.image.source="https://github.com/tycoworks/tycostream" \
+      org.opencontainers.image.description="Turn Materialize views into real-time GraphQL APIs" \
+      org.opencontainers.image.licenses="MIT OR Apache-2.0"
+
+WORKDIR /app
+
+COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && \
     npm cache clean --force
 
-# Expose GraphQL port
+COPY --from=build /app/dist ./dist
+
+USER node
+
 EXPOSE 4000
 
-# Start the application
-CMD ["npm", "start"]
+# Node itself, not npm, so a stop signal reaches Nest's shutdown hooks
+CMD ["node", "dist/main"]
