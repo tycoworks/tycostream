@@ -1,11 +1,11 @@
 import type pg from 'pg';
 import {
-  KeyViolationError,
   MaterializeAdapter,
   pairChanges,
   ProgressBatcher,
 } from './materialize.js';
 import type { DiffRow } from './materialize.js';
+import { KeyViolationError } from './postgres.js';
 import type { RawRow } from './postgres.js';
 import { Statement } from './statement.js';
 import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';

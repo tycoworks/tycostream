@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import { RowUpdateType, StreamMode } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
-import { insertOf, readSnapshot } from './postgres.js';
+import { KeyViolationError, insertOf, readSnapshot } from './postgres.js';
 import type { RawRow } from './postgres.js';
 import type { Statement } from './statement.js';
 import { DatabaseAdapter } from './types.js';
@@ -150,19 +150,6 @@ export class ProgressBatcher {
       }
     }
     return complete;
-  }
-}
-
-/**
- * Thrown when a timestamp's rows can't be explained by one row per key,
- * so the declared primary key isn't unique
- */
-export class KeyViolationError extends Error {
-  constructor(primaryKeyField: string, key: unknown) {
-    super(
-      `More than one row for ${primaryKeyField} = ${String(key)}: the key isn't unique`,
-    );
-    this.name = 'KeyViolationError';
   }
 }
 

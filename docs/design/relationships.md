@@ -126,7 +126,7 @@ client ◀─JSON──── API ◀─flat changes── view ◀─ database 
 |---|---|---|
 | API | Reads the GraphQL operation into a `Selection`; builds the response from flat changes: a query's rows, a subscription's updates | `api.resolver.ts`, `schema.ts`, `tree.ts`, `api.service.ts` |
 | View | Passes through, for now; a cache or permissions would work on the `Selection` here | `view.service.ts` |
-| Database | Builds the statement, runs it, unpacks its rows, pairs each timestamp's rows into changes | `statement.ts`, `filter.ts`, `postgres.ts`, `materialize.ts`, `stream.ts` |
+| Database | Builds the statement, runs it, unpacks its rows, and turns each timestamp's rows into changes, one per row | `statement.ts`, `filter.ts`, `postgres.ts`, `materialize.ts`, `stream.ts` |
 
 The API never sees SQL, and the database layer never builds a tree.
 
@@ -228,13 +228,13 @@ ORDER BY __row_number
 
 **Unpacking.** `statement.unpack(row)` reads one row: its path, from its source's number, and each key and value parsed from its text by the type `schema.yaml` gives its column.
 
-**Pairing,** one complete timestamp at a time:
+**Changes, one per row,** one complete timestamp at a time. Each adapter turns its database's rows into them. Materialize's `SUBSCRIBE` sends bare diffs, so its adapter pairs them:
 
 1. Group the rows by path and keys.
 2. Where a group has more than one row, net identical rows: a −1 and a +1 of the same values cancel.
 3. Then a +1 alone is an INSERT, a −1 alone a DELETE, a −1 and a +1 an UPDATE of the columns that differ, and nothing left is no change. Anything else is a `KeyViolationError`, naming the key by its path, as `trades.id`, and saying that a related row's key may be the one that isn't unique: two positions for one instrument make a trade two rows.
 
-A query's rows are all +1, so they become inserts; two rows with one key fail the query, as they fail a subscription now.
+A query's rows, from a plain `SELECT` in any Postgres-compatible database, are each an insert; two rows with one key fail the query, as they fail a subscription. Another database would make changes its own way: RisingWave sends each row's operation, so it needs no pairing ([risingwave.md](./risingwave.md)).
 
 ## Building the response
 
@@ -305,7 +305,9 @@ One branch and one pull request. Each step is one commit, passes every test, and
 4. **Foreign keys:** `foreign_keys` in `schema.yaml`, both relationships derived from each, and the startup checks. Not in the API yet.
 5. **`tree.ts`:** building a query's rows and a subscription's updates moves out of `ApiService`, into `toRows` and `toUpdates`. No change for clients.
 6. **The statement reads related rows of both kinds:** a relationship to one row as a `LEFT JOIN`, its columns named by path in the row's JSON; one to many rows as a CTE, read `LATERAL` for each parent row and tagged `__source`. Unit-tested, not yet reachable from GraphQL. If its diff is too big, it splits by mechanism: the joins, then the CTEs.
-7. **Changes carry `path` and `keys`,** paired the same way for queries and subscriptions, in the database layer; the statement adds `__keys`. A key that isn't unique now fails a query too.
+7. **Changes carry `path` and `keys`,** in two commits:
+   - **7a:** a query refuses a key it sees twice, as a subscription's pairing does; pairing stays Materialize's. A key that isn't unique now fails a query too.
+   - **7b:** the statement adds `__keys`; each row's change carries its `path` and `keys`, and both the query's check and Materialize's pairing go by them.
 8. **Relationships in queries, both kinds:** their fields and arguments, the resolver reading nested selections, `tree.ts` folding related rows into objects and nesting lists, and `[]` from the resolvers. Useful on its own: Hasura's nested queries, in one consistent read.
 9. **Relationships in subscriptions, both kinds:** the goal. Related rows inside `data`, lists beside it as the update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels; a related row's column changing (its field in `fields`, sent whole). End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
 10. **The README.**

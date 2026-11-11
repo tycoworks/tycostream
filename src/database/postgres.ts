@@ -73,6 +73,20 @@ export function parseText(type: PostgresType, text: string | null): unknown {
 }
 
 /**
+ * Thrown when a read's rows can't be explained by one row per key, so the
+ * declared primary key isn't unique: a query with a key twice, or a
+ * timestamp's changes with one
+ */
+export class KeyViolationError extends Error {
+  constructor(primaryKeyField: string, key: unknown) {
+    super(
+      `More than one row for ${primaryKeyField} = ${String(key)}: the key isn't unique`,
+    );
+    this.name = 'KeyViolationError';
+  }
+}
+
+/**
  * A row arriving whole: an insert of every column
  */
 export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
@@ -80,9 +94,10 @@ export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
 }
 
 /**
- * A snapshot, as every Postgres-compatible database gives one: the SELECT's
- * rows, typed, as one batch of inserts, even when there are none. A plain
- * SELECT doesn't give its timestamp. Any adapter can read snapshots this way.
+ * A snapshot, as every Postgres-compatible database gives one: the
+ * statement's rows, typed, as one batch of inserts, one per row, even when
+ * there are none. A plain SELECT doesn't give its timestamp. Any adapter can
+ * read snapshots this way.
  */
 export async function* readSnapshot(
   client: pg.ClientBase,
@@ -92,8 +107,28 @@ export async function* readSnapshot(
     ...statement.parameters,
   ]);
   yield {
-    events: rows.map((raw) =>
-      insertOf(statement.unpack(raw), statement.columns),
+    events: insertsOf(
+      rows.map((raw) => statement.unpack(raw)),
+      statement.source.primaryKeyField,
+      statement.columns,
     ),
   };
+}
+
+// A snapshot's rows as inserts, one per row: a key seen twice means the
+// source's key isn't unique
+function insertsOf(
+  rows: Row[],
+  primaryKeyField: string,
+  fieldNames: string[],
+): RowUpdateEvent[] {
+  const seen = new Set<string>();
+  return rows.map((row) => {
+    const key = JSON.stringify(row[primaryKeyField]);
+    if (seen.has(key)) {
+      throw new KeyViolationError(primaryKeyField, row[primaryKeyField]);
+    }
+    seen.add(key);
+    return insertOf(row, fieldNames);
+  });
 }

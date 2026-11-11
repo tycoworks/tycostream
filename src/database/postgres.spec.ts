@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import {
+  KeyViolationError,
   insertOf,
   isoTimestamp,
   readSnapshot,
@@ -87,6 +88,15 @@ describe('readSnapshot', () => {
     const { client } = clientReturning([]);
 
     expect(await readAll(client)).toEqual([{ events: [] }]);
+  });
+
+  it("should fail when two rows have one key, as the source's key isn't unique, as a live stream does", async () => {
+    const { client } = clientReturning([
+      packed({ id: 1, name: 'a' }),
+      packed({ id: 1, name: 'b' }),
+    ]);
+
+    await expect(readAll(client)).rejects.toThrow(KeyViolationError);
   });
 });
 
