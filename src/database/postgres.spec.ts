@@ -13,9 +13,10 @@ import type { RowUpdateBatch } from '../common/types.js';
 // A row's plain values, as the tests write them
 type Values = Record<string, string | number | boolean | null>;
 
-// A row as the statement gives it: one JSON object of its columns' values,
-// as the text the database writes for them
+// A selected row as the statement gives it: its source's number, and one
+// JSON object of its columns' values, as the text the database writes for them
 const packed = (row: Values): RawRow => ({
+  __source: 0,
   __row: Object.fromEntries(
     Object.entries(row).map(([column, value]) => [
       column,
