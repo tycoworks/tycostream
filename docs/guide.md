@@ -106,11 +106,11 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-A subscription sends the current rows first, and after that only what changes in the columns you selected, so your app keeps its own copy of the rows and folds each change into it. Select the key, since every update carries it. An `INSERT` adds a row, a `DELETE` removes the row with that key, and an `UPDATE` changes only the columns listed in `fields`, while the others arrive as `null`. Each message holds one transaction's changes, so apply each message whole, and your copy never shows half a transaction. For the positions-app example, [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57) does this for its grid.
+After the current rows, a subscription sends only changes to the columns you selected, not whole rows. Each update inserts, updates, or deletes one row, and an `UPDATE` holds just the columns that changed, which `fields` lists, with the others `null`. So your app keeps its own copy of the rows, and applies each update to the row with the same key, which means selecting the key, as the example does with `instrument_id`. Each message holds one whole transaction, so apply a message's updates together, and your copy never shows half a transaction. For the positions-app example, [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js) sets up the client and subscribes, and [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57) applies each message to its grid.
 
-To show the rows in order, sort them in your app, since a subscription's updates arrive in no particular order, whatever its `order_by`. With `limit`, `order_by` picks a set, such as the two largest positions (`order_by: { market_value: desc }, limit: 2`), and a row that enters or leaves that set arrives as an `INSERT` or a `DELETE`.
+Updates arrive in no particular order, whatever a subscription's `order_by`, so sort the rows in your app to show them in order. `order_by` matters with `limit` and `offset`, where it picks which rows the subscription covers, such as the two largest positions (`order_by: { market_value: desc }, limit: 2`). A row that enters or leaves those rows arrives as an `INSERT` or a `DELETE`.
 
-positions-app's [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js) sets up a client and subscribes in about 20 lines. Filters, sorting, and paging work as they do in Hasura, and the [API reference](api.md) lists every operator, the supported types, and how each arrives in JSON.
+Filters, sorting, and paging work as they do in Hasura. The [API reference](api.md) lists every operator, the supported types, and how each type arrives in JSON.
 
 ## Current limitations
 
