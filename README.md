@@ -1,5 +1,7 @@
 # tycostream
 
+[![CI](https://github.com/tycoworks/tycostream/actions/workflows/ci.yml/badge.svg)](https://github.com/tycoworks/tycostream/actions/workflows/ci.yml)
+
 tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions over server-sent events (SSE), so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
 
 For an example app, see [positions-app](https://github.com/tycoworks/positions-app), which streams live positions and trades from Materialize through tycostream.
