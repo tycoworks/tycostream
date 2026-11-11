@@ -12,14 +12,14 @@
   <a href="#licence"><img src="https://img.shields.io/badge/licence-MIT%20or%20Apache%202.0-blue" alt="Licence: MIT or Apache 2.0"></a>
 </p>
 
-**tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions, so you can build real-time, type-safe apps.** Like [Hasura](https://hasura.io/), but for streaming.
+tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions, so you can build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming.
 
 ## Features
 
-- **Queries and subscriptions** for any table or view in Materialize, over server-sent events
+- **Queries and subscriptions** for any table or view over server-sent events
 - **Hasura-style** filtering, sorting and paging
-- **Transactional consistency:** each update carries a whole transaction, so a client never sees half of one
-- **Deltas:** after the current rows, a client receives only the fields that change
+- **Batched updates** for transactional consistency
+- **Incremental updates** with only the fields that changed
 
 ## Getting started
 
