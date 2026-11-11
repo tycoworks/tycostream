@@ -21,7 +21,7 @@ curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/gen
 
 The generator connects to `localhost:6875` as `materialize` unless you set the `DATABASE_*` settings in your environment or a `.env` file. The [configuration reference](configuration.md) covers the rest of the format, including enums.
 
-Names must match the database exactly, including case. A view whose primary key repeats ends its subscriptions with an error. A column type tycostream doesn't support stops it at startup, with a list of the types it does.
+If you write the file by hand, use each name exactly as the database has it, including case. Choose a primary key that's unique in the view, since tycostream tracks every row by it. If a column's type isn't supported, tycostream lists the types it supports when it starts.
 
 ## Step 2: Run tycostream
 
@@ -37,9 +37,9 @@ docker run -p 4000:4000 \
   ghcr.io/tycoworks/tycostream:latest
 ```
 
-Once tycostream logs that it's ready, your API is at `http://localhost:4000/graphql`. To reach a database elsewhere, set `DATABASE_HOST`, `DATABASE_USER`, `DATABASE_PASSWORD`, and the other settings in the configuration reference. Each subscription runs in the database as its own query, so index the views you serve, or make them materialized views, or the database recomputes them for every client.
+Once tycostream logs that it's ready, your API is at `http://localhost:4000/graphql`. To reach a database elsewhere, set `DATABASE_HOST`, `DATABASE_USER`, `DATABASE_PASSWORD`, and the other settings in the configuration reference. To keep subscriptions fast, index the views you serve, or make them materialized views. Each subscription runs as its own query, so the database would otherwise recompute a view for every client.
 
-tycostream holds a database connection open for each subscription, and lends one to each query while it runs. Once `DATABASE_MAX_CONNECTIONS` are in use, 1,000 by default, a new subscription or query waits up to 10 seconds for one to come free, then fails. A query also fails if it runs longer than `DATABASE_QUERY_TIMEOUT_MS`, 30 seconds by default.
+Set `DATABASE_MAX_CONNECTIONS` for the number of clients you expect, since each subscription holds a database connection, and each query borrows one. It's 1,000 by default, and past it a new subscription or query waits up to 10 seconds, then fails. If your queries take longer than 30 seconds, raise `DATABASE_QUERY_TIMEOUT_MS`.
 
 ## Step 3: Query and subscribe
 
@@ -90,9 +90,9 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-Each message is one transaction's updates, and the first holds the current rows. `fields` names the key, with every selected column for an `INSERT`, the changed columns for an `UPDATE`, and nothing more for a `DELETE`. Columns it doesn't name are `null` in `data`, so apply each update by its `fields`.
+To keep a copy of the rows in your app, apply each message as it arrives, inserting, updating, or deleting each row by its key. The first message holds the current rows, and each one after holds a single transaction's changes, so your copy never shows half a transaction. An `UPDATE` sends only the columns named in `fields`, and the rest come as `null`, so merge each update by its `fields`.
 
-Updates come in no particular order, even within one message, so sort them in the client if order matters. `order_by`, `limit`, and `offset` choose which rows a subscription covers, and a row that moves in or out of them arrives as an `INSERT` or a `DELETE`. A change to a column you didn't select sends nothing.
+To show the rows in order, sort them in your app, since updates arrive in no particular order. `order_by`, `limit`, and `offset` choose which rows you get, and a row that moves in or out of them arrives as an `INSERT` or a `DELETE`. You only hear about changes to the columns you select.
 
 To subscribe from an app, use a GraphQL client that speaks server-sent events, such as Apollo Client with Yoga's [Apollo link](https://github.com/graphql-hive/graphql-yoga/tree/main/packages/client/apollo-link). positions-app's [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js) sets one up and subscribes in about 20 lines. The [API reference](api.md) lists every filter operator, and how each type arrives in JSON.
 
