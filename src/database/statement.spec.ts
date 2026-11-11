@@ -25,42 +25,85 @@ const users: SourceDefinition = {
 const queryOf = (source: SourceDefinition, selection: Selection = {}) =>
   new Statement(source, selection, StreamMode.Snapshot);
 
+// The source's rows a statement selects, as its CTE, with no row numbers:
+// a subscription's
+function sourceRowsOf(source: SourceDefinition, selection: Selection = {}) {
+  const { sql, parameters } = new Statement(source, selection, StreamMode.Live);
+  const start = 'with "__source_0" as (';
+  expect(sql.startsWith(start)).toBe(true);
+  return {
+    sql: sql.slice(start.length, sql.indexOf(') select "__source_0".')),
+    parameters,
+  };
+}
+
+// Every column of users, selected from the source
 const SELECT =
   'select "id" as "id", "name" as "name", "active" as "active", "rank" as "rank" from "users" as "users"';
 
+// The filter on users a statement applies
 function where(clause: WhereClause) {
-  const { sql, parameters } = queryOf(users, { where: clause });
+  const { sql, parameters } = sourceRowsOf(users, { where: clause });
   expect(sql.startsWith(`${SELECT} where `)).toBe(true);
   return { condition: sql.slice(`${SELECT} where `.length), parameters };
 }
 
 describe('Statement', () => {
   describe('the statement', () => {
-    it('should select every column of the source when the selection names none, with no WHERE when there is no filter', () => {
-      const all = {
-        sql: SELECT,
+    it("should read a query's rows from its source's rows, as a CTE, numbered in their order, and give them in that order", () => {
+      expect(
+        queryOf(users, {
+          columns: ['name'],
+          orderBy: [{ name: OrderDirection.Asc }],
+        }),
+      ).toMatchObject({
+        sql:
+          'with "__source_0" as (select "id" as "id", "name" as "name", ' +
+          'row_number() over(order by "name" asc) as "__row_number" ' +
+          'from "users" as "users" order by "name" asc) ' +
+          'select "__source_0"."id" as "id", "__source_0"."name" as "name" ' +
+          'from "__source_0" as "__source_0" order by "__source_0"."__row_number"',
         parameters: [],
-        columns: ['id', 'name', 'active', 'rank'],
-      };
-      expect(queryOf(users)).toMatchObject(all);
-      expect(queryOf(users, {})).toMatchObject(all);
-      expect(queryOf(users, { where: {} })).toMatchObject(all);
+      });
+    });
+
+    it("should read a subscription's rows the same way, with no numbers, as its rows come unordered", () => {
+      expect(
+        new Statement(
+          users,
+          { columns: ['name'], orderBy: [{ name: OrderDirection.Asc }] },
+          StreamMode.Live,
+        ).sql,
+      ).toBe(
+        'with "__source_0" as (select "id" as "id", "name" as "name" ' +
+          'from "users" as "users" order by "name" asc) ' +
+          'select "__source_0"."id" as "id", "__source_0"."name" as "name" ' +
+          'from "__source_0" as "__source_0"',
+      );
+    });
+
+    it('should select every column of the source when the selection names none, with no WHERE when there is no filter', () => {
+      const all = { sql: SELECT, parameters: [] };
+      expect(sourceRowsOf(users)).toEqual(all);
+      expect(sourceRowsOf(users, { where: {} })).toEqual(all);
+      expect(queryOf(users).columns).toEqual(['id', 'name', 'active', 'rank']);
     });
 
     it("should select only the columns named, and the key, in the source's order", () => {
-      expect(queryOf(users, { columns: ['rank', 'name'] })).toMatchObject({
-        sql: 'select "id" as "id", "name" as "name", "rank" as "rank" from "users" as "users"',
-        parameters: [],
-        columns: ['id', 'name', 'rank'],
-      });
+      expect(sourceRowsOf(users, { columns: ['rank', 'name'] }).sql).toBe(
+        'select "id" as "id", "name" as "name", "rank" as "rank" from "users" as "users"',
+      );
+      expect(queryOf(users, { columns: ['rank', 'name'] }).columns).toEqual([
+        'id',
+        'name',
+        'rank',
+      ]);
     });
 
     it('should select the key alone when the selection names no columns', () => {
-      expect(queryOf(users, { columns: [] })).toMatchObject({
-        sql: 'select "id" as "id" from "users" as "users"',
-        parameters: [],
-        columns: ['id'],
-      });
+      expect(sourceRowsOf(users, { columns: [] }).sql).toBe(
+        'select "id" as "id" from "users" as "users"',
+      );
     });
 
     it('should keep the source it reads and the mode it was built for, which its stream reads it in', () => {
@@ -93,8 +136,8 @@ describe('Statement', () => {
         fields: [{ name: 'we"ird', type: PostgresType.Text }],
       };
       expect(
-        queryOf(source, { where: { 'we"ird': { _eq: 'x' } } }),
-      ).toMatchObject({
+        sourceRowsOf(source, { where: { 'we"ird': { _eq: 'x' } } }),
+      ).toEqual({
         sql: 'select "we""ird" as "we""ird" from "odd""view" as "odd""view" where "we""ird" = $1',
         parameters: ['x'],
       });
@@ -196,7 +239,7 @@ describe('Statement', () => {
       [OrderDirection.DescNullsFirst, 'desc nulls first'],
       [OrderDirection.DescNullsLast, 'desc nulls last'],
     ])('should compile %s to ORDER BY ... %s', (direction, sqlDirection) => {
-      expect(queryOf(users, { orderBy: [{ name: direction }] })).toMatchObject({
+      expect(sourceRowsOf(users, { orderBy: [{ name: direction }] })).toEqual({
         sql: `${SELECT} order by "name" ${sqlDirection}`,
         parameters: [],
       });
@@ -204,7 +247,7 @@ describe('Statement', () => {
 
     it('should order by each column in turn', () => {
       expect(
-        queryOf(users, {
+        sourceRowsOf(users, {
           orderBy: [{ rank: OrderDirection.Desc }, { id: OrderDirection.Asc }],
         }).sql,
       ).toBe(`${SELECT} order by "rank" desc, "id" asc`);
@@ -212,13 +255,13 @@ describe('Statement', () => {
 
     it('should pass the limit and offset as parameters, after the filter', () => {
       expect(
-        queryOf(users, {
+        sourceRowsOf(users, {
           where: { active: { _eq: true } },
           orderBy: [{ id: OrderDirection.Asc }],
           limit: 10,
           offset: 20,
         }),
-      ).toMatchObject({
+      ).toEqual({
         sql: `${SELECT} where "active" = $1 order by "id" asc limit $2 offset $3`,
         parameters: [true, 10, 20],
       });
