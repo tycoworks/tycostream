@@ -14,8 +14,6 @@ RUN npm ci
 # Copy source files
 COPY tsconfig*.json ./
 COPY src ./src
-# Copy all yaml files to support different schema files
-COPY *.yaml ./
 
 # Build the application
 RUN npm run build
