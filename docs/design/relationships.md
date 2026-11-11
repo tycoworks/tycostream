@@ -310,7 +310,9 @@ One branch and one pull request. Each step is one commit, passes every test, and
 7. **Changes carry `path` and `keys`,** in two commits:
    - **7a:** a query refuses a key it sees twice, as a subscription's pairing does; pairing stays Materialize's. A key that isn't unique now fails a query too.
    - **7b:** the statement adds `__keys`; each row's change carries its `path` and `keys`, and both the query's check and Materialize's pairing go by them.
-8. **Relationships in queries, both kinds:** their fields and arguments, the resolver reading nested selections, `tree.ts` folding related rows into objects and nesting lists, and `[]` from the resolvers. Useful on its own: Hasura's nested queries, in one consistent read.
+8. **Relationships in queries, both kinds,** in two commits. Useful on its own: Hasura's nested queries, in one consistent read.
+   - **8a:** the schema: each relationship a field of its source's type, one to many rows taking `where`, `order_by`, `limit` and `offset`. Selecting one fails until 8b.
+   - **8b:** the resolver reads nested selections, and `tree.ts` folds related rows into objects and nests lists, `[]` for none.
 9. **Relationships in subscriptions, both kinds:** the goal. Related rows inside `data`, lists beside it as the update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels; a related row's column changing (its field in `fields`, sent whole). End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
 10. **The README.**
 

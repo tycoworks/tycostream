@@ -10,14 +10,14 @@ import type { SourceDefinition } from '../config/source.types.js';
 import type { OrderBy, Row, Selection, WhereClause } from '../common/types.js';
 import { ApiService } from './api.service.js';
 import type { GraphQLUpdate } from './tree.js';
-import { RootFieldArgument, RootType, UpdateField } from './schema.js';
+import { RootType, SelectionArgument, UpdateField } from './schema.js';
 
 // Every resolver takes a selection of a source's rows
 type Args = {
-  [RootFieldArgument.Where]?: WhereClause;
-  [RootFieldArgument.OrderBy]?: OrderBy;
-  [RootFieldArgument.Limit]?: number;
-  [RootFieldArgument.Offset]?: number;
+  [SelectionArgument.Where]?: WhereClause;
+  [SelectionArgument.OrderBy]?: OrderBy;
+  [SelectionArgument.Limit]?: number;
+  [SelectionArgument.Offset]?: number;
 };
 
 /**
@@ -122,10 +122,10 @@ function selectionOf(
 ): Selection {
   return {
     columns: selectedColumns(info, within),
-    where: args[RootFieldArgument.Where],
-    orderBy: args[RootFieldArgument.OrderBy],
-    limit: args[RootFieldArgument.Limit],
-    offset: args[RootFieldArgument.Offset],
+    where: args[SelectionArgument.Where],
+    orderBy: args[SelectionArgument.OrderBy],
+    limit: args[SelectionArgument.Limit],
+    offset: args[SelectionArgument.Offset],
   };
 }
 

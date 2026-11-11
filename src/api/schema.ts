@@ -27,9 +27,10 @@ export enum RootType {
 }
 
 /**
- * The arguments every root field takes: a selection of a source's rows
+ * The arguments a selection of a source's rows takes: every root field's,
+ * and every relationship to many rows'
  */
-export enum RootFieldArgument {
+export enum SelectionArgument {
   Where = 'where',
   OrderBy = 'order_by',
   Limit = 'limit',
@@ -346,7 +347,10 @@ function buildSourceTypes(sources: Map<string, SourceDefinition>): string {
   const types: string[] = [];
 
   for (const [sourceName, sourceDefinition] of sources) {
-    const fields = buildFieldDefinitions(sourceDefinition);
+    const fields = [
+      buildFieldDefinitions(sourceDefinition),
+      ...buildRelationshipFields(sourceDefinition),
+    ].join('\n');
 
     types.push(`    # ${sourceName} type
     type ${sourceName} {
@@ -366,8 +370,7 @@ ${fields}
 
 /**
  * Build a root type's fields: one per source, named after it, taking a
- * selection of its rows (where, order_by, limit and offset), and returning
- * the given type
+ * selection of its rows, and returning the given type
  */
 function buildRootFields(
   sources: Map<string, SourceDefinition>,
@@ -376,14 +379,36 @@ function buildRootFields(
   return Array.from(sources.keys())
     .map(
       (sourceName) =>
-        `      ${sourceName}(` +
-        `${RootFieldArgument.Where}: ${boolExpTypeName(sourceName)}, ` +
-        `${RootFieldArgument.OrderBy}: [${orderByTypeName(sourceName)}!], ` +
-        `${RootFieldArgument.Limit}: ${GraphQLInt.name}, ` +
-        `${RootFieldArgument.Offset}: ${GraphQLInt.name}` +
-        `): ${returnType(sourceName)}`,
+        `      ${sourceName}(${selectionArguments(sourceName)}): ${returnType(sourceName)}`,
     )
     .join('\n');
+}
+
+/**
+ * A source type's relationship fields: one to one row is the related
+ * source's type, null when no row matches; one to many rows is a list of
+ * them, empty when none match, taking a selection of them, applied per row
+ */
+function buildRelationshipFields(source: SourceDefinition): string[] {
+  return [...(source.relationships ?? [])].map(
+    ([field, { source: related, many }]) =>
+      many
+        ? `      ${field}(${selectionArguments(related.name)}): [${related.name}!]!`
+        : `      ${field}: ${related.name}`,
+  );
+}
+
+/**
+ * The arguments of a selection of a source's rows: where, order_by, limit
+ * and offset
+ */
+function selectionArguments(sourceName: string): string {
+  return [
+    `${SelectionArgument.Where}: ${boolExpTypeName(sourceName)}`,
+    `${SelectionArgument.OrderBy}: [${orderByTypeName(sourceName)}!]`,
+    `${SelectionArgument.Limit}: ${GraphQLInt.name}`,
+    `${SelectionArgument.Offset}: ${GraphQLInt.name}`,
+  ].join(', ');
 }
 
 /**

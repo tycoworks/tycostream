@@ -270,6 +270,90 @@ describe('generateSchema', () => {
     );
   });
 
+  describe('relationships', () => {
+    // Positions and their trades, as a trade's foreign key relates them
+    const positionsAndTrades = (tradeColumn = 'quantity') => {
+      const positions: SourceDefinition = {
+        name: 'positions',
+        primaryKeyField: 'instrument_id',
+        fields: [
+          { name: 'instrument_id', type: PostgresType.Int4 },
+          { name: 'symbol', type: PostgresType.Text },
+        ],
+      };
+      const trades: SourceDefinition = {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'instrument_id', type: PostgresType.Int4 },
+          { name: tradeColumn, type: PostgresType.Int4 },
+        ],
+      };
+      trades.relationships = new Map([
+        [
+          'positions',
+          {
+            source: positions,
+            column: 'instrument_id',
+            relatedColumn: 'instrument_id',
+            many: false,
+          },
+        ],
+      ]);
+      positions.relationships = new Map([
+        [
+          'trades',
+          {
+            source: trades,
+            column: 'instrument_id',
+            relatedColumn: 'instrument_id',
+            many: true,
+          },
+        ],
+      ]);
+      return createConfig(
+        new Map([
+          ['positions', positions],
+          ['trades', trades],
+        ]),
+      );
+    };
+    // A source type's field
+    const fieldOf = (
+      schema: ReturnType<typeof buildSchema>,
+      type: string,
+      field: string,
+    ) => (schema.getType(type) as GraphQLObjectType).getFields()[field];
+
+    it("should make a relationship to one row a field of the related source's type, null when no row matches", () => {
+      const schema = buildSchema(generateSchema(positionsAndTrades()));
+
+      const positions = fieldOf(schema, 'trades', 'positions');
+      expect(positions.type.toString()).toBe('positions');
+      expect(positions.args).toEqual([]);
+    });
+
+    it('should make a relationship to many rows a list of them, empty when none match, taking a selection of them as a root field does', () => {
+      const schema = buildSchema(generateSchema(positionsAndTrades()));
+
+      const trades = fieldOf(schema, 'positions', 'trades');
+      expect(trades.type.toString()).toBe('[trades!]!');
+      expect(trades.args.map((arg) => [arg.name, arg.type.toString()])).toEqual(
+        schema
+          .getQueryType()!
+          .getFields()
+          .trades.args.map((arg) => [arg.name, arg.type.toString()]),
+      );
+    });
+
+    it('should fail on a relationship named like a column, as GraphQL refuses two fields of one name', () => {
+      expect(() =>
+        buildSchema(generateSchema(positionsAndTrades('positions'))),
+      ).toThrow('Field "trades.positions" can only be defined once.');
+    });
+  });
+
   it("should give each Postgres type its GraphQL scalar: GraphQL's own where one fits, and one named after the type for the rest", () => {
     const scalars: [Pick<SourceField, 'type'>, string][] = [
       [{ type: PostgresType.Int2 }, 'smallint'],
