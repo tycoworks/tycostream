@@ -17,9 +17,9 @@ tycostream turns [Materialize](https://materialize.com/) views into GraphQL quer
 ## Features
 
 - **Queries and subscriptions** for any table or view over server-sent events
-- **Hasura-style** filtering, sorting and paging
-- **Batched updates** for transactional consistency
+- **Nested queries** across related tables and views, with Hasura-style filtering, sorting and paging
 - **Incremental updates** with only the fields that changed
+- **Batched updates** for transactional consistency
 
 ## Getting started
 
