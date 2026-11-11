@@ -21,15 +21,12 @@
 
 ## 🚀 Developer Experience
 
-- ✅ Start with a single npm run command
-- ✅ Hot reload with NestJS development mode
 - ✅ Environment-based configuration with validation
-- ✅ Docker support with docker-compose for development
-- ✅ Subscribe to any configured source in seconds
+- ✅ Docker image, for amd64 and arm64
 
 ## Backlog
 
-- **Relationships between sources:** nested GraphQL fields, such as a position's trades, each pushed down to Materialize as one `SUBSCRIBE` of a join, so every level of the result stays at one timestamp. The main reason for the hollow-out.
+- **Relationships between sources** (in progress, [#2](https://github.com/tycoworks/tycostream/issues/2)): nested GraphQL fields, such as a position's trades, each pushed down to Materialize as one `SUBSCRIBE` of a join, so every level of the result stays at one timestamp. The main reason for the hollow-out.
 - **Arrays, as GraphQL lists** (parked): node-postgres already parses them into lists; arrays of timestamps and dates need their own conversions, and Hasura's handling needs checking first
 - **Column types read from the database at startup,** with Kysely's built-in catalog reader, as kysely-codegen does, so `schema.yaml` declares only keys and enums
 - Row-level security
