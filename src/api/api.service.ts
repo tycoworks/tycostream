@@ -46,7 +46,7 @@ export class ApiService {
       }
       // A stopped stream just ends, so say why it stopped
       signal?.throwIfAborted();
-      return toRows(events);
+      return toRows(source, events);
     } finally {
       signal?.removeEventListener('abort', stop);
     }

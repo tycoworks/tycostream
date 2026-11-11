@@ -167,11 +167,8 @@ function readColumnType(typeName: string): PostgresType {
 }
 
 /**
- * Adds both relationships each of a source's foreign keys gives: to the
- * source, the one row it references, named after that row's source; to that
- * source, the source's many rows that reference it, named after the source.
- * The column must be the source's own, and the source it references must
- * exist.
+ * Adds both relationships each of a source's foreign keys gives. The column
+ * must be the source's own, and the source it references must exist.
  */
 function addRelationships(
   source: SourceDefinition,
@@ -192,19 +189,32 @@ function addRelationships(
         `Foreign key '${column}' of source '${source.name}' references unknown source '${referenced}'`,
       );
     }
-    relate(source, target.name, {
-      source: target,
-      column,
-      relatedColumn: target.primaryKeyField,
-      many: false,
-    });
-    relate(target, source.name, {
-      source,
-      column: target.primaryKeyField,
-      relatedColumn: column,
-      many: true,
-    });
+    addForeignKey(source, column, target);
   }
+}
+
+/**
+ * Adds both relationships a foreign key gives: to the source, the one row of
+ * the target its column references, named after the target; to the target,
+ * the source's many rows that reference it, named after the source
+ */
+export function addForeignKey(
+  source: SourceDefinition,
+  column: string,
+  target: SourceDefinition,
+): void {
+  relate(source, target.name, {
+    source: target,
+    column,
+    relatedColumn: target.primaryKeyField,
+    many: false,
+  });
+  relate(target, source.name, {
+    source,
+    column: target.primaryKeyField,
+    relatedColumn: column,
+    many: true,
+  });
 }
 
 // Gives a source a relationship under a field's name, which only one may have
