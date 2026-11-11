@@ -293,7 +293,7 @@ Not measured: performance at positions-app's scale, and what Materialize keeps p
 
 ## Steps
 
-One branch and one pull request. Each step is one commit, passes every test, and adds only what it needs:
+One branch and one pull request. Each step is one commit, passes every test, and adds only what it needs. Each layer is built once, with both kinds of relationship together:
 
 1. **`filter.ts`:** the `where` conditions move out of `select.ts`. A pure move.
 2. **`Statement`:** `buildSelect` becomes `new Statement(source, selection, mode)`, and the adapter and stream take the statement alone. No change for clients.
@@ -302,11 +302,11 @@ One branch and one pull request. Each step is one commit, passes every test, and
    - **3b:** every statement is built the same way: the source's rows as a CTE, and a query ordered by `__row_number`. Queries lose the index fast path.
    - **3c:** each row comes back as one JSON object, `__row`, of its values as text, which `unpack` parses by type. `char(n)` loses its padding. Tests: every served type through the JSON.
 4. **Foreign keys:** `foreign_keys` in `schema.yaml`, both relationships derived from each, and the startup checks. Not in the API yet.
-5. **Relationships to one row,** in queries and subscriptions: their fields, nested selections, the `LEFT JOIN`s, and the API folding their columns into objects. Useful on its own: a trade blotter showing each trade's position.
-6. **Changes carry `path` and `keys`,** paired the same way for queries and subscriptions, in the database layer; the statement adds `__keys`. A key that isn't unique now fails a query too.
-7. **The statement reads relationships to many rows:** planning several sources, the `LATERAL` CTEs, and the `__source` tag. Unit-tested, not yet reachable from GraphQL.
-8. **Relationships to many rows, in queries:** their fields and arguments, nesting in `tree.ts`, and `[]` from the resolvers. Useful on its own: Hasura's nested queries, in one consistent read.
-9. **Relationships to many rows, in subscriptions:** the goal. The update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels. End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
+5. **`tree.ts`:** building a query's rows and a subscription's updates moves out of `ApiService`, into `toRows` and `toUpdates`. No change for clients.
+6. **The statement reads related rows of both kinds:** a relationship to one row as a `LEFT JOIN`, its columns named by path in the row's JSON; one to many rows as a CTE, read `LATERAL` for each parent row and tagged `__source`. Unit-tested, not yet reachable from GraphQL. If its diff is too big, it splits by mechanism: the joins, then the CTEs.
+7. **Changes carry `path` and `keys`,** paired the same way for queries and subscriptions, in the database layer; the statement adds `__keys`. A key that isn't unique now fails a query too.
+8. **Relationships in queries, both kinds:** their fields and arguments, the resolver reading nested selections, `tree.ts` folding related rows into objects and nesting lists, and `[]` from the resolvers. Useful on its own: Hasura's nested queries, in one consistent read.
+9. **Relationships in subscriptions, both kinds:** the goal. Related rows inside `data`, lists beside it as the update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels; a related row's column changing (its field in `fields`, sent whole). End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
 10. **The README.**
 
 Then positions-app moves to one subscription, against a local build until a release. Immer's `produce` could apply each message's nested updates to its React state, changing only the positions and trades that changed, so only their rows re-render.
