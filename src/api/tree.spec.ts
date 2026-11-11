@@ -1,4 +1,4 @@
-import { toRows } from './tree.js';
+import { toRows, toUpdates } from './tree.js';
 import { PostgresType, RowUpdateType } from '../common/types.js';
 import type { Row, RowUpdateEvent } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
@@ -166,5 +166,101 @@ describe('toRows', () => {
         },
       ]);
     });
+  });
+});
+
+describe('toUpdates', () => {
+  // Trade 8, with its position
+  const trade = {
+    id: 8,
+    quantity: 100,
+    'positions.instrument_id': 1,
+    'positions.symbol': 'AAPL',
+    'positions.net_position': 600,
+  };
+  const change = (
+    type: RowUpdateType,
+    fields: string[],
+    row: Row = trade,
+  ): RowUpdateEvent => ({
+    type,
+    path: [],
+    keys: [8],
+    fields: new Set(fields),
+    row,
+  });
+  const position = { instrument_id: 1, symbol: 'AAPL', net_position: 600 };
+
+  it("should send an insert's related row whole, as one field", () => {
+    expect(
+      toUpdates([change(RowUpdateType.Insert, Object.keys(trade))]),
+    ).toEqual([
+      {
+        operation: RowUpdateType.Insert,
+        fields: ['id', 'quantity', 'positions'],
+        data: { id: 8, quantity: 100, positions: position },
+      },
+    ]);
+  });
+
+  it('should name a related row in an update when any of its columns changed, and send it whole', () => {
+    expect(
+      toUpdates([
+        change(RowUpdateType.Update, ['id', 'positions.net_position'], {
+          ...trade,
+          'positions.net_position': 700,
+        }),
+      ]),
+    ).toEqual([
+      {
+        operation: RowUpdateType.Update,
+        fields: ['id', 'positions'],
+        data: { id: 8, positions: { ...position, net_position: 700 } },
+      },
+    ]);
+  });
+
+  it('should send a related row that no longer matches as null', () => {
+    expect(
+      toUpdates([
+        change(
+          RowUpdateType.Update,
+          [
+            'id',
+            'positions.instrument_id',
+            'positions.symbol',
+            'positions.net_position',
+          ],
+          {
+            ...trade,
+            'positions.instrument_id': null,
+            'positions.symbol': null,
+            'positions.net_position': null,
+          },
+        ),
+      ]),
+    ).toEqual([
+      {
+        operation: RowUpdateType.Update,
+        fields: ['id', 'positions'],
+        data: { id: 8, positions: null },
+      },
+    ]);
+  });
+
+  it("should leave a related row out of an update that didn't change it, and out of a delete", () => {
+    expect(
+      toUpdates([
+        change(RowUpdateType.Update, ['id', 'quantity']),
+        change(RowUpdateType.Delete, ['id']),
+      ]),
+    ).toEqual([
+      {
+        operation: RowUpdateType.Update,
+        fields: ['id', 'quantity'],
+        data: { id: 8, quantity: 100 },
+      },
+      { operation: RowUpdateType.Delete, fields: ['id'], data: { id: 8 } },
+    ]);
   });
 });

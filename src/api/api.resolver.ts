@@ -95,12 +95,7 @@ function createSubscriptionResolver(
     // disconnects closes its subscription at once.
     subscribe: (_parent, args, _context, info) => {
       const selection = selectionOf(source, args, info, UpdateField.Data);
-      const relationships = Object.keys(selection.relationships ?? {});
-      if (relationships.length > 0) {
-        throw new Error(
-          `Subscriptions can't select relationships yet: ${relationships.join(', ')}`,
-        );
-      }
+      checkNoListsIn(source, selection);
       return apiService.subscribe(source, selection);
     },
     resolve: (updates) => updates,
@@ -186,6 +181,28 @@ function selectionOf(
     ...argumentsOf(args),
     ...selectionSetOf(info, source, type, fields),
   };
+}
+
+// A subscription's lists go beside data, so none is selected within data,
+// or within a related row in it, named by its field
+function checkNoListsIn(
+  source: SourceDefinition,
+  selection: Selection,
+  within?: string,
+): void {
+  for (const [field, selected] of Object.entries(
+    selection.relationships ?? {},
+  )) {
+    const { many, source: related } = source.relationships!.get(field)!;
+    if (many) {
+      throw new Error(
+        within === undefined
+          ? `Subscriptions select '${field}' beside '${UpdateField.Data}', not inside it`
+          : `Subscriptions can't select '${field}' inside '${within}'`,
+      );
+    }
+    checkNoListsIn(related, selected, field);
+  }
 }
 
 // A selection's arguments

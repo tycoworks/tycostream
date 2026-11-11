@@ -62,14 +62,17 @@ export function toUpdates(events: RowUpdateEvent[]): GraphQLUpdate[] {
 
 // An event as a GraphQL update, sending only the event's fields: the whole
 // row for an insert, the key and the changed fields for an update, and the
-// key alone for a delete
+// key alone for a delete. A related row is one field, named when any of its
+// columns is, and sent whole.
 function updateOf(event: RowUpdateEvent): GraphQLUpdate {
-  // Convert Set to array for GraphQL
-  const fields = Array.from(event.fields);
-  const data = Object.fromEntries(
-    fields.map((field) => [field, event.row[field]]),
-  );
-
+  const row = foldRelatedRows(event.row);
+  // A column's field: its own name, or its related row's field
+  const fields = [
+    ...new Set(
+      [...event.fields].map((column) => column.split(PATH_SEPARATOR)[0]),
+    ),
+  ];
+  const data = Object.fromEntries(fields.map((field) => [field, row[field]]));
   return { operation: event.type, data, fields };
 }
 

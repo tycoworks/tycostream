@@ -284,17 +284,34 @@ describe('buildResolvers', () => {
       }
     });
 
-    it('should refuse relationships, until subscriptions select them', async () => {
-      const result = await subscribe({
-        schema,
-        document: parse(
-          'subscription { trades { data { id positions { symbol } } } }',
-        ),
+    it("should read a related row inside data as a relationship: a trade's position", async () => {
+      const { selection, subscription } = await subscribed(
+        'subscription { trades { data { id positions { symbol } } } }',
+      );
+
+      expect(selection).toMatchObject({
+        columns: ['id'],
+        relationships: {
+          positions: { columns: ['symbol'], relationships: {} },
+        },
       });
+      await subscription.return(undefined);
+    });
+
+    it('should refuse a list inside data, or inside a related row in it, as lists go beside data', async () => {
+      const refusal = async (operation: string) => {
+        const result = await subscribe({ schema, document: parse(operation) });
+        return 'errors' in result && result.errors?.map((e) => e.message);
+      };
 
       expect(
-        'errors' in result && result.errors?.map((error) => error.message),
-      ).toEqual(["Subscriptions can't select relationships yet: positions"]);
+        await refusal('subscription { positions { data { trades { id } } } }'),
+      ).toEqual(["Subscriptions select 'trades' beside 'data', not inside it"]);
+      expect(
+        await refusal(
+          'subscription { trades { data { positions { trades { id } } } } }',
+        ),
+      ).toEqual(["Subscriptions can't select 'trades' inside 'positions'"]);
     });
 
     it("should close the source's subscription at once when the client leaves, so it's handed to GraphQL itself", async () => {

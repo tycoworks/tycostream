@@ -96,10 +96,10 @@ One timestamp's message, here a new AAPL trade that pushes the oldest out of the
   {
     "operation": "UPDATE",
     "fields": ["instrument_id", "net_position"],
-    "data": { "instrument_id": 1, "net_position": 700 },
+    "data": { "instrument_id": 1, "symbol": null, "net_position": 700 },
     "trades": [
       { "operation": "INSERT", "fields": ["id", "quantity", "price"], "data": { "id": 8, "quantity": 100, "price": 201 } },
-      { "operation": "DELETE", "fields": ["id"], "data": { "id": 2 } }
+      { "operation": "DELETE", "fields": ["id"], "data": { "id": 2, "quantity": null, "price": null } }
     ]
   }
 ]
@@ -107,9 +107,10 @@ One timestamp's message, here a new AAPL trade that pushes the oldest out of the
 
 The rules:
 
+- **`data` has every selected field; one not named in `fields` is `null`,** as GraphQL sends every field selected. Only `fields` tells a column that wasn't sent from one that is null, so a client merges `data` by `fields`.
 - **A child always arrives under its parent,** which the client has, or gets in the same message.
 - **A parent's INSERT carries its children's INSERTs,** so the snapshot is the whole tree; **its DELETE carries their DELETEs;** its UPDATE carries their changes at that timestamp.
-- **A parent whose children changed, but not itself,** arrives as an UPDATE of its key alone: `{ "operation": "UPDATE", "fields": ["instrument_id"], "data": { "instrument_id": 1 }, "trades": [...] }`.
+- **A parent whose children changed, but not itself,** arrives as an UPDATE of its key alone: `{ "operation": "UPDATE", "fields": ["instrument_id"], "data": { "instrument_id": 1, "symbol": null, "net_position": null }, "trades": [...] }`.
 - **A child is known within its parent.** A trade moved from GOOG to AAPL arrives as a DELETE under GOOG and an INSERT under AAPL, in either order.
 - **An empty list** means nothing changed under an UPDATE, and no children under an INSERT.
 - **Updates are unordered,** as now; `order_by`, `limit` and `offset` choose the rows, per parent.
@@ -314,7 +315,10 @@ One branch and one pull request. Each step is one commit, passes every test, and
 8. **Relationships in queries, both kinds,** in two commits. Useful on its own: Hasura's nested queries, in one consistent read.
    - **8a:** the schema: each relationship a field of its source's type, one to many rows taking `where`, `order_by`, `limit` and `offset`. Selecting one fails until 8b.
    - **8b,** in two commits: `tree.ts` builds a query's tree, folding related rows into objects and nesting lists; then the resolver reads nested selections, and a list with no rows resolves to `[]`. Subscriptions refuse relationships until step 9.
-9. **Relationships in subscriptions, both kinds:** the goal. Related rows inside `data`, lists beside it as the update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels; a related row's column changing (its field in `fields`, sent whole). End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
+9. **Relationships in subscriptions, both kinds,** in three commits: the goal. Related rows inside `data`, lists beside it as the update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels; a related row's column changing (its field in `fields`, sent whole). End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
+   - **9a:** related rows inside `data`: folded into an object, named in `fields` when any of its columns changes, and sent whole. Lists inside `data` are refused.
+   - **9b:** `tree.ts` nests a subscription's updates: each under its parent's, a key-only UPDATE for a parent whose children changed, and a parent's DELETE carrying its children's.
+   - **9c:** lists beside `data`: the update types' list fields, reading them, and the end-to-end tests above.
 10. **The README.**
 
 Then positions-app moves to one subscription, against a local build until a release. Immer's `produce` could apply each message's nested updates to its React state, changing only the positions and trades that changed, so only their rows re-render.
