@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repeater } from '@repeaterjs/repeater';
-import { ApiService, GraphQLRowOperation } from './api.service.js';
-import type { GraphQLUpdate } from './api.service.js';
+import { ApiService } from './api.service.js';
+import { GraphQLRowOperation } from './tree.js';
+import type { GraphQLUpdate } from './tree.js';
 import { ViewService } from '../view/view.service.js';
 import {
   OrderDirection,

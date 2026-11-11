@@ -8,7 +8,8 @@ import type {
 } from 'graphql';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { OrderBy, Row, Selection, WhereClause } from '../common/types.js';
-import { ApiService, GraphQLUpdate } from './api.service.js';
+import { ApiService } from './api.service.js';
+import type { GraphQLUpdate } from './tree.js';
 import { RootFieldArgument, RootType, UpdateField } from './schema.js';
 
 // Every resolver takes a selection of a source's rows

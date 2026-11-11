@@ -44,6 +44,7 @@ The domain layer. `ViewService` is a pass-through to the database layer for now;
 
 - Generates the GraphQL schema from `schema.yaml`: per source, a type, an update type, a filter input, a query returning its rows, and a subscription returning its updates.
 - `ApiService` (`api.service.ts`) is the layer's one service. `query` opens a `Snapshot` stream on the view and returns its rows. `subscribe` opens a `Live` stream and turns each event into a GraphQL update, sending only the fields the event names.
+- `tree.ts` builds the responses from the events: a query's rows (`toRows`), and a subscription's updates (`toUpdates`).
 - `api.resolver.ts` builds each source's query and subscription resolvers. A subscription resolver hands GraphQL the service's iterator directly, so a client that disconnects closes its database connection at once; a query resolver passes on the request's signal, which aborts when the client leaves, so the query ends in the database.
 
 ### Configuration & Common (`src/config/` and `src/common/`)

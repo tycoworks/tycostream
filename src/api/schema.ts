@@ -10,7 +10,7 @@ import {
   OrderDirection,
   PostgresType,
 } from '../common/types.js';
-import { GraphQLRowOperation } from './api.service.js';
+import { GraphQLRowOperation } from './tree.js';
 import {
   GraphQLString,
   GraphQLInt,
