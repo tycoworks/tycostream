@@ -1,0 +1,31 @@
+name: Bug report
+description: Something in tycostream doesn't work as the docs say
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead. Include the query or subscription, and any error.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: How to reproduce it
+      description: The smallest schema.yaml, SQL, and query that show the problem.
+  - type: input
+    attributes:
+      label: tycostream version
+      placeholder: v0.4.1
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Database and version
+      placeholder: Materialize v26.49
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Logs
+      description: tycostream's log around the problem, with LOG_LEVEL=debug if you can.
+      render: text

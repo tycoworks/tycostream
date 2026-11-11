@@ -1,117 +1,35 @@
-# tycostream
+<p align="center">
+  <img src="docs/assets/logo.svg" width="96" alt="">
+</p>
 
-[![CI](https://github.com/tycoworks/tycostream/actions/workflows/ci.yml/badge.svg)](https://github.com/tycoworks/tycostream/actions/workflows/ci.yml)
+<h1 align="center">tycostream</h1>
 
-tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions over server-sent events (SSE), so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
+<p align="center">Turn Materialize views into real-time GraphQL APIs</p>
 
-For an example app, see [positions-app](https://github.com/tycoworks/positions-app), which streams live positions and trades from Materialize through tycostream.
+<p align="center">
+  <a href="https://github.com/tycoworks/tycostream/actions/workflows/ci.yml"><img src="https://github.com/tycoworks/tycostream/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/tycoworks/tycostream/releases/latest"><img src="https://img.shields.io/github/v/release/tycoworks/tycostream" alt="Latest release"></a>
+  <a href="#licence"><img src="https://img.shields.io/badge/licence-MIT%20or%20Apache%202.0-blue" alt="Licence: MIT or Apache 2.0"></a>
+</p>
 
-[Learn more about why I built this →](https://tycoworks.substack.com/p/tycostream-turn-materialize-views)
+tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions, so you can build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming.
 
----
+## Features
 
-## Quickstart
+- **Queries and subscriptions** for any table or view over server-sent events
+- **Hasura-style** filtering, sorting and paging
+- **Batched updates** for transactional consistency
+- **Incremental updates** with only the fields that changed
 
-### 1. Configure connection details
+## Getting started
 
-```bash
-# Create .env file with your database connection
-echo "DATABASE_HOST=localhost
-DATABASE_PORT=6875
-DATABASE_USER=materialize
-DATABASE_PASSWORD=materialize
-DATABASE_NAME=materialize
-GRAPHQL_PORT=4000
-GRAPHQL_UI=true
-SCHEMA_PATH=./schema.yaml
-LOG_LEVEL=debug" > .env
+1. **Describe your views.** Generate a [`schema.yaml`](docs/guide.md#step-1-describe-your-views) that lists the tables and views to serve, with the [schema generator](scripts/generate-schema.sh).
+2. **Run tycostream.** Start the Docker image, `ghcr.io/tycoworks/tycostream`, with your database's [connection settings](docs/guide.md#step-2-run-tycostream) and your `schema.yaml`.
+3. **Query and subscribe.** Try your [API](docs/guide.md#step-3-query-and-subscribe) in the built-in GraphQL explorer, then connect any GraphQL client.
 
-# LOG_LEVEL can be trace, debug, info, warn or error
-# Optional: DATABASE_MAX_CONNECTIONS caps tycostream's database connections
-# (default 1000); each subscription holds one, each query borrows one
-# Optional: DATABASE_QUERY_TIMEOUT_MS is the time limit on a query
-# (default 30000)
-```
+## See it working
 
-### 2. Create a schema file
-
-You need to tell tycostream which tables and views to expose in your API. For example, given a `trades` table like this:
-
-```sql
-CREATE TABLE trades (
-  id INT,
-  instrument_id INT,
-  side TEXT,           -- 'buy' or 'sell'
-  quantity INT,
-  price NUMERIC,
-  executed_at TIMESTAMP
-);
-```
-
-You would need a `schema.yaml` file like this:
-
-```yaml
-enums:
-  side:
-    - buy
-    - sell
-
-sources:
-  trades:
-    primary_key: id
-    columns:
-      id: int4
-      instrument_id: int4
-      side: side              # mapped to enum
-      quantity: int4
-      price: numeric
-      executed_at: timestamp
-```
-
-Names must match the database exactly, including case. Types are Postgres's (`int4`, `numeric`, `timestamptz`), or an enum's name. Each client's subscription runs as its own query in Materialize, so index the views you serve, or make them materialized views, so a subscription doesn't recompute its view from scratch.
-
-You can use the bundled generator script to create schema files directly from your database. For the trades table example above, the command would look like this:
-
-```bash
-curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
-  bash -s -- -e side "buy,sell" -s trades -p id -c side:side > schema.yaml
-```
-
-### 3. Start tycostream
-
-```bash
-# host.docker.internal reaches Materialize on your machine (172.17.0.1 on Linux)
-docker run -p 4000:4000 --env-file .env \
-  -e DATABASE_HOST=host.docker.internal \
-  -v $(pwd)/schema.yaml:/app/schema.yaml \
-  ghcr.io/tycoworks/tycostream:latest
-```
-
-### 4. Test your API
-
-Visit http://localhost:4000/graphql to explore your GraphQL API with the built-in UI (enabled by `GRAPHQL_UI=true` in .env).
-
----
-
-## Building from Source
-
-### Getting Started
-
-For development or customization:
-
-```bash
-git clone https://github.com/tycoworks/tycostream.git
-cd tycostream
-npm install
-npm run build
-npm start
-```
-
----
-
-## What's Next
-
-See the [roadmap](./docs/roadmap.md) for planned features.
+[positions-app](https://github.com/tycoworks/positions-app) streams live positions and trades from Materialize to a browser through tycostream.
 
 ## Licence
 
