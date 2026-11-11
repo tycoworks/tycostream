@@ -36,14 +36,13 @@
 - Use const assertions for literal types
 
 ### Naming Conventions
-- **Files**: kebab-case with type suffix (e.g., `database-connection.service.ts`)
+- **Files**: kebab-case, with a type suffix for Nest classes (e.g., `connection.service.ts`)
 - **Services**: PascalCase with Service suffix (e.g., `DatabaseConnectionService`)
 - **Modules**: PascalCase with Module suffix (e.g., `DatabaseModule`)
 - **Interfaces**: PascalCase with descriptive names (avoid `I` prefix)
-- **DTOs**: PascalCase with Dto suffix (e.g., `CreateTradeDto`)
 - **Functions/Variables**: camelCase
 - **Constants**: UPPER_SNAKE_CASE for true constants, camelCase for configuration
-- **Injection tokens**: UPPER_SNAKE_CASE (e.g., `SOURCE_CONFIG`)
+- **Injection tokens**: an abstract class, as `DatabaseAdapter` is, rather than a string
 
 ## Dependency Management
 
@@ -68,7 +67,7 @@
 - Logging (NestJS built-in logger, Pino, Winston)
 - Testing (Vitest, with NestJS testing utilities)
 - Streams to GraphQL subscriptions (@repeaterjs/repeater)
-- File parsing (yaml, csv-parse)
+- File parsing (js-yaml)
 - Configuration (@nestjs/config)
 
 **Write custom code for**:
@@ -179,37 +178,28 @@ class ConfigError extends Error {
 ```typescript
 // Good - Injectable service with clear dependencies
 @Injectable()
-export class DatabaseStreamingService {
+export class DatabaseService {
   constructor(
-    private readonly connection: DatabaseConnectionService,
-    private readonly cache: CacheService,
-    @Inject('SOURCE_CONFIG') private readonly config: SourceConfig
+    private readonly connectionService: DatabaseConnectionService,
+    private readonly adapter: DatabaseAdapter,
   ) {}
 }
 
 // Bad - Manual instantiation
-export class DatabaseStreamer {
-  private cache = new Cache();
-  constructor() {
-    this.connection = new Connection();
-  }
+export class DatabaseService {
+  private adapter = new MaterializeAdapter();
 }
 ```
 
 ### Module Organization
 ```typescript
 @Module({
-  imports: [ConfigModule],
   providers: [
     DatabaseConnectionService,
-    DatabaseStreamingService,
-    {
-      provide: 'SOURCE_CONFIG',
-      useFactory: (config: ConfigService) => config.get('sources'),
-      inject: [ConfigService],
-    },
+    { provide: DatabaseAdapter, useClass: MaterializeAdapter }, // Where the database is chosen
+    DatabaseService,
   ],
-  exports: [DatabaseStreamingService], // Only export what's needed
+  exports: [DatabaseService], // Only export what's needed
 })
 export class DatabaseModule {}
 ```

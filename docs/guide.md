@@ -113,11 +113,12 @@ positions-app's [graphql.js](https://github.com/tycoworks/positions-app/blob/mai
 
 ## Current limitations
 
-- There's no authentication yet, so anyone who can reach tycostream's port can read every view in `schema.yaml`.
+- There's no [authentication](https://github.com/tycoworks/tycostream/issues/36) yet, so anyone who can reach tycostream's port can read every view in `schema.yaml`.
+- There's no setting for an [encrypted connection](https://github.com/tycoworks/tycostream/issues/40) to the database yet.
 - Each view needs a single-column primary key.
 - `int8` and `numeric` values arrive as JSON numbers, so a value with more than about 15 significant digits loses its last ones.
-- If a subscription's database connection drops, the subscription ends with an error. Subscribe again, and replace your copy with the current rows that arrive first.
-- tycostream doesn't serve array columns yet.
+- If a subscription's database connection drops, the subscription ends with an error. Subscribe again, and replace your copy with the current rows that arrive first. [Reconnecting](https://github.com/tycoworks/tycostream/issues/38) is planned.
+- tycostream doesn't serve [array columns](https://github.com/tycoworks/tycostream/issues/33) yet.
 - Related rows, such as a position's trades, need their own subscription until [relationships](https://github.com/tycoworks/tycostream/issues/2) land.
 
 If something breaks, open an [issue](https://github.com/tycoworks/tycostream/issues).
