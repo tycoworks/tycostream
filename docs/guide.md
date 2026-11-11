@@ -112,9 +112,9 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-tycostream only sends the columns that changed in each update. An `INSERT` adds a row, a `DELETE` removes one, and an `UPDATE` changes one, with `fields` listing the key and the columns that changed, and the others `null`.
+tycostream only sends the columns that changed in each update. To do that, it first sends a snapshot, with every current row as an `INSERT`, and then only the changes. In an `UPDATE`, `fields` lists the key and the columns that changed, and the other columns are `null`.
 
-A subscription's first message holds every current row as an `INSERT`. Keep those rows, and apply each later update to the row with the same key. Select the key, or updates won't include it. In positions-app, [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57) applies each message to the grid.
+Each update is an `INSERT`, a `DELETE`, or an `UPDATE`, so you can fold the changes into your own copy of the rows, matching each row by its key. Select the key, or updates won't include it. See how positions-app does this in [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57).
 
 Each message holds every change at one Materialize timestamp, so all of a transaction's changes arrive in the same message. Within a message, updates arrive in no particular order, whatever the subscription's `order_by`.
 
