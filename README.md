@@ -12,69 +12,24 @@
   <a href="#licence"><img src="https://img.shields.io/badge/licence-MIT%20or%20Apache%202.0-blue" alt="Licence: MIT or Apache 2.0"></a>
 </p>
 
-tycostream serves [Materialize](https://materialize.com/) views as GraphQL queries and subscriptions over server-sent events. Each subscription runs in Materialize as its own `SUBSCRIBE`, so a client gets the current rows, then every change, one whole transaction at a time. Like [Hasura](https://hasura.io/), but for streaming.
+**tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions, so you can build real-time, type-safe apps.** Like [Hasura](https://hasura.io/), but for streaming.
 
-https://github.com/user-attachments/assets/b56982b1-af99-4904-9cab-7b4fb788d765
+## Features
 
-*[positions-app](https://github.com/tycoworks/positions-app): live positions and trades, streamed from Materialize through tycostream.*
+- **Queries and subscriptions** for any table or view in Materialize, over server-sent events
+- **Hasura-style** filtering, sorting and paging
+- **Transactional consistency:** each update carries a whole transaction, so a client never sees half of one
+- **Deltas:** after the current rows, a client receives only the fields that change
 
-## Quickstart
+## Getting started
 
-Generate a `schema.yaml` for the views you want to serve, naming each one's primary key. The generator needs `psql`, and reads the `DATABASE_*` variables from the environment or a `.env` file (by default, Materialize on `localhost:6875`):
+1. **Describe your views.** Generate a [`schema.yaml`](docs/guide.md#schemayaml) that lists the tables and views to serve, with the [schema generator](scripts/generate-schema.sh).
+2. **Run tycostream.** Start the Docker image, `ghcr.io/tycoworks/tycostream`, with your database's [connection settings](docs/guide.md#configuration) and your `schema.yaml`.
+3. **Query and subscribe.** Try your [API](docs/guide.md#the-graphql-api) in the built-in GraphQL explorer, then connect any GraphQL client.
 
-```bash
-curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
-  bash -s -- -s positions -p instrument_id > schema.yaml
-```
+## See it working
 
-Run tycostream:
-
-```bash
-docker run -p 4000:4000 \
-  -e DATABASE_HOST=host.docker.internal \
-  -e GRAPHQL_UI=true \
-  -v $(pwd)/schema.yaml:/app/schema.yaml \
-  ghcr.io/tycoworks/tycostream:latest
-```
-
-Then open http://localhost:4000/graphql.
-
-## Example
-
-Subscribe to a position:
-
-```graphql
-subscription {
-  positions(where: { symbol: { _eq: "AAPL" } }) {
-    operation
-    data { symbol net_position latest_price market_value }
-    fields
-  }
-}
-```
-
-The first message is the current row, and each one after it is a change. `fields` names the columns that changed, and the key; the others are `null`:
-
-```json
-[{ "operation": "INSERT",
-   "data": { "symbol": "AAPL", "net_position": 870, "latest_price": 199.65, "market_value": 173695.5 },
-   "fields": ["instrument_id", "symbol", "net_position", "latest_price", "market_value"] }]
-
-[{ "operation": "UPDATE",
-   "data": { "symbol": null, "net_position": null, "latest_price": 199.43, "market_value": 173504.1 },
-   "fields": ["instrument_id", "latest_price", "market_value"] }]
-```
-
-A query takes the same arguments and returns the current rows once.
-
-## Documentation
-
-- [Guide](docs/guide.md): configuration, `schema.yaml` and the GraphQL API
-- [Architecture](docs/architecture.md): how it works
-- [Roadmap](docs/roadmap.md)
-- [Why I built it](https://www.tycoworks.com/p/tycostream-turn-materialize-views)
-
-Tested with Materialize v26.49.
+[positions-app](https://github.com/tycoworks/positions-app) streams live positions and trades from Materialize to a browser through tycostream.
 
 ## Licence
 
