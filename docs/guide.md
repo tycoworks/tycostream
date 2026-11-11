@@ -14,32 +14,10 @@ First, create a `schema.yaml` file that lists the tables and views to serve thro
 
 The file has two parts:
 
-- **`sources`** lists each table or view, with its `primary_key` and its `columns`, and gives each column one of the Postgres types below. Names must match the database exactly, and each primary key must be unique.
-- **`enums`** is an optional list of each GraphQL enum's values. To serve a text column as an enum, set the column's type to the enum's name. Comparisons such as `_gt` follow the order of the enum's values.
+- **`sources`** lists each table or view, with its `primary_key` and its `columns`, and gives each column one of the Postgres [types](api.md#types) tycostream supports. Names must match the database exactly, and each primary key must be unique. tycostream fails to start on any other type, and lists the ones it supports.
+- **`enums`** is an optional list of each GraphQL enum's values. To serve a text column as an enum, set the column's type to the enum's name.
 
-positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/main/schema.yaml) is a complete example. tycostream serves each type as a GraphQL type and JSON value:
-
-| Postgres type | GraphQL type | JSON value |
-|---|---|---|
-| `int2` | `smallint` | `7` |
-| `int4` | `Int` | `7` |
-| `int8` | `bigint` | `9007199254740991` |
-| `float4` | `Float` | `1.5` |
-| `float8` | `float8` | `2.25` |
-| `numeric` | `numeric` | `1234.5678` |
-| `text`, `varchar` | `String` | `"hello"` |
-| `bpchar` | `bpchar` | `"ab "`, padded to the column's length |
-| `bool` | `Boolean` | `true` |
-| `uuid` | `uuid` | `"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"` |
-| `timestamp` | `timestamp` | `"2026-01-01T09:30:00.5"` |
-| `timestamptz` | `timestamptz` | `"2026-01-01T07:30:00+00:00"`, in UTC |
-| `date` | `date` | `"2026-01-02"` |
-| `time` | `time` | `"09:30:00"` |
-| `interval` | `interval` | `"1 day 02:03:04"` |
-| `json`, `jsonb` | `json`, `jsonb` | `{"side": "buy"}` |
-| `bytea` | `bytea` | `"\\x0102"`, in hex |
-
-tycostream fails to start on any other type, and lists these.
+positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/main/schema.yaml) is a complete example.
 
 For the positions-app example, to generate the file:
 
@@ -136,13 +114,9 @@ subscription {
 
 tycostream only sends the columns that changed in each update. To do that, it first sends a snapshot of `INSERT` messages, and then a stream of `INSERT`, `UPDATE`, and `DELETE` messages. In an `UPDATE`, `fields` lists the key and the columns that changed, and the other columns are `null`. See how positions-app applies them in [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57).
 
-Each message holds every change at one Materialize timestamp, so all of a transaction's changes arrive in the same message. Within a message, updates arrive in no particular order, whatever the subscription's `order_by`.
-
-A subscription with `limit` or `offset` covers only the rows `order_by` picks, such as the two largest positions (`order_by: { market_value: desc }, limit: 2`). A position that moves into the top two arrives as an `INSERT`, and one that drops out arrives as a `DELETE`.
-
 tycostream serves subscriptions over server-sent events, not WebSockets. Apollo Client supports them through Yoga's [Apollo link](https://github.com/graphql-hive/graphql-yoga/tree/main/packages/client/apollo-link), as in positions-app's [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js).
 
-Filters, sorting, and paging work as they do in Hasura. `where` compares a column with `_eq`, `_neq`, `_gt`, `_gte`, `_lt`, `_lte`, `_in`, `_nin`, or `_is_null`, and a text column also with `_like`, `_nlike`, `_ilike`, `_nilike`, `_regex`, `_nregex`, `_iregex`, or `_niregex`. `_and`, `_or`, and `_not` combine comparisons, and a null column matches only `_is_null`, as in SQL. `order_by` sorts each column `asc` or `desc`, with `_nulls_first` or `_nulls_last` added if you need them, and `limit` and `offset` take a slice.
+The [API reference](api.md) covers what each update holds, and every filter, sort, and type.
 
 ## Current limitations
 
