@@ -14,7 +14,7 @@ import type {
   SelectQueryBuilder,
   SqlBool,
 } from 'kysely';
-import { OrderDirection, StreamMode } from '../common/types.js';
+import { OrderDirection, StreamMode, pathName } from '../common/types.js';
 import type { OrderBy, PostgresType, Row, Selection } from '../common/types.js';
 import type {
   Relationship,
@@ -34,6 +34,19 @@ enum StatementName {
   RowNumber = '__row_number', // The column holding SQL_ROW_NUMBER's numbers, in a query
   Row = '__row', // A row's own columns, as one JSON object
   Rows = '__rows', // A source's rows, before their related rows are joined on
+  Keys = '__keys', // A row's keys, as a JSON array: its parent's, then its own
+  Key = '__key', // A parent's key a list's rows carry: __key_0, __key_1…
+}
+
+/**
+ * One of the statement's rows, unpacked: what a change to it carries, and its
+ * source's key field, which a change names
+ */
+export interface UnpackedRow {
+  path: readonly string[];
+  keys: readonly unknown[];
+  row: Row; // Its columns, each related row's named by its path
+  keyField: string;
 }
 
 // A row related to a source's row by a relationship to one row, at a path of
@@ -65,18 +78,23 @@ interface Plan {
 // list in them at any depth, read for each row of its parent
 interface SelectedSource {
   index: number; // Its rows' tag, and its CTE's number; parents come first
+  path: string[]; // The fields from a selected row to the list; none for the selected rows
   source: SourceDefinition;
   selection: Selection;
   own: string[]; // Its own selected columns
   related: RelatedRow[];
   types: Map<string, PostgresType>; // Its columns, each with its type
+  // Its CTE's columns holding its keys, its parent's then its own, each with
+  // its type
+  keyTypes: Map<string, PostgresType>;
   parent?: Parent; // A list's
 }
 
-// How a list's rows are matched to each row of its parent: a column of the
-// parent's row, and the column of the list's source that matches it
+// How a list's rows are read for each row of its parent: matched on a column
+// of the parent's row by a column of the list's source, and carrying the
+// parent's keys
 interface Parent {
-  name: string; // The parent's CTE
+  of: SelectedSource;
   column: string; // Named by its path in the parent's row
   relatedColumn: string;
 }
@@ -106,10 +124,6 @@ const SQL_DIRECTIONS: Record<
   [OrderDirection.DescNullsLast]: (order) => order.desc().nullsLast(),
 };
 
-// Joins a path's fields, in a related row's alias and its columns' names, as
-// positions.symbol. No GraphQL name contains it.
-const PATH_SEPARATOR = '.';
-
 // SQL's window function that numbers rows in their order
 const SQL_ROW_NUMBER = 'row_number';
 
@@ -127,17 +141,14 @@ const SQL_ROW_NUMBER = 'row_number';
  *       query numbered in that order                                       sourceRows
  *     a list's, read for each row of its parent                            forEachParentRow
  *     each related row left joined on                                      withRelatedRows
- *   every row, as its source's number and one JSON object of its
- *     columns, stacked with UNION ALL, a query's ordered by number         statementOf
+ *   every row, as its source's number, its keys, and one JSON object of
+ *     its columns, stacked with UNION ALL, a query's ordered by number     statementOf
  *
  * Source and column names are quoted, and every value is a bind parameter.
  */
 export class Statement {
   readonly sql: string;
   readonly parameters: readonly unknown[];
-  // The selected rows' columns: their source's, in their order, the key among
-  // them, then each related row's, named by its path, as positions.symbol
-  readonly columns: string[];
   // The sources it reads, by their number: the selected rows, then each list
   private readonly sources: SelectedSource[];
 
@@ -150,7 +161,6 @@ export class Statement {
     readonly mode: StreamMode,
   ) {
     this.sources = sourcesOf(source, selection);
-    this.columns = [...this.sources[0].types.keys()];
     const compiled = statementOf(
       this.sources,
       mode === StreamMode.Snapshot,
@@ -161,19 +171,27 @@ export class Statement {
 
   /**
    * One of the statement's rows, as tycostream serves it, by its source's
-   * number: its columns, each related row's named by its path, each parsed
-   * from the text in its JSON by the column's type, as the column's own value
-   * would be. A row can carry other columns too.
+   * number: its path, its keys, and its columns, each related row's named by
+   * its path. Each key and value is parsed from its text by its column's
+   * type, as the column's own value would be. A row can carry other columns
+   * too.
    */
-  unpack(raw: RawRow): Row {
-    const { types } = this.sources[raw[StatementName.Source] as number];
+  unpack(raw: RawRow): UnpackedRow {
+    const { path, source, types, keyTypes } =
+      this.sources[raw[StatementName.Source] as number];
+    const keys = raw[StatementName.Keys] as (string | null)[];
     const values = raw[StatementName.Row] as Record<string, string | null>;
-    return Object.fromEntries(
-      [...types].map(([column, type]) => [
-        column,
-        parseText(type, values[column] ?? null),
-      ]),
-    );
+    return {
+      path,
+      keys: [...keyTypes.values()].map((type, at) => parseText(type, keys[at])),
+      keyField: source.primaryKeyField,
+      row: Object.fromEntries(
+        [...types].map(([column, type]) => [
+          column,
+          parseText(type, values[column] ?? null),
+        ]),
+      ),
+    };
   }
 }
 
@@ -189,25 +207,29 @@ function sourcesOf(
   const add = (
     source: SourceDefinition,
     selection: Selection,
+    path: string[] = [],
     parent?: Parent,
   ) => {
-    const own = selectedColumns(source, fieldsOf(source), selection.columns);
+    const fields = fieldsOf(source);
+    const own = selectedColumns(source, fields, selection.columns);
     const { related, lists } = plan(source, selection.relationships);
-    const index = sources.length;
-    sources.push({
-      index,
+    const selected: SelectedSource = {
+      index: sources.length,
+      path,
       source,
       selection,
       own,
       related,
       types: typesOf(source, own, related),
+      keyTypes: keyTypesOf(source, fields, parent?.of),
       parent,
-    });
-    for (const { path, relationship, selection } of lists) {
-      add(relationship.source, selection, {
-        name: sourceName(index),
-        column: pathName([...path.slice(0, -1), relationship.column]),
-        relatedColumn: relationship.relatedColumn,
+    };
+    sources.push(selected);
+    for (const list of lists) {
+      add(list.relationship.source, list.selection, [...path, ...list.path], {
+        of: selected,
+        column: pathName([...list.path.slice(0, -1), list.relationship.column]),
+        relatedColumn: list.relationship.relatedColumn,
       });
     }
   };
@@ -270,6 +292,21 @@ function typesOf(
   ]);
 }
 
+// A source's key columns in its CTE, each with its type: a list's parent's
+// keys, which its rows carry as __key_0, __key_1…, then its own key
+function keyTypesOf(
+  source: SourceDefinition,
+  fields: Map<string, SourceField>,
+  parent?: SelectedSource,
+): Map<string, PostgresType> {
+  return new Map([
+    ...[...(parent?.keyTypes.values() ?? [])].map(
+      (type, at): [string, PostgresType] => [carriedKey(at), type],
+    ),
+    [source.primaryKeyField, fields.get(source.primaryKeyField)!.type],
+  ]);
+}
+
 // A related row's selection takes columns and relationships only: one row
 // has no filter, order, limit or offset
 function checkNoArguments(field: string, selection: Selection): void {
@@ -292,9 +329,9 @@ function relationshipOf(source: SourceDefinition, field: string): Relationship {
 // ---- Building: each source's rows, and the statement stacking them ----
 
 // The statement: each source's rows as a CTE, then every row as its source's
-// number and one JSON object of its columns, stacked with UNION ALL; a
-// query's ordered by their numbers, which keep each source's rows in order
-// under each parent row
+// number, its keys, and one JSON object of its columns, stacked with UNION
+// ALL; a query's ordered by their numbers, which keep each source's rows in
+// order under each parent row
 function statementOf(sources: SelectedSource[], numbered: boolean): Query {
   const withSources = sources.reduce<QueryCreator<any>>(
     (creator, selected) =>
@@ -312,6 +349,7 @@ function statementOf(sources: SelectedSource[], numbered: boolean): Query {
         ...(numbered
           ? [sql.id(name, StatementName.RowNumber).as(StatementName.RowNumber)]
           : []),
+        keysOf(name, [...selected.keyTypes.keys()]).as(StatementName.Keys),
         rowOf(name, [...selected.types.keys()]).as(StatementName.Row),
       ]);
   };
@@ -334,22 +372,30 @@ function rowsOf(selected: SelectedSource, numbered: boolean): Query {
 }
 
 // A list's rows, read for each row of its parent, matched on the column of
-// the parent's row that holds the list
+// the parent's row that holds the list, each carrying the parent's keys
 function forEachParentRow(
   rows: Query,
   source: SourceDefinition,
-  parent: Parent,
+  { of, column, relatedColumn }: Parent,
 ): Query {
+  const name = sourceName(of.index);
   const matched = rows.where(
-    sameValue(
-      [source.name, parent.relatedColumn],
-      [parent.name, parent.column],
-    ),
+    sameValue([source.name, relatedColumn], [name, column]),
   );
   return db
-    .selectFrom(sql.id(parent.name).as(parent.name))
+    .selectFrom(sql.id(name).as(name))
     .crossJoinLateral(matched.as(StatementName.Rows))
+    .select(
+      [...of.keyTypes.keys()].map((key, at) =>
+        sql.id(name, key).as(carriedKey(at)),
+      ),
+    )
     .selectAll(StatementName.Rows);
+}
+
+// The column a list's rows carry their parent's key in: __key_0, __key_1…
+function carriedKey(at: number): string {
+  return `${StatementName.Key}_${at}`;
 }
 
 // A source's own rows: its columns, filtered, ordered, limited and offset by
@@ -443,6 +489,14 @@ function rowOf(name: string, columns: string[]): RawBuilder<unknown> {
   );
 }
 
+// A row's keys, from its source's CTE: one JSON array of them, each as the
+// text the database would send for it, as a row's columns are
+function keysOf(name: string, keys: string[]): RawBuilder<unknown> {
+  return sql`jsonb_build_array(${sql.join(
+    keys.map((key) => asText(sql.id(name, key))),
+  )})`;
+}
+
 // Kysely's jsonBuildObject, as jsonb: Materialize has no json_build_object
 function jsonbBuildObject(
   object: Record<string, Expression<unknown>>,
@@ -471,17 +525,11 @@ function sourceName(index: number): string {
   return `${StatementName.Source}_${index}`;
 }
 
-// A related row's alias, or a column's name, in the statement: the fields of
-// its path
-function pathName(path: string[]): string {
-  return path.join(PATH_SEPARATOR);
-}
-
 // ---- Columns and order ----
 
 // The columns to select, in the source's order: the ones asked for, or every
-// one when none are named, and always the key, which a live stream pairs its
-// rows by
+// one when none are named, and always the key, which a row's keys are built
+// from and a delete sends
 function selectedColumns(
   source: SourceDefinition,
   fields: Map<string, SourceField>,

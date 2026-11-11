@@ -158,17 +158,56 @@ export enum RowUpdateType {
 export type Row = Record<string, unknown>;
 
 /**
- * Row update event sent to GraphQL subscriptions
- * fields: set of field names that are relevant for this event
- *   - INSERT: all field names
- *   - UPDATE: changed field names (including primary key)
- *   - DELETE: primary key only
- * row: complete row data (always present)
+ * Joins the fields of a path in a name: a related row's column, as
+ * positions.symbol, or a list's key, as trades.id. No GraphQL name contains
+ * it, so a name splits back losslessly.
+ */
+export const PATH_SEPARATOR = '.';
+
+/**
+ * A path's name: its fields joined, as positions.symbol
+ */
+export function pathName(path: readonly string[]): string {
+  return path.join(PATH_SEPARATOR);
+}
+
+/**
+ * A change to one row, flat, saying where the row sits among the selected
+ * rows and their lists. What every reader of changes can rely on:
+ * - A timestamp has at most one change per path and keys.
+ * - A query's changes come in the selection's order, and each source's rows
+ *   in order under their parent.
+ * - A row's columns are named from the row: a trade's own id, and its
+ *   position's positions.symbol.
+ * - A related row whose columns are all null matched nothing, as its key is
+ *   always selected and its join matches on it.
+ * fields: the columns this event names
+ *   - INSERT: every column
+ *   - UPDATE: the key, and the changed columns
+ *   - DELETE: the key alone
+ * row: every column, as it is now, or as it was for a delete
  */
 export interface RowUpdateEvent {
   type: RowUpdateType;
-  fields: Set<string>; // Field names relevant to this event
-  row: Row; // Complete row data
+  // The fields from a selected row to the row's list: [] for a position,
+  // ['trades'] for one of its trades
+  path: readonly string[];
+  // The selected row's key, then one per list on the path; a related row
+  // adds none: [1] for position 1, [1, 8] for its trade 8
+  keys: readonly unknown[];
+  fields: Set<string>;
+  row: Row;
+}
+
+/**
+ * A row's path and keys, as one value to compare: two changes with the same
+ * are changes to the same row
+ */
+export function pathAndKeysOf(
+  path: readonly string[],
+  keys: readonly unknown[],
+): string {
+  return JSON.stringify([path, keys]);
 }
 
 /**

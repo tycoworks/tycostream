@@ -1,7 +1,12 @@
 import pg from 'pg';
-import { PostgresType, RowUpdateType } from '../common/types.js';
-import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
-import type { Statement } from './statement.js';
+import {
+  PostgresType,
+  RowUpdateType,
+  pathAndKeysOf,
+  pathName,
+} from '../common/types.js';
+import type { RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
+import type { Statement, UnpackedRow } from './statement.js';
 
 /**
  * What every Postgres-compatible database does the same way: typing each
@@ -73,24 +78,38 @@ export function parseText(type: PostgresType, text: string | null): unknown {
 }
 
 /**
- * Thrown when a read's rows can't be explained by one row per key, so the
- * declared primary key isn't unique: a query with a key twice, or a
- * timestamp's changes with one
+ * Thrown when a read's rows can't be explained by one row per path and keys,
+ * so a declared primary key isn't unique: a query with a row twice, or a
+ * timestamp's changes with one. The key is named by its path, as trades.id.
+ * A parent's or a related row's key can be the one that isn't unique, as two
+ * positions for one instrument make a trade two rows.
  */
 export class KeyViolationError extends Error {
-  constructor(primaryKeyField: string, key: unknown) {
+  constructor({ path, keys, keyField }: UnpackedRow) {
     super(
-      `More than one row for ${primaryKeyField} = ${String(key)}: the key isn't unique`,
+      `More than one row for ${pathName([...path, keyField])} with keys ${JSON.stringify(keys)}: its key, a parent's or a related row's isn't unique`,
     );
     this.name = 'KeyViolationError';
   }
 }
 
 /**
+ * A change to one row: its type, its path and keys, the fields it sends, and
+ * the row
+ */
+export function changeOf(
+  type: RowUpdateType,
+  { path, keys, row }: UnpackedRow,
+  fields: Iterable<string>,
+): RowUpdateEvent {
+  return { type, path, keys, fields: new Set(fields), row };
+}
+
+/**
  * A row arriving whole: an insert of every column
  */
-export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
-  return { type: RowUpdateType.Insert, fields: new Set(fieldNames), row };
+export function insertOf(unpacked: UnpackedRow): RowUpdateEvent {
+  return changeOf(RowUpdateType.Insert, unpacked, Object.keys(unpacked.row));
 }
 
 /**
@@ -106,29 +125,19 @@ export async function* readSnapshot(
   const { rows } = await client.query<RawRow>(statement.sql, [
     ...statement.parameters,
   ]);
-  yield {
-    events: insertsOf(
-      rows.map((raw) => statement.unpack(raw)),
-      statement.source.primaryKeyField,
-      statement.columns,
-    ),
-  };
+  yield { events: insertsOf(rows.map((raw) => statement.unpack(raw))) };
 }
 
-// A snapshot's rows as inserts, one per row: a key seen twice means the
-// source's key isn't unique
-function insertsOf(
-  rows: Row[],
-  primaryKeyField: string,
-  fieldNames: string[],
-): RowUpdateEvent[] {
+// A snapshot's rows as inserts, one per row: a path and keys seen twice
+// means a key isn't unique
+function insertsOf(rows: UnpackedRow[]): RowUpdateEvent[] {
   const seen = new Set<string>();
   return rows.map((row) => {
-    const key = JSON.stringify(row[primaryKeyField]);
-    if (seen.has(key)) {
-      throw new KeyViolationError(primaryKeyField, row[primaryKeyField]);
+    const id = pathAndKeysOf(row.path, row.keys);
+    if (seen.has(id)) {
+      throw new KeyViolationError(row);
     }
-    seen.add(key);
-    return insertOf(row, fieldNames);
+    seen.add(id);
+    return insertOf(row);
   });
 }

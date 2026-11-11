@@ -98,6 +98,12 @@ relate(trades, 'account_id', accounts);
 const queryOf = (source: SourceDefinition, selection: Selection = {}) =>
   new Statement(source, selection, StreamMode.Snapshot);
 
+// The columns a statement gives a row of one of its sources
+const columnsOf = (statement: Statement, source = 0) =>
+  Object.keys(
+    statement.unpack({ __source: source, __keys: [], __row: {} }).row,
+  );
+
 // The source's rows a statement selects, as its CTE, with no row numbers:
 // a subscription's
 function sourceRowsOf(source: SourceDefinition, selection: Selection = {}) {
@@ -134,7 +140,7 @@ describe('Statement', () => {
           'with "__source_0" as (select "__rows".* from (select "id" as "id", "name" as "name", ' +
           'row_number() over(order by "name" asc) as "__row_number" ' +
           'from "users" as "users" order by "name" asc) as "__rows") ' +
-          'select 0 as "__source", "__source_0"."__row_number" as "__row_number", jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
+          'select 0 as "__source", "__source_0"."__row_number" as "__row_number", jsonb_build_array(cast("__source_0"."id" as text)) as "__keys", jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
           '\'name\', cast("__source_0"."name" as text)) as "__row" ' +
           'from "__source_0" as "__source_0" order by "__row_number"',
         parameters: [],
@@ -151,7 +157,7 @@ describe('Statement', () => {
       ).toBe(
         'with "__source_0" as (select "__rows".* from (select "id" as "id", "name" as "name" ' +
           'from "users" as "users" order by "name" asc) as "__rows") ' +
-          'select 0 as "__source", jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
+          'select 0 as "__source", jsonb_build_array(cast("__source_0"."id" as text)) as "__keys", jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
           '\'name\', cast("__source_0"."name" as text)) as "__row" ' +
           'from "__source_0" as "__source_0"',
       );
@@ -161,14 +167,19 @@ describe('Statement', () => {
       const all = { sql: SELECT, parameters: [] };
       expect(sourceRowsOf(users)).toEqual(all);
       expect(sourceRowsOf(users, { where: {} })).toEqual(all);
-      expect(queryOf(users).columns).toEqual(['id', 'name', 'active', 'rank']);
+      expect(columnsOf(queryOf(users))).toEqual([
+        'id',
+        'name',
+        'active',
+        'rank',
+      ]);
     });
 
     it("should select only the columns named, and the key, in the source's order", () => {
       expect(sourceRowsOf(users, { columns: ['rank', 'name'] }).sql).toBe(
         'select "id" as "id", "name" as "name", "rank" as "rank" from "users" as "users"',
       );
-      expect(queryOf(users, { columns: ['rank', 'name'] }).columns).toEqual([
+      expect(columnsOf(queryOf(users, { columns: ['rank', 'name'] }))).toEqual([
         'id',
         'name',
         'rank',
@@ -188,23 +199,40 @@ describe('Statement', () => {
       });
     });
 
-    it("should unpack one of its rows: each of its columns' values parsed from its text by the column's type", () => {
+    it("should unpack one of its rows: its path and keys, its key's field, and each of its columns' values parsed from its text by the column's type", () => {
       expect(
         queryOf(users).unpack({
           __source: 0,
+          __keys: ['7'],
           __row: { id: '7', name: 'a', active: 't', rank: 'gold' },
         }),
-      ).toEqual({ id: 7, name: 'a', active: true, rank: 'gold' });
+      ).toEqual({
+        path: [],
+        keys: [7],
+        keyField: 'id',
+        row: { id: 7, name: 'a', active: true, rank: 'gold' },
+      });
     });
 
     it('should unpack a null or missing value as null, whatever else the row carries', () => {
       expect(
         queryOf(users, { columns: ['name', 'active'] }).unpack({
           __source: 0,
+          __keys: ['7'],
           __row: { id: '7', name: null, email: 'a' },
           mz_timestamp: 42,
-        }),
+        }).row,
       ).toEqual({ id: 7, name: null, active: null });
+    });
+
+    it('should unpack a null key as null, as a source can declare a key the database lets be null', () => {
+      expect(
+        queryOf(users).unpack({
+          __source: 0,
+          __keys: [null],
+          __row: { id: null },
+        }),
+      ).toMatchObject({ keys: [null], row: { id: null } });
     });
 
     it('should reject selecting a column the source does not have', () => {
@@ -254,7 +282,7 @@ describe('Statement', () => {
           'from "trades" as "trades" where "quantity" > $1 order by "id" desc limit $2 offset $3) as "__rows" ' +
           'left join "positions" as "positions" on "positions"."instrument_id" = "__rows"."instrument_id" ' +
           'left join "instruments" as "positions.instruments" on "positions.instruments"."id" = "positions"."instrument_id") ' +
-          'select 0 as "__source", jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
+          'select 0 as "__source", jsonb_build_array(cast("__source_0"."id" as text)) as "__keys", jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
           '\'quantity\', cast("__source_0"."quantity" as text), ' +
           '\'positions.instrument_id\', cast("__source_0"."positions.instrument_id" as text), ' +
           '\'positions.symbol\', cast("__source_0"."positions.symbol" as text), ' +
@@ -289,7 +317,7 @@ describe('Statement', () => {
         'left join "positions" as "positions" on "positions"."instrument_id" = "__rows"."instrument_id" ' +
           'left join "accounts" as "accounts" on "accounts"."id" = "__rows"."account_id"',
       );
-      expect(statement.columns).toEqual([
+      expect(columnsOf(statement)).toEqual([
         'id',
         'quantity',
         'positions.instrument_id',
@@ -312,11 +340,11 @@ describe('Statement', () => {
       expect(statement.sql).toContain(
         'left join "currencies" as "positions.currencies" on "positions.currencies"."code" = "positions"."currency_code"',
       );
-      expect(statement.columns).not.toContain('positions.currency_code');
+      expect(columnsOf(statement)).not.toContain('positions.currency_code');
     });
 
     it("should read the column a row's join matches on, but keep it out of the row unless it's selected", () => {
-      expect(queryOf(trades, selection).columns).toEqual([
+      expect(columnsOf(queryOf(trades, selection))).toEqual([
         'id',
         'quantity',
         'positions.instrument_id',
@@ -325,10 +353,12 @@ describe('Statement', () => {
         'positions.instruments.name',
       ]);
       expect(
-        queryOf(trades, {
-          ...selection,
-          columns: ['instrument_id', 'quantity'],
-        }).columns.slice(0, 3),
+        columnsOf(
+          queryOf(trades, {
+            ...selection,
+            columns: ['instrument_id', 'quantity'],
+          }),
+        ).slice(0, 3),
       ).toEqual(['id', 'instrument_id', 'quantity']);
     });
 
@@ -336,6 +366,7 @@ describe('Statement', () => {
       expect(
         queryOf(trades, selection).unpack({
           __source: 0,
+          __keys: ['7'],
           __row: {
             id: '7',
             quantity: '500',
@@ -344,7 +375,7 @@ describe('Statement', () => {
             'positions.instruments.id': '1',
             'positions.instruments.name': 'Apple Inc.',
           },
-        }),
+        }).row,
       ).toEqual({
         id: 7,
         quantity: 500,
@@ -359,6 +390,7 @@ describe('Statement', () => {
       expect(
         queryOf(trades, selection).unpack({
           __source: 0,
+          __keys: ['9'],
           __row: {
             id: '9',
             quantity: '50',
@@ -367,7 +399,7 @@ describe('Statement', () => {
             'positions.instruments.id': null,
             'positions.instruments.name': null,
           },
-        }),
+        }).row,
       ).toEqual({
         id: 9,
         quantity: 50,
@@ -424,15 +456,17 @@ describe('Statement', () => {
         sql:
           'with "__source_0" as (select "__rows".* from (select "instrument_id" as "instrument_id", "symbol" as "symbol", ' +
           'row_number() over() as "__row_number" from "positions" as "positions") as "__rows"), ' +
-          '"__source_1" as (select "__rows".* from "__source_0" as "__source_0" cross join lateral ' +
+          '"__source_1" as (select "__source_0"."instrument_id" as "__key_0", "__rows".* from "__source_0" as "__source_0" cross join lateral ' +
           '(select "id" as "id", "quantity" as "quantity", row_number() over(order by "id" desc) as "__row_number" ' +
           'from "trades" as "trades" where "trades"."instrument_id" = "__source_0"."instrument_id" ' +
           'order by "id" desc limit $1) as "__rows") ' +
           'select 0 as "__source", "__source_0"."__row_number" as "__row_number", ' +
+          'jsonb_build_array(cast("__source_0"."instrument_id" as text)) as "__keys", ' +
           'jsonb_build_object(\'instrument_id\', cast("__source_0"."instrument_id" as text), ' +
           '\'symbol\', cast("__source_0"."symbol" as text)) as "__row" from "__source_0" as "__source_0" ' +
           'union all ' +
           'select 1 as "__source", "__source_1"."__row_number" as "__row_number", ' +
+          'jsonb_build_array(cast("__source_1"."__key_0" as text), cast("__source_1"."id" as text)) as "__keys", ' +
           'jsonb_build_object(\'id\', cast("__source_1"."id" as text), ' +
           '\'quantity\', cast("__source_1"."quantity" as text)) as "__row" from "__source_1" as "__source_1" ' +
           'order by "__row_number"',
@@ -455,7 +489,7 @@ describe('Statement', () => {
       });
 
       expect(sql).toContain(
-        '"__source_2" as (select "__rows".* from "__source_1" as "__source_1" cross join lateral',
+        '"__source_2" as (select "__source_1"."__key_0" as "__key_0", "__source_1"."instrument_id" as "__key_1", "__rows".* from "__source_1" as "__source_1" cross join lateral',
       );
       expect(sql).toContain(
         'where "trades"."instrument_id" = "__source_1"."instrument_id"',
@@ -492,16 +526,53 @@ describe('Statement', () => {
       );
     });
 
-    it("should unpack a row by its source's number, as that source's columns, and give the selected rows' columns as its own", () => {
+    it("should unpack a list's row by its source's number: its list's path, its parent's keys then its own, and that source's columns", () => {
       const statement = queryOf(positions, selection);
 
       expect(
         statement.unpack({
           __source: 1,
+          __keys: ['1', '8'],
           __row: { id: '8', quantity: '100' },
         }),
-      ).toEqual({ id: 8, quantity: 100 });
-      expect(statement.columns).toEqual(['instrument_id', 'symbol']);
+      ).toEqual({
+        path: ['trades'],
+        keys: [1, 8],
+        keyField: 'id',
+        row: { id: 8, quantity: 100 },
+      });
+      expect(columnsOf(statement)).toEqual(['instrument_id', 'symbol']);
+      expect(columnsOf(statement, 1)).toEqual(['id', 'quantity']);
+    });
+
+    it("should give a list under a related row its path through the related row, and keys from the selected row's, as a related row adds none", () => {
+      const statement = queryOf(trades, {
+        relationships: {
+          positions: { relationships: { trades: { columns: ['quantity'] } } },
+        },
+      });
+
+      expect(
+        statement.unpack({
+          __source: 1,
+          __keys: ['7', '8'],
+          __row: { id: '8', quantity: '100' },
+        }),
+      ).toMatchObject({ path: ['positions', 'trades'], keys: [7, 8] });
+    });
+
+    it("should parse each key by its column's type, a parent's text key too, three levels deep", () => {
+      const statement = queryOf(currencies, {
+        relationships: { positions: { relationships: { trades: {} } } },
+      });
+
+      expect(
+        statement.unpack({
+          __source: 2,
+          __keys: ['USD', '1', '8'],
+          __row: { id: '8' },
+        }),
+      ).toMatchObject({ path: ['positions', 'trades'], keys: ['USD', 1, 8] });
     });
   });
 

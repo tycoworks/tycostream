@@ -8,6 +8,7 @@ import type { DiffRow } from './materialize.js';
 import { KeyViolationError } from './postgres.js';
 import type { RawRow } from './postgres.js';
 import { Statement } from './statement.js';
+import type { UnpackedRow } from './statement.js';
 import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
 import type { Selection } from '../common/types.js';
 import type { Row, RowUpdateBatch } from '../common/types.js';
@@ -28,6 +29,7 @@ type Values = Record<string, string | number | boolean | null>;
 // JSON object of its columns' values, as the text the database writes for them
 const packed = (row: Values): RawRow => ({
   __source: 0,
+  __keys: [String(Object.values(row)[0])],
   __row: Object.fromEntries(
     Object.entries(row).map(([column, value]) => [
       column,
@@ -104,6 +106,8 @@ describe('MaterializeAdapter', () => {
           events: [
             {
               type: RowUpdateType.Insert,
+              path: [],
+              keys: [1],
               fields: new Set(['id', 'name']),
               row: { id: 1, name: 'a' },
             },
@@ -154,11 +158,15 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [2],
             fields: new Set(['id', 'name']),
             row: { id: 2, name: 'b' },
           },
@@ -169,11 +177,15 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Update,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'c' },
           },
           {
             type: RowUpdateType.Delete,
+            path: [],
+            keys: [2],
             fields: new Set(['id']),
             row: { id: 2, name: 'b' },
           },
@@ -198,6 +210,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id']),
             row: { id: 1 },
           },
@@ -209,6 +223,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [2],
             fields: new Set(['id']),
             row: { id: 2 },
           },
@@ -233,6 +249,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
@@ -266,6 +284,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
@@ -276,6 +296,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: ['AAPL'],
             fields: new Set(['symbol', 'price']),
             row: { symbol: 'AAPL', price: 1.5 },
           },
@@ -301,6 +323,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Delete,
+            path: [],
+            keys: [1],
             fields: new Set(['id']),
             row: { id: 1, name: 'a' },
           },
@@ -429,19 +453,26 @@ describe('pairChanges', () => {
     qty,
     traded_at: at,
   });
-  const add = (r: Row): DiffRow => ({ diff: 1, row: r });
-  const remove = (r: Row): DiffRow => ({
-    diff: -1,
+  // A selected row, unpacked: a trade, by its id
+  const unpacked = (r: Row, path: string[] = []): UnpackedRow => ({
+    path,
+    keys: [r.id],
+    keyField: 'id',
     row: r,
   });
-
-  const pair = (rows: DiffRow[]) => pairChanges(rows, 'id', FIELDS);
+  const add = (r: Row): DiffRow<UnpackedRow> => ({ diff: 1, row: unpacked(r) });
+  const remove = (r: Row): DiffRow<UnpackedRow> => ({
+    diff: -1,
+    row: unpacked(r),
+  });
 
   describe('one row per key', () => {
     it('should make a lone +1 an insert with every field', () => {
-      expect(pair([add(row(1, 'AAPL', 10))])).toEqual([
+      expect(pairChanges([add(row(1, 'AAPL', 10))])).toEqual([
         {
           type: RowUpdateType.Insert,
+          path: [],
+          keys: [1],
           fields: new Set(FIELDS),
           row: row(1, 'AAPL', 10),
         },
@@ -449,9 +480,11 @@ describe('pairChanges', () => {
     });
 
     it('should make a lone -1 a delete of the key', () => {
-      expect(pair([remove(row(1, 'AAPL', 10))])).toEqual([
+      expect(pairChanges([remove(row(1, 'AAPL', 10))])).toEqual([
         {
           type: RowUpdateType.Delete,
+          path: [],
+          keys: [1],
           fields: new Set(['id']),
           row: row(1, 'AAPL', 10),
         },
@@ -462,10 +495,15 @@ describe('pairChanges', () => {
   describe('updates', () => {
     it('should pair a -1 and a +1 into an update of the changed fields', () => {
       expect(
-        pair([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', 15, 'T2'))]),
+        pairChanges([
+          remove(row(1, 'AAPL', 10)),
+          add(row(1, 'AAPL', 15, 'T2')),
+        ]),
       ).toEqual([
         {
           type: RowUpdateType.Update,
+          path: [],
+          keys: [1],
           fields: new Set(['id', 'qty', 'traded_at']),
           row: row(1, 'AAPL', 15, 'T2'),
         },
@@ -474,10 +512,12 @@ describe('pairChanges', () => {
 
     it('should pair them whichever arrives first', () => {
       expect(
-        pair([add(row(1, 'AAPL', 15)), remove(row(1, 'AAPL', 10))]),
+        pairChanges([add(row(1, 'AAPL', 15)), remove(row(1, 'AAPL', 10))]),
       ).toEqual([
         {
           type: RowUpdateType.Update,
+          path: [],
+          keys: [1],
           fields: new Set(['id', 'qty']),
           row: row(1, 'AAPL', 15),
         },
@@ -486,16 +526,19 @@ describe('pairChanges', () => {
 
     it('should count a field changing to or from null as a change', () => {
       expect(
-        pair([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', null))]),
+        pairChanges([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', null))]),
       ).toEqual([
         {
           type: RowUpdateType.Update,
+          path: [],
+          keys: [1],
           fields: new Set(['id', 'qty']),
           row: row(1, 'AAPL', null),
         },
       ]);
       expect(
-        pair([remove(row(1, 'AAPL', null)), add(row(1, 'AAPL', 0))])[0].fields,
+        pairChanges([remove(row(1, 'AAPL', null)), add(row(1, 'AAPL', 0))])[0]
+          .fields,
       ).toEqual(new Set(['id', 'qty']));
     });
 
@@ -507,10 +550,10 @@ describe('pairChanges', () => {
         traded_at: 'T1',
       };
       expect(
-        pair([remove(before), add({ ...before, qty: { lots: [1] } })]),
+        pairChanges([remove(before), add({ ...before, qty: { lots: [1] } })]),
       ).toEqual([]);
       expect(
-        pair([remove(before), add({ ...before, qty: { lots: [2] } })])[0]
+        pairChanges([remove(before), add({ ...before, qty: { lots: [2] } })])[0]
           .fields,
       ).toEqual(new Set(['id', 'qty']));
     });
@@ -519,13 +562,13 @@ describe('pairChanges', () => {
   describe('netting', () => {
     it('should drop identical rows that cancel out', () => {
       expect(
-        pair([add(row(1, 'AAPL', 10)), remove(row(1, 'AAPL', 10))]),
+        pairChanges([add(row(1, 'AAPL', 10)), remove(row(1, 'AAPL', 10))]),
       ).toEqual([]);
     });
 
     it('should net before pairing, so a change that is undone within the timestamp is no change', () => {
       expect(
-        pair([
+        pairChanges([
           remove(row(1, 'AAPL', 10)),
           add(row(1, 'AAPL', 15)),
           remove(row(1, 'AAPL', 15)),
@@ -537,7 +580,7 @@ describe('pairChanges', () => {
     it('should not net rows that differ only by null and the text "null"', () => {
       const nullSymbol = { id: 1, symbol: null, qty: 1, traded_at: 'T1' };
       const textNull = { id: 1, symbol: 'null', qty: 1, traded_at: 'T1' };
-      expect(pair([remove(nullSymbol), add(textNull)])[0].type).toBe(
+      expect(pairChanges([remove(nullSymbol), add(textNull)])[0].type).toBe(
         RowUpdateType.Update,
       );
     });
@@ -545,7 +588,7 @@ describe('pairChanges', () => {
 
   describe('several keys in one timestamp', () => {
     it('should give each key its own event', () => {
-      const events = pair([
+      const events = pairChanges([
         add(row(3, 'MSFT', 5)),
         remove(row(1, 'AAPL', 10)),
         add(row(1, 'AAPL', 15)),
@@ -561,7 +604,7 @@ describe('pairChanges', () => {
 
     it('should make a snapshot, all +1, into inserts', () => {
       const snapshot = [1, 2, 3].map((id) => add(row(id, 'AAPL', id)));
-      expect(pair(snapshot).map((e) => e.type)).toEqual([
+      expect(pairChanges(snapshot).map((e) => e.type)).toEqual([
         RowUpdateType.Insert,
         RowUpdateType.Insert,
         RowUpdateType.Insert,
@@ -572,10 +615,10 @@ describe('pairChanges', () => {
   describe('rows entering and leaving a filter', () => {
     it('should make a row entering the filter an insert, and one leaving it a delete', () => {
       // A filtered SUBSCRIBE sends only the side of a change that matches
-      expect(pair([add(row(1, 'AAPL', 15))])[0].type).toBe(
+      expect(pairChanges([add(row(1, 'AAPL', 15))])[0].type).toBe(
         RowUpdateType.Insert,
       );
-      expect(pair([remove(row(1, 'AAPL', 10))])[0].type).toBe(
+      expect(pairChanges([remove(row(1, 'AAPL', 10))])[0].type).toBe(
         RowUpdateType.Delete,
       );
     });
@@ -584,20 +627,72 @@ describe('pairChanges', () => {
   describe('key violations', () => {
     it('should reject two +1 rows for one key', () => {
       expect(() =>
-        pair([add(row(1, 'AAPL', 10)), add(row(1, 'MSFT', 10))]),
+        pairChanges([add(row(1, 'AAPL', 10)), add(row(1, 'MSFT', 10))]),
       ).toThrow(KeyViolationError);
     });
 
     it('should reject a diff of +2', () => {
-      expect(() => pair([{ diff: 2, row: row(1, 'AAPL', 10) }])).toThrow(
-        "More than one row for id = 1: the key isn't unique",
+      expect(() =>
+        pairChanges([{ diff: 2, row: unpacked(row(1, 'AAPL', 10)) }]),
+      ).toThrow(
+        "More than one row for id with keys [1]: its key, a parent's or a related row's isn't unique",
       );
     });
 
     it('should reject two -1 rows for one key', () => {
       expect(() =>
-        pair([remove(row(1, 'AAPL', 10)), remove(row(1, 'MSFT', 10))]),
+        pairChanges([remove(row(1, 'AAPL', 10)), remove(row(1, 'MSFT', 10))]),
       ).toThrow(KeyViolationError);
+    });
+
+    it("should name a list's key by its path", () => {
+      const trade = {
+        diff: 1,
+        row: {
+          ...unpacked({ id: 7, quantity: 100 }, ['trades']),
+          keys: [1, 7],
+        },
+      };
+      expect(() => pairChanges([trade, trade])).toThrow(
+        "More than one row for trades.id with keys [1,7]: its key, a parent's or a related row's isn't unique",
+      );
+    });
+  });
+
+  describe('each row by its path and keys', () => {
+    // A position's trade or order, under position 1
+    const listed = (path: string, keys: unknown[], diff: number) => ({
+      diff,
+      row: {
+        path: [path],
+        keys,
+        keyField: 'id',
+        row: { id: keys.at(-1), quantity: 100 },
+      },
+    });
+
+    it("should keep two lists' rows apart, though their keys match: trade 5's and order 5's", () => {
+      expect(
+        pairChanges([
+          listed('trades', [1, 5], 1),
+          listed('orders', [1, 5], 1),
+        ]).map(({ path, keys, type }) => ({ path, keys, type })),
+      ).toEqual([
+        { path: ['trades'], keys: [1, 5], type: RowUpdateType.Insert },
+        { path: ['orders'], keys: [1, 5], type: RowUpdateType.Insert },
+      ]);
+    });
+
+    it('should make a trade moved to another position a delete under one and an insert under the other', () => {
+      expect(
+        pairChanges([
+          listed('trades', [2, 9], -1),
+          listed('trades', [1, 9], 1),
+        ]).map(({ keys, type }) => [keys, type]),
+      ).toEqual([
+        [[2, 9], RowUpdateType.Delete],
+        [[1, 9], RowUpdateType.Insert],
+      ]);
     });
   });
 });

@@ -32,9 +32,9 @@ Connections and the database. Nothing above it sees SQL or how the database repo
 - **`DatabaseConnectionService`** (`connection.service.ts`) is the one place connections are made: one pool, capped at `DATABASE_MAX_CONNECTIONS`, lending to streams of both modes. A `Live` stream holds its connection until it stops, and it's then discarded, which drops its `SUBSCRIBE`; a `Snapshot` borrows one for one `SELECT`, gives it back for reuse, and is cut off after `DATABASE_QUERY_TIMEOUT_MS`, waiting included. When every connection is taken, a new stream waits for a free one, up to the connect timeout. It stops lending once shutdown starts, and ends the pool last.
 - **`DatabaseAdapter`** is the database: one `read(client, statement)`, in the statement's mode. `DatabaseModule` provides `MaterializeAdapter`; another database would be another adapter, chosen there.
 - **`MaterializeAdapter`** (`materialize.ts`) reads a snapshot with `readSnapshot`, and a live stream through `DECLARE … CURSOR FOR SUBSCRIBE (…) WITH (SNAPSHOT, PROGRESS)` and a `FETCH` loop, holding each timestamp's rows until a progress row passes it, then pairing them into insert, update and delete events.
-- **`postgres.ts`** is what every Postgres-compatible database does the same way: values sent as text, typed by the schema (`parseRow`), and a snapshot as one plain `SELECT` (`readSnapshot`).
+- **`postgres.ts`** is what every Postgres-compatible database does the same way: values sent as text, typed by the schema (`TYPE_PARSERS`, `parseText`), and a snapshot as one plain `SELECT` (`readSnapshot`).
 
-Both modes yield the same thing: tycostream's row events, one complete timestamp at a time, the snapshot first as one batch of inserts.
+Both modes yield the same thing: tycostream's row events, one per row, each with its path from a selected row and its keys, one complete timestamp at a time, the snapshot first as one batch of inserts.
 
 ### View Module (`src/view/`)
 

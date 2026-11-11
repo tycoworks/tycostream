@@ -190,9 +190,9 @@ WITH __source_0 AS (                           -- the selected positions
   FROM positions ORDER BY symbol
 ),
 __source_1 AS (                                -- each position's latest 2 trades
-  SELECT __source_0.instrument_id, __rows.*
+  SELECT __source_0.instrument_id AS __key_0, __rows.*
   FROM __source_0 CROSS JOIN LATERAL (
-    SELECT id AS "trades.id", quantity AS "trades.quantity", price AS "trades.price",
+    SELECT id, quantity, price,
            row_number() OVER (ORDER BY id DESC) AS __row_number
     FROM trades
     WHERE trades.instrument_id = __source_0.instrument_id
@@ -206,9 +206,9 @@ SELECT 0 AS __source, __row_number,
 FROM __source_0
 UNION ALL
 SELECT 1, __row_number,
-       jsonb_build_array(instrument_id::text, "trades.id"::text),
-       jsonb_build_object('id', "trades.id"::text, 'quantity', "trades.quantity"::text,
-                          'price', "trades.price"::text)
+       jsonb_build_array(__key_0::text, id::text),
+       jsonb_build_object('id', id::text, 'quantity', quantity::text,
+                          'price', price::text)
 FROM __source_1
 ORDER BY __row_number
 ```
@@ -224,15 +224,17 @@ ORDER BY __row_number
 - **Each row is tagged with its source's number in the plan,** `__source`, as its CTE is named: 0 for the selected positions, 1 for their trades. Unpacking turns it into the row's path.
 - **A query is ordered by row number alone.** Each source's rows come in order under each parent, and the API puts each row under its parent by its keys, wherever it comes.
 - **A subscription** runs the same statement, without row numbers, which would renumber a source's rows at every insert. A query's result and a subscription's snapshot are the same rows by construction.
-- **The names the statement adds,** `__source`, `__source_0`, `__rows`, `__keys`, `__row` and `__row_number`, start with `__`, which GraphQL reserves, so none can be a source's, a column's or a path's. A path's fields are joined by `.`, which no GraphQL name contains.
+- **The names the statement adds,** `__source`, `__source_0`, `__rows`, `__key_0`, `__keys`, `__row` and `__row_number`, start with `__`, which GraphQL reserves, so none can be a source's, a column's or a path's. A path's fields are joined by `.`, which no GraphQL name contains.
 
-**Unpacking.** `statement.unpack(row)` reads one row: its path, from its source's number, and each key and value parsed from its text by the type `schema.yaml` gives its column.
+- **A list's rows carry their parent's keys** as `__key_0`, `__key_1`…, then have their own, so a row's keys are its selected row's key, then one per list on its path.
+
+**Unpacking.** `statement.unpack(row)` reads one row: its path, from its source's number; each key and value, parsed from its text by the type `schema.yaml` gives its column; and its source's key field, which a change names.
 
 **Changes, one per row,** one complete timestamp at a time. Each adapter turns its database's rows into them. Materialize's `SUBSCRIBE` sends bare diffs, so its adapter pairs them:
 
 1. Group the rows by path and keys.
 2. Where a group has more than one row, net identical rows: a −1 and a +1 of the same values cancel.
-3. Then a +1 alone is an INSERT, a −1 alone a DELETE, a −1 and a +1 an UPDATE of the columns that differ, and nothing left is no change. Anything else is a `KeyViolationError`, naming the key by its path, as `trades.id`, and saying that a related row's key may be the one that isn't unique: two positions for one instrument make a trade two rows.
+3. Then a +1 alone is an INSERT, a −1 alone a DELETE, a −1 and a +1 an UPDATE of the columns that differ, and nothing left is no change. Anything else is a `KeyViolationError`, naming the key by its path, as `trades.id`, with the row's keys, and saying that a parent's or a related row's key may be the one that isn't unique: two positions for one instrument make a trade two rows.
 
 A query's rows, from a plain `SELECT` in any Postgres-compatible database, are each an insert; two rows with one key fail the query, as they fail a subscription. Another database would make changes its own way: RisingWave sends each row's operation, so it needs no pairing ([risingwave.md](./risingwave.md)).
 

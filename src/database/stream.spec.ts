@@ -19,6 +19,8 @@ const TRADES: SourceDefinition = {
 
 const insert = (id: number): RowUpdateEvent => ({
   type: RowUpdateType.Insert,
+  path: [],
+  keys: [id],
   fields: new Set(['id']),
   row: { id },
 });
