@@ -64,7 +64,7 @@ Both share one join condition, `trades.instrument_id = positions.instrument_id`;
 
 - **To one row:** `trades.positions: positions`, null when no position matches.
 - **To many rows:** `positions.trades(where, order_by, limit, offset): [trades!]!`, with the arguments applied per position, and `[]` for a position with none.
-- **Any depth,** including many rows under one row: a trade's position's trades.
+- **Any depth,** and in queries, many rows under one row: a trade's position's trades.
 - **Aliases** of one relationship merge when their arguments match; different arguments are refused, for now: "'trades' is selected twice with different arguments; select it once".
 
 A Hasura query that uses relationships runs unchanged.
@@ -112,7 +112,8 @@ The rules:
 - **A child is known within its parent.** A trade moved from GOOG to AAPL arrives as a DELETE under GOOG and an INSERT under AAPL, in either order.
 - **An empty list** means nothing changed under an UPDATE, and no children under an INSERT.
 - **Updates are unordered,** as now; `order_by`, `limit` and `offset` choose the rows, per parent.
-- **`data` keeps the query's row type,** so `data { trades { … } }` is valid GraphQL; in a subscription it's refused: "Subscriptions select 'trades' beside 'data', not inside it".
+- **`data` keeps the query's row type,** so `data { trades { … } }` is valid GraphQL; in a subscription it's refused: "Subscriptions select 'trades' beside 'data', not inside it". So are many rows under a related row inside `data`, `data { positions { trades { … } } }`, as there's no `data` beside them to sit next to: "Subscriptions can't select 'trades' inside 'positions'".
+- **A related row's change reaches every row it's related to.** A price tick on AAPL, with 5,000 AAPL trades selected and their positions with them, is 5,000 UPDATEs, each sending `positions` whole.
 
 ## The layers
 
@@ -139,8 +140,8 @@ The resolver reads the operation with GraphQL's own field collection (`collectSu
 {
   "columns": ["symbol", "net_position"],
   "orderBy": [{ "symbol": "asc" }],
-  "joins": {
-    "trades": { "columns": ["id", "quantity", "price"], "orderBy": [{ "id": "desc" }], "limit": 2, "joins": {} }
+  "relationships": {
+    "trades": { "columns": ["id", "quantity", "price"], "orderBy": [{ "id": "desc" }], "limit": 2, "relationships": {} }
   }
 }
 ```
@@ -167,13 +168,13 @@ What both layers rely on, stated once, on the type:
 - A timestamp has at most one change per path and keys.
 - A query's changes come in the selection's order, and each source's rows in order under their parent.
 - A row's columns are named from the row itself: a trade's own `id`, and its position's `positions.symbol`.
-- A related row whose columns are all null matched nothing, as its key is always selected.
+- A related row whose columns are all null matched nothing: its key is always selected, and the join matches on it, so a related row that matched has a key that isn't null. Many rows under a related row likewise exist only under one that matched.
 
 ## The statement
 
 `new Statement(source, selection, mode)` plans the selection, builds one SQL statement, and unpacks its rows. Every statement is built the same way.
 
-**Planning.** The statement reads each selected source as rows of its own: the selected rows, and each source reached through a relationship to many rows, at any depth, each at its path. A relationship to one row is a `LEFT JOIN` within its row's source, with its columns named by path.
+**Planning.** The statement reads each selected source as rows of its own: the selected rows, and each source reached through a relationship to many rows, at any depth, each at its path. A relationship to one row is a `LEFT JOIN` onto its row, with its columns named by path, after the row's filter, order, limit and offset: Materialize's top N then holds only the rows it keeps, not every row joined to its related ones, and `where` and `order_by` name no table but their own. The column a join matches on is read even when it isn't selected, and stays out of the row's JSON, so a client never sees a column it didn't ask for.
 
 **Building.** One CTE per selected source:
 
@@ -231,7 +232,7 @@ ORDER BY __row_number
 
 1. Group the rows by path and keys.
 2. Where a group has more than one row, net identical rows: a −1 and a +1 of the same values cancel.
-3. Then a +1 alone is an INSERT, a −1 alone a DELETE, a −1 and a +1 an UPDATE of the columns that differ, and nothing left is no change. Anything else is a `KeyViolationError`, naming the key by its path, as `trades.id`.
+3. Then a +1 alone is an INSERT, a −1 alone a DELETE, a −1 and a +1 an UPDATE of the columns that differ, and nothing left is no change. Anything else is a `KeyViolationError`, naming the key by its path, as `trades.id`, and saying that a related row's key may be the one that isn't unique: two positions for one instrument make a trade two rows.
 
 A query's rows are all +1, so they become inserts; two rows with one key fail the query, as they fail a subscription now.
 
@@ -273,7 +274,7 @@ Not measured: performance at positions-app's scale, and what Materialize keeps p
 - **The view layer building the statement:** SQL above the database layer.
 - **One `SUBSCRIBE` per source, merged by timestamp:** a connection each, and progress to merge. One statement gets one timestamp for free.
 - **One flat join:** a position's change repeats for each of its trades, and two relationships to many rows multiply.
-- **Relationships to one row read as sources of their own:** a trade with six would be seven rows rather than one, and a related row's changes would need turning back into a field of the trade.
+- **Relationships to one row read as sources of their own,** a CTE each, so the statement has one mechanism: a trade with six would be seven rows rather than one, and a related row's changes would need merging into its parent's update in the API, a rule for each way it can change. Two levels deep it can't be done at all: when a trade's position's instrument is renamed, only the instrument's row changes, and the API, which must send the position whole, doesn't have the position's other columns. The join gives the trade's whole row, before and after.
 - **`type: object` or `type: array` in `schema.yaml`:** those describe the API; the file describes the database.
 
 ## Later
