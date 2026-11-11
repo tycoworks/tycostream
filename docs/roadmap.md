@@ -29,6 +29,7 @@
 - **Relationships between sources** (in progress, [#2](https://github.com/tycoworks/tycostream/issues/2)): nested GraphQL fields, such as a position's trades, each pushed down to Materialize as one `SUBSCRIBE` of a join, so every level of the result stays at one timestamp. The main reason for the hollow-out.
 - **Arrays, as GraphQL lists** (parked): node-postgres already parses them into lists; arrays of timestamps and dates need their own conversions, and Hasura's handling needs checking first
 - **Column types read from the database at startup,** with Kysely's built-in catalog reader, as kysely-codegen does, so `schema.yaml` declares only keys and enums
+- **A redesigned stress test:** the current one was written for the shared cache, before the hollow-out, so it needs redesigning for one `SUBSCRIBE` per client before it runs in CI
 - Row-level security
 - [Observability](./design/observability.md)
 - Database reconnection
