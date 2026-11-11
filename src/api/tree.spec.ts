@@ -4,8 +4,8 @@ import type { Row, RowUpdateEvent } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import { addForeignKey } from '../config/sources.config.js';
 
-// Instruments, their positions, and the positions' trades, each related to
-// the next by a foreign key
+// Instruments, their positions, and the positions' trades and orders, each
+// related to the next by a foreign key
 const instruments: SourceDefinition = {
   name: 'instruments',
   primaryKeyField: 'id',
@@ -24,8 +24,15 @@ const trades: SourceDefinition = {
   fields: [{ name: 'id', type: PostgresType.Int4 }],
   relationships: new Map(),
 };
+const orders: SourceDefinition = {
+  name: 'orders',
+  primaryKeyField: 'id',
+  fields: [{ name: 'id', type: PostgresType.Int4 }],
+  relationships: new Map(),
+};
 addForeignKey(positions, 'instrument_id', instruments);
 addForeignKey(trades, 'instrument_id', positions);
+addForeignKey(orders, 'instrument_id', positions);
 
 // A query's change: an insert of the row at its path and keys
 const insert = (path: string[], keys: unknown[], row: Row): RowUpdateEvent => ({
@@ -193,7 +200,7 @@ describe('toUpdates', () => {
 
   it("should send an insert's related row whole, as one field", () => {
     expect(
-      toUpdates([change(RowUpdateType.Insert, Object.keys(trade))]),
+      toUpdates(trades, [change(RowUpdateType.Insert, Object.keys(trade))]),
     ).toEqual([
       {
         operation: RowUpdateType.Insert,
@@ -205,7 +212,7 @@ describe('toUpdates', () => {
 
   it('should name a related row in an update when any of its columns changed, and send it whole', () => {
     expect(
-      toUpdates([
+      toUpdates(trades, [
         change(RowUpdateType.Update, ['id', 'positions.net_position'], {
           ...trade,
           'positions.net_position': 700,
@@ -222,7 +229,7 @@ describe('toUpdates', () => {
 
   it('should send a related row that no longer matches as null', () => {
     expect(
-      toUpdates([
+      toUpdates(trades, [
         change(
           RowUpdateType.Update,
           [
@@ -250,17 +257,173 @@ describe('toUpdates', () => {
 
   it("should leave a related row out of an update that didn't change it, and out of a delete", () => {
     expect(
-      toUpdates([
-        change(RowUpdateType.Update, ['id', 'quantity']),
-        change(RowUpdateType.Delete, ['id']),
-      ]),
+      toUpdates(trades, [change(RowUpdateType.Update, ['id', 'quantity'])]),
     ).toEqual([
       {
         operation: RowUpdateType.Update,
         fields: ['id', 'quantity'],
         data: { id: 8, quantity: 100 },
       },
+    ]);
+    expect(toUpdates(trades, [change(RowUpdateType.Delete, ['id'])])).toEqual([
       { operation: RowUpdateType.Delete, fields: ['id'], data: { id: 8 } },
     ]);
+  });
+
+  describe('lists', () => {
+    // A change at a path and keys, naming every column unless told
+    const at = (
+      type: RowUpdateType,
+      path: string[],
+      keys: unknown[],
+      row: Row,
+      fields = Object.keys(row),
+    ): RowUpdateEvent => ({ type, path, keys, fields: new Set(fields), row });
+    const update = (
+      operation: RowUpdateType,
+      data: Row,
+      lists?: Record<string, unknown[]>,
+    ) => ({
+      operation,
+      data,
+      fields: Object.keys(data),
+      ...(lists && { lists }),
+    });
+
+    it("should put each list's updates under their parent's, whether the parent comes before them or after: the snapshot as a tree", () => {
+      expect(
+        toUpdates(positions, [
+          at(RowUpdateType.Insert, ['trades'], [1, 8], { id: 8 }),
+          at(RowUpdateType.Insert, [], [1], { instrument_id: 1 }),
+          at(RowUpdateType.Insert, ['trades'], [1, 7], { id: 7 }),
+        ]),
+      ).toEqual([
+        update(
+          RowUpdateType.Insert,
+          { instrument_id: 1 },
+          {
+            trades: [
+              update(RowUpdateType.Insert, { id: 8 }),
+              update(RowUpdateType.Insert, { id: 7 }),
+            ],
+          },
+        ),
+      ]);
+    });
+
+    it("should put a new trade, and the one it pushes out, under the position's own update", () => {
+      expect(
+        toUpdates(positions, [
+          at(RowUpdateType.Update, [], [1], {
+            instrument_id: 1,
+            net_position: 700,
+          }),
+          at(RowUpdateType.Insert, ['trades'], [1, 9], { id: 9 }),
+          at(RowUpdateType.Delete, ['trades'], [1, 7], { id: 7 }),
+        ]),
+      ).toEqual([
+        update(
+          RowUpdateType.Update,
+          { instrument_id: 1, net_position: 700 },
+          {
+            trades: [
+              update(RowUpdateType.Insert, { id: 9 }),
+              update(RowUpdateType.Delete, { id: 7 }),
+            ],
+          },
+        ),
+      ]);
+    });
+
+    it('should give a parent whose rows changed, but not itself, an UPDATE of its key alone: a trade corrected', () => {
+      expect(
+        toUpdates(positions, [
+          at(RowUpdateType.Update, ['trades'], [1, 8], { id: 8, price: 201 }),
+        ]),
+      ).toEqual([
+        update(
+          RowUpdateType.Update,
+          { instrument_id: 1 },
+          { trades: [update(RowUpdateType.Update, { id: 8, price: 201 })] },
+        ),
+      ]);
+    });
+
+    it("should put a parent's DELETE's rows' DELETEs under it: a position closed", () => {
+      expect(
+        toUpdates(positions, [
+          at(RowUpdateType.Delete, ['trades'], [2, 9], { id: 9 }),
+          at(RowUpdateType.Delete, [], [2], { instrument_id: 2 }),
+        ]),
+      ).toEqual([
+        update(
+          RowUpdateType.Delete,
+          { instrument_id: 2 },
+          { trades: [update(RowUpdateType.Delete, { id: 9 })] },
+        ),
+      ]);
+    });
+
+    it('should put a row moved between parents under each: a DELETE under one, an INSERT under the other', () => {
+      expect(
+        toUpdates(positions, [
+          at(RowUpdateType.Delete, ['trades'], [2, 9], { id: 9 }),
+          at(RowUpdateType.Insert, ['trades'], [1, 9], { id: 9 }),
+        ]),
+      ).toEqual([
+        update(
+          RowUpdateType.Update,
+          { instrument_id: 2 },
+          { trades: [update(RowUpdateType.Delete, { id: 9 })] },
+        ),
+        update(
+          RowUpdateType.Update,
+          { instrument_id: 1 },
+          { trades: [update(RowUpdateType.Insert, { id: 9 })] },
+        ),
+      ]);
+    });
+
+    it("should put two lists' updates under one UPDATE of their parent's key: a trade filled and an order cancelled", () => {
+      expect(
+        toUpdates(positions, [
+          at(RowUpdateType.Insert, ['trades'], [1, 9], { id: 9 }),
+          at(RowUpdateType.Delete, ['orders'], [1, 4], { id: 4 }),
+        ]),
+      ).toEqual([
+        update(
+          RowUpdateType.Update,
+          { instrument_id: 1 },
+          {
+            trades: [update(RowUpdateType.Insert, { id: 9 })],
+            orders: [update(RowUpdateType.Delete, { id: 4 })],
+          },
+        ),
+      ]);
+    });
+
+    it("should give each level above a change an UPDATE of its key, two levels deep: a trade under an instrument's position", () => {
+      expect(
+        toUpdates(instruments, [
+          at(RowUpdateType.Insert, ['positions', 'trades'], [10, 1, 8], {
+            id: 8,
+          }),
+        ]),
+      ).toEqual([
+        update(
+          RowUpdateType.Update,
+          { id: 10 },
+          {
+            positions: [
+              update(
+                RowUpdateType.Update,
+                { instrument_id: 1 },
+                { trades: [update(RowUpdateType.Insert, { id: 8 })] },
+              ),
+            ],
+          },
+        ),
+      ]);
+    });
   });
 });

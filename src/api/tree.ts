@@ -1,5 +1,6 @@
 import { PATH_SEPARATOR, pathAndKeysOf, pathName } from '../common/types.js';
-import type { Row, RowUpdateEvent, RowUpdateType } from '../common/types.js';
+import { RowUpdateType } from '../common/types.js';
+import type { Row, RowUpdateEvent } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
 /**
@@ -8,12 +9,14 @@ import type { SourceDefinition } from '../config/source.types.js';
  */
 
 /**
- * GraphQL subscription update structure
+ * A subscription's update of one row, and its lists' updates, which GraphQL
+ * sends beside its data
  */
 export interface GraphQLUpdate {
   operation: RowUpdateType;
   data: Row;
   fields: string[];
+  lists?: Record<string, GraphQLUpdate[]>; // By each list's field
 }
 
 /**
@@ -54,10 +57,57 @@ export function toRows(
 }
 
 /**
- * A subscription's message, from one timestamp's events: an update for each
+ * A subscription's message, from one timestamp's changes: an update for each
+ * selected row that changed, or whose lists did, each list's updates under
+ * their parent's.
+ *
+ *   each change as an update                                   updateOf
+ *   each list's update put under its parent's, the parent
+ *     found by its path and keys                               add, parentPathOf
+ *   a parent with no change of its own: an UPDATE of its key   keyUpdateOf
+ *
+ * So a parent's INSERT carries its rows' INSERTs, its DELETE their DELETEs,
+ * and its UPDATE their changes. Updates are unordered.
  */
-export function toUpdates(events: RowUpdateEvent[]): GraphQLUpdate[] {
-  return events.map(updateOf);
+export function toUpdates(
+  source: SourceDefinition,
+  events: RowUpdateEvent[],
+): GraphQLUpdate[] {
+  const updates = new Map(
+    events.map((event) => [
+      pathAndKeysOf(event.path, event.keys),
+      updateOf(event),
+    ]),
+  );
+  const selected: GraphQLUpdate[] = [];
+  // Adds an update: a selected row's to the message, a list's under its
+  // parent's. A parent with no change of its own gets an UPDATE of its key,
+  // added in turn. A subscription's lists are never inside a related row, so
+  // a list is its path's last field.
+  const add = (
+    update: GraphQLUpdate,
+    path: readonly string[],
+    keys: readonly unknown[],
+  ) => {
+    if (path.length === 0) {
+      selected.push(update);
+      return;
+    }
+    const parentPath = parentPathOf(source, path);
+    const parentKeys = keys.slice(0, -1);
+    const id = pathAndKeysOf(parentPath, parentKeys);
+    let parent = updates.get(id);
+    if (!parent) {
+      parent = keyUpdateOf(sourceAt(source, parentPath), parentKeys.at(-1));
+      updates.set(id, parent);
+      add(parent, parentPath, parentKeys);
+    }
+    ((parent.lists ??= {})[path.at(-1)!] ??= []).push(update);
+  };
+  for (const { path, keys } of events) {
+    add(updates.get(pathAndKeysOf(path, keys))!, path, keys);
+  }
+  return selected;
 }
 
 // An event as a GraphQL update, sending only the event's fields: the whole
@@ -128,4 +178,26 @@ function listAt(row: Row, path: readonly string[]): Row[] {
   const field = path.at(-1)!;
   holder[field] ??= [];
   return holder[field] as Row[];
+}
+
+// An UPDATE of a row's key alone: a parent whose lists changed, but not
+// itself
+function keyUpdateOf(source: SourceDefinition, key: unknown): GraphQLUpdate {
+  const keyField = source.primaryKeyField;
+  return {
+    operation: RowUpdateType.Update,
+    data: { [keyField]: key },
+    fields: [keyField],
+  };
+}
+
+// The source at a path of relationships from a source
+function sourceAt(
+  source: SourceDefinition,
+  path: readonly string[],
+): SourceDefinition {
+  return path.reduce(
+    (from, field) => from.relationships!.get(field)!.source,
+    source,
+  );
 }

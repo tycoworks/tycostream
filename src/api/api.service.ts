@@ -71,7 +71,7 @@ export class ApiService {
     return new Repeater<GraphQLUpdate[]>(async (push, stop) => {
       const forward = async () => {
         for await (const { timestamp, events } of batches) {
-          const updates = toUpdates(events);
+          const updates = toUpdates(source, events);
           this.logger.debug(
             `Sending GraphQL updates - source: ${source.name}, timestamp: ${timestamp}, ` +
               `updates: ${truncateForLog(updates)}`,
