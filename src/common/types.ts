@@ -133,6 +133,9 @@ export type OrderBy = Record<string, OrderDirection>[];
 export interface Selection {
   // Every column when absent; the key is always selected
   columns?: string[];
+  // The selection of each related row or list, by its relationship's field;
+  // a related row's takes columns and relationships only
+  relationships?: Record<string, Selection>;
   where?: WhereClause;
   orderBy?: OrderBy;
   limit?: number;

@@ -6,7 +6,7 @@ import {
   PostgresType,
   StreamMode,
 } from '../common/types.js';
-import type { SourceDefinition } from '../config/source.types.js';
+import type { Relationship, SourceDefinition } from '../config/source.types.js';
 
 const rank = { name: 'rank', values: ['bronze', 'silver', 'gold', 'platinum'] };
 
@@ -21,6 +21,79 @@ const users: SourceDefinition = {
   ],
 };
 
+// Instruments, their positions, and the positions' trades, each related to
+// the next both ways, as a foreign key relates them
+const instruments: SourceDefinition = {
+  name: 'instruments',
+  primaryKeyField: 'id',
+  fields: [
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'name', type: PostgresType.Text },
+  ],
+};
+const positions: SourceDefinition = {
+  name: 'positions',
+  primaryKeyField: 'instrument_id',
+  fields: [
+    { name: 'instrument_id', type: PostgresType.Int4 },
+    { name: 'symbol', type: PostgresType.Text },
+    { name: 'currency_code', type: PostgresType.Text },
+    { name: 'net_position', type: PostgresType.Int8 },
+  ],
+};
+const trades: SourceDefinition = {
+  name: 'trades',
+  primaryKeyField: 'id',
+  fields: [
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'instrument_id', type: PostgresType.Int4 },
+    { name: 'account_id', type: PostgresType.Int4 },
+    { name: 'quantity', type: PostgresType.Int4 },
+  ],
+};
+// A trade's account, beside its position; and a position's currency, which
+// the position references by a column that isn't its key
+const accounts: SourceDefinition = {
+  name: 'accounts',
+  primaryKeyField: 'id',
+  fields: [
+    { name: 'id', type: PostgresType.Int4 },
+    { name: 'name', type: PostgresType.Text },
+  ],
+};
+const currencies: SourceDefinition = {
+  name: 'currencies',
+  primaryKeyField: 'code',
+  fields: [
+    { name: 'code', type: PostgresType.Text },
+    { name: 'name', type: PostgresType.Text },
+  ],
+};
+const relate = (
+  from: SourceDefinition,
+  column: string,
+  to: SourceDefinition,
+) => {
+  const one: Relationship = {
+    source: to,
+    column,
+    relatedColumn: to.primaryKeyField,
+    many: false,
+  };
+  const many: Relationship = {
+    source: from,
+    column: to.primaryKeyField,
+    relatedColumn: column,
+    many: true,
+  };
+  from.relationships = new Map([...(from.relationships ?? []), [to.name, one]]);
+  to.relationships = new Map([...(to.relationships ?? []), [from.name, many]]);
+};
+relate(positions, 'instrument_id', instruments);
+relate(positions, 'currency_code', currencies);
+relate(trades, 'instrument_id', positions);
+relate(trades, 'account_id', accounts);
+
 // A query's statement of the source and selection
 const queryOf = (source: SourceDefinition, selection: Selection = {}) =>
   new Statement(source, selection, StreamMode.Snapshot);
@@ -29,10 +102,10 @@ const queryOf = (source: SourceDefinition, selection: Selection = {}) =>
 // a subscription's
 function sourceRowsOf(source: SourceDefinition, selection: Selection = {}) {
   const { sql, parameters } = new Statement(source, selection, StreamMode.Live);
-  const start = 'with "__source_0" as (';
+  const start = 'with "__source_0" as (select "__rows".* from (';
   expect(sql.startsWith(start)).toBe(true);
   return {
-    sql: sql.slice(start.length, sql.indexOf(') select jsonb_build_object(')),
+    sql: sql.slice(start.length, sql.indexOf(') as "__rows"')),
     parameters,
   };
 }
@@ -58,9 +131,9 @@ describe('Statement', () => {
         }),
       ).toMatchObject({
         sql:
-          'with "__source_0" as (select "id" as "id", "name" as "name", ' +
+          'with "__source_0" as (select "__rows".* from (select "id" as "id", "name" as "name", ' +
           'row_number() over(order by "name" asc) as "__row_number" ' +
-          'from "users" as "users" order by "name" asc) ' +
+          'from "users" as "users" order by "name" asc) as "__rows") ' +
           'select jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
           '\'name\', cast("__source_0"."name" as text)) as "__row" ' +
           'from "__source_0" as "__source_0" order by "__source_0"."__row_number"',
@@ -76,8 +149,8 @@ describe('Statement', () => {
           StreamMode.Live,
         ).sql,
       ).toBe(
-        'with "__source_0" as (select "id" as "id", "name" as "name" ' +
-          'from "users" as "users" order by "name" asc) ' +
+        'with "__source_0" as (select "__rows".* from (select "id" as "id", "name" as "name" ' +
+          'from "users" as "users" order by "name" asc) as "__rows") ' +
           'select jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
           '\'name\', cast("__source_0"."name" as text)) as "__row" ' +
           'from "__source_0" as "__source_0"',
@@ -150,6 +223,195 @@ describe('Statement', () => {
         sql: 'select "we""ird" as "we""ird" from "odd""view" as "odd""view" where "we""ird" = $1',
         parameters: ['x'],
       });
+    });
+  });
+
+  describe('related rows', () => {
+    // The latest trades, each with its position and the position's instrument
+    const selection: Selection = {
+      columns: ['quantity'],
+      where: { quantity: { _gt: 0 } },
+      orderBy: [{ id: OrderDirection.Desc }],
+      limit: 50,
+      offset: 10,
+      relationships: {
+        positions: {
+          columns: ['symbol'],
+          relationships: { instruments: { columns: ['name'] } },
+        },
+      },
+    };
+
+    it("should left join each related row onto its row after the row's filter, order and limit, at any depth, its columns named by its path", () => {
+      expect(new Statement(trades, selection, StreamMode.Live)).toMatchObject({
+        sql:
+          'with "__source_0" as (select "__rows".*, ' +
+          '"positions"."instrument_id" as "positions.instrument_id", "positions"."symbol" as "positions.symbol", ' +
+          '"positions.instruments"."id" as "positions.instruments.id", "positions.instruments"."name" as "positions.instruments.name" ' +
+          'from (select "id" as "id", "instrument_id" as "instrument_id", "quantity" as "quantity" ' +
+          'from "trades" as "trades" where "quantity" > $1 order by "id" desc limit $2 offset $3) as "__rows" ' +
+          'left join "positions" as "positions" on "positions"."instrument_id" = "__rows"."instrument_id" ' +
+          'left join "instruments" as "positions.instruments" on "positions.instruments"."id" = "positions"."instrument_id") ' +
+          'select jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
+          '\'quantity\', cast("__source_0"."quantity" as text), ' +
+          '\'positions.instrument_id\', cast("__source_0"."positions.instrument_id" as text), ' +
+          '\'positions.symbol\', cast("__source_0"."positions.symbol" as text), ' +
+          '\'positions.instruments.id\', cast("__source_0"."positions.instruments.id" as text), ' +
+          '\'positions.instruments.name\', cast("__source_0"."positions.instruments.name" as text)) as "__row" ' +
+          'from "__source_0" as "__source_0"',
+        parameters: [0, 50, 10],
+      });
+    });
+
+    it("should number a query's rows inside the source's rows, before the joins, and order the statement by those numbers", () => {
+      const { sql } = queryOf(trades, selection);
+      expect(sql).toContain(
+        '"quantity" as "quantity", row_number() over(order by "id" desc) as "__row_number" from "trades" as "trades" where',
+      );
+      expect(sql).toMatch(/order by "__source_0"\."__row_number"$/);
+    });
+
+    it("should join sibling related rows onto the same row, reading each join's column, selected or not", () => {
+      const statement = queryOf(trades, {
+        columns: ['quantity'],
+        relationships: {
+          positions: { columns: ['symbol'] },
+          accounts: { columns: ['name'] },
+        },
+      });
+
+      expect(statement.sql).toContain(
+        'from (select "id" as "id", "instrument_id" as "instrument_id", "account_id" as "account_id", "quantity" as "quantity", ',
+      );
+      expect(statement.sql).toContain(
+        'left join "positions" as "positions" on "positions"."instrument_id" = "__rows"."instrument_id" ' +
+          'left join "accounts" as "accounts" on "accounts"."id" = "__rows"."account_id"',
+      );
+      expect(statement.columns).toEqual([
+        'id',
+        'quantity',
+        'positions.instrument_id',
+        'positions.symbol',
+        'accounts.id',
+        'accounts.name',
+      ]);
+    });
+
+    it("should join a related row's own related row on its holder's column, from the holder's table, selected or not", () => {
+      const statement = queryOf(trades, {
+        relationships: {
+          positions: {
+            columns: ['symbol'],
+            relationships: { currencies: { columns: ['name'] } },
+          },
+        },
+      });
+
+      expect(statement.sql).toContain(
+        'left join "currencies" as "positions.currencies" on "positions.currencies"."code" = "positions"."currency_code"',
+      );
+      expect(statement.columns).not.toContain('positions.currency_code');
+    });
+
+    it("should read the column a row's join matches on, but keep it out of the row unless it's selected", () => {
+      expect(queryOf(trades, selection).columns).toEqual([
+        'id',
+        'quantity',
+        'positions.instrument_id',
+        'positions.symbol',
+        'positions.instruments.id',
+        'positions.instruments.name',
+      ]);
+      expect(
+        queryOf(trades, {
+          ...selection,
+          columns: ['instrument_id', 'quantity'],
+        }).columns.slice(0, 3),
+      ).toEqual(['id', 'instrument_id', 'quantity']);
+    });
+
+    it("should unpack a related row's columns, named by its path, each parsed by its source's type", () => {
+      expect(
+        queryOf(trades, selection).unpack({
+          __row: {
+            id: '7',
+            quantity: '500',
+            'positions.instrument_id': '1',
+            'positions.symbol': 'AAPL',
+            'positions.instruments.id': '1',
+            'positions.instruments.name': 'Apple Inc.',
+          },
+        }),
+      ).toEqual({
+        id: 7,
+        quantity: 500,
+        'positions.instrument_id': 1,
+        'positions.symbol': 'AAPL',
+        'positions.instruments.id': 1,
+        'positions.instruments.name': 'Apple Inc.',
+      });
+    });
+
+    it("should unpack a trade with no position as its position's columns all null", () => {
+      expect(
+        queryOf(trades, selection).unpack({
+          __row: {
+            id: '9',
+            quantity: '50',
+            'positions.instrument_id': null,
+            'positions.symbol': null,
+            'positions.instruments.id': null,
+            'positions.instruments.name': null,
+          },
+        }),
+      ).toEqual({
+        id: 9,
+        quantity: 50,
+        'positions.instrument_id': null,
+        'positions.symbol': null,
+        'positions.instruments.id': null,
+        'positions.instruments.name': null,
+      });
+    });
+
+    it('should refuse a filter, order, limit or offset on a relationship to one row', () => {
+      expect(() =>
+        queryOf(trades, { relationships: { positions: { limit: 1 } } }),
+      ).toThrow(
+        "'positions' is a relationship to one row; it takes no where, order_by, limit or offset",
+      );
+    });
+
+    it("should refuse a related row's unknown relationship or column", () => {
+      expect(() =>
+        queryOf(trades, {
+          relationships: { positions: { relationships: { orders: {} } } },
+        }),
+      ).toThrow("Unknown relationship 'orders' of 'positions'");
+      expect(() =>
+        queryOf(trades, {
+          relationships: { positions: { columns: ['nope'] } },
+        }),
+      ).toThrow("Unknown field 'nope' to select");
+    });
+
+    it('should reject a relationship the source does not have', () => {
+      expect(() => queryOf(trades, { relationships: { orders: {} } })).toThrow(
+        "Unknown relationship 'orders' of 'trades'",
+      );
+    });
+
+    it('should refuse a relationship to many rows, for now, at any depth', () => {
+      expect(() =>
+        queryOf(positions, { relationships: { trades: {} } }),
+      ).toThrow("Relationships to many rows can't be selected yet: 'trades'");
+      expect(() =>
+        queryOf(trades, {
+          relationships: { positions: { relationships: { trades: {} } } },
+        }),
+      ).toThrow(
+        "Relationships to many rows can't be selected yet: 'positions.trades'",
+      );
     });
   });
 
