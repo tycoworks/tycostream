@@ -1,117 +1,80 @@
-# tycostream
+<p align="center">
+  <img src="docs/assets/logo.svg" width="96" alt="">
+</p>
 
-[![CI](https://github.com/tycoworks/tycostream/actions/workflows/ci.yml/badge.svg)](https://github.com/tycoworks/tycostream/actions/workflows/ci.yml)
+<h1 align="center">tycostream</h1>
 
-tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions over server-sent events (SSE), so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming use cases.
+<p align="center">Turn Materialize views into real-time GraphQL APIs</p>
 
-For an example app, see [positions-app](https://github.com/tycoworks/positions-app), which streams live positions and trades from Materialize through tycostream.
+<p align="center">
+  <a href="https://github.com/tycoworks/tycostream/actions/workflows/ci.yml"><img src="https://github.com/tycoworks/tycostream/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/tycoworks/tycostream/releases/latest"><img src="https://img.shields.io/github/v/release/tycoworks/tycostream" alt="Latest release"></a>
+  <a href="#licence"><img src="https://img.shields.io/badge/licence-MIT%20or%20Apache%202.0-blue" alt="Licence: MIT or Apache 2.0"></a>
+</p>
 
-[Learn more about why I built this →](https://tycoworks.substack.com/p/tycostream-turn-materialize-views)
+tycostream serves [Materialize](https://materialize.com/) views as GraphQL queries and subscriptions over server-sent events. Each subscription runs in Materialize as its own `SUBSCRIBE`, so a client gets the current rows, then every change, one whole transaction at a time. Like [Hasura](https://hasura.io/), but for streaming.
 
----
+https://github.com/user-attachments/assets/b56982b1-af99-4904-9cab-7b4fb788d765
+
+*[positions-app](https://github.com/tycoworks/positions-app): live positions and trades, streamed from Materialize through tycostream.*
 
 ## Quickstart
 
-### 1. Configure connection details
-
-```bash
-# Create .env file with your database connection
-echo "DATABASE_HOST=localhost
-DATABASE_PORT=6875
-DATABASE_USER=materialize
-DATABASE_PASSWORD=materialize
-DATABASE_NAME=materialize
-GRAPHQL_PORT=4000
-GRAPHQL_UI=true
-SCHEMA_PATH=./schema.yaml
-LOG_LEVEL=debug" > .env
-
-# LOG_LEVEL can be trace, debug, info, warn or error
-# Optional: DATABASE_MAX_CONNECTIONS caps tycostream's database connections
-# (default 1000); each subscription holds one, each query borrows one
-# Optional: DATABASE_QUERY_TIMEOUT_MS is the time limit on a query
-# (default 30000)
-```
-
-### 2. Create a schema file
-
-You need to tell tycostream which tables and views to expose in your API. For example, given a `trades` table like this:
-
-```sql
-CREATE TABLE trades (
-  id INT,
-  instrument_id INT,
-  side TEXT,           -- 'buy' or 'sell'
-  quantity INT,
-  price NUMERIC,
-  executed_at TIMESTAMP
-);
-```
-
-You would need a `schema.yaml` file like this:
-
-```yaml
-enums:
-  side:
-    - buy
-    - sell
-
-sources:
-  trades:
-    primary_key: id
-    columns:
-      id: int4
-      instrument_id: int4
-      side: side              # mapped to enum
-      quantity: int4
-      price: numeric
-      executed_at: timestamp
-```
-
-Names must match the database exactly, including case. Types are Postgres's (`int4`, `numeric`, `timestamptz`), or an enum's name. Each client's subscription runs as its own query in Materialize, so index the views you serve, or make them materialized views, so a subscription doesn't recompute its view from scratch.
-
-You can use the bundled generator script to create schema files directly from your database. For the trades table example above, the command would look like this:
+Generate a `schema.yaml` for the views you want to serve, naming each one's primary key. The generator needs `psql`, and reads the `DATABASE_*` variables from the environment or a `.env` file (by default, Materialize on `localhost:6875`):
 
 ```bash
 curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
-  bash -s -- -e side "buy,sell" -s trades -p id -c side:side > schema.yaml
+  bash -s -- -s positions -p instrument_id > schema.yaml
 ```
 
-### 3. Start tycostream
+Run tycostream:
 
 ```bash
-# host.docker.internal reaches Materialize on your machine (172.17.0.1 on Linux)
-docker run -p 4000:4000 --env-file .env \
+docker run -p 4000:4000 \
   -e DATABASE_HOST=host.docker.internal \
+  -e GRAPHQL_UI=true \
   -v $(pwd)/schema.yaml:/app/schema.yaml \
   ghcr.io/tycoworks/tycostream:latest
 ```
 
-### 4. Test your API
+Then open http://localhost:4000/graphql.
 
-Visit http://localhost:4000/graphql to explore your GraphQL API with the built-in UI (enabled by `GRAPHQL_UI=true` in .env).
+## Example
 
----
+Subscribe to a position:
 
-## Building from Source
-
-### Getting Started
-
-For development or customization:
-
-```bash
-git clone https://github.com/tycoworks/tycostream.git
-cd tycostream
-npm install
-npm run build
-npm start
+```graphql
+subscription {
+  positions(where: { symbol: { _eq: "AAPL" } }) {
+    operation
+    data { symbol net_position latest_price market_value }
+    fields
+  }
+}
 ```
 
----
+The first message is the current row, and each one after it is a change. `fields` names the columns that changed, and the key; the others are `null`:
 
-## What's Next
+```json
+[{ "operation": "INSERT",
+   "data": { "symbol": "AAPL", "net_position": 870, "latest_price": 199.65, "market_value": 173695.5 },
+   "fields": ["instrument_id", "symbol", "net_position", "latest_price", "market_value"] }]
 
-See the [roadmap](./docs/roadmap.md) for planned features.
+[{ "operation": "UPDATE",
+   "data": { "symbol": null, "net_position": null, "latest_price": 199.43, "market_value": 173504.1 },
+   "fields": ["instrument_id", "latest_price", "market_value"] }]
+```
+
+A query takes the same arguments and returns the current rows once.
+
+## Documentation
+
+- [Guide](docs/guide.md): configuration, `schema.yaml` and the GraphQL API
+- [Architecture](docs/architecture.md): how it works
+- [Roadmap](docs/roadmap.md)
+- [Why I built it](https://www.tycoworks.com/p/tycostream-turn-materialize-views)
+
+Tested with Materialize v26.49.
 
 ## Licence
 
