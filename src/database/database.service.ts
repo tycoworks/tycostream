@@ -2,7 +2,7 @@ import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { DatabaseConnectionService } from './connection.service.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { Selection, StreamMode } from '../common/types.js';
-import { buildSelect } from './select.js';
+import { Statement } from './statement.js';
 import { DatabaseStream } from './stream.js';
 import { DatabaseAdapter } from './types.js';
 import type { RowUpdateBatches } from './types.js';
@@ -34,10 +34,8 @@ export class DatabaseService implements OnModuleDestroy {
   ): RowUpdateBatches {
     const stream = new DatabaseStream(
       this.connectionService,
-      source,
-      mode,
       this.adapter,
-      buildSelect(source, selection),
+      new Statement(source, selection, mode),
     );
     const batches = stream.read({
       onOpen: () => this.open.add(batches),

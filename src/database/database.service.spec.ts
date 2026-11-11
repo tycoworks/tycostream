@@ -68,16 +68,16 @@ describe('DatabaseService', () => {
 
   describe('stream', () => {
     it.each([StreamMode.Snapshot, StreamMode.Live])(
-      'should open a stream of the mode (%s) on the connection service, with the source, the adapter and the compiled filter',
+      'should open a stream of the mode (%s) on the connection service, with the adapter and the statement of the source and its filter',
       (mode) => {
         service.stream(trades, { where: { symbol: { _eq: 'AAPL' } } }, mode);
 
         expect(DatabaseStream).toHaveBeenCalledWith(
           connectionService,
-          trades,
-          mode,
           adapter,
           expect.objectContaining({
+            source: trades,
+            mode,
             sql: expect.stringContaining('where "symbol" = $1'),
             parameters: ['AAPL'],
           }),

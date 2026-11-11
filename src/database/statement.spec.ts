@@ -1,9 +1,10 @@
-import { buildSelect } from './select.js';
-import type { WhereClause } from '../common/types.js';
+import { Statement } from './statement.js';
+import type { Selection, WhereClause } from '../common/types.js';
 import {
   ComparisonOperator,
   OrderDirection,
   PostgresType,
+  StreamMode,
 } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
@@ -20,16 +21,20 @@ const users: SourceDefinition = {
   ],
 };
 
+// A query's statement of the source and selection
+const queryOf = (source: SourceDefinition, selection: Selection = {}) =>
+  new Statement(source, selection, StreamMode.Snapshot);
+
 const SELECT =
   'select "id" as "id", "name" as "name", "active" as "active", "rank" as "rank" from "users" as "users"';
 
 function where(clause: WhereClause) {
-  const { sql, parameters } = buildSelect(users, { where: clause });
+  const { sql, parameters } = queryOf(users, { where: clause });
   expect(sql.startsWith(`${SELECT} where `)).toBe(true);
   return { condition: sql.slice(`${SELECT} where `.length), parameters };
 }
 
-describe('buildSelect', () => {
+describe('Statement', () => {
   describe('the statement', () => {
     it('should select every column of the source when the selection names none, with no WHERE when there is no filter', () => {
       const all = {
@@ -37,13 +42,13 @@ describe('buildSelect', () => {
         parameters: [],
         columns: ['id', 'name', 'active', 'rank'],
       };
-      expect(buildSelect(users)).toEqual(all);
-      expect(buildSelect(users, {})).toEqual(all);
-      expect(buildSelect(users, { where: {} })).toEqual(all);
+      expect(queryOf(users)).toMatchObject(all);
+      expect(queryOf(users, {})).toMatchObject(all);
+      expect(queryOf(users, { where: {} })).toMatchObject(all);
     });
 
     it("should select only the columns named, and the key, in the source's order", () => {
-      expect(buildSelect(users, { columns: ['rank', 'name'] })).toEqual({
+      expect(queryOf(users, { columns: ['rank', 'name'] })).toMatchObject({
         sql: 'select "id" as "id", "name" as "name", "rank" as "rank" from "users" as "users"',
         parameters: [],
         columns: ['id', 'name', 'rank'],
@@ -51,15 +56,22 @@ describe('buildSelect', () => {
     });
 
     it('should select the key alone when the selection names no columns', () => {
-      expect(buildSelect(users, { columns: [] })).toEqual({
+      expect(queryOf(users, { columns: [] })).toMatchObject({
         sql: 'select "id" as "id" from "users" as "users"',
         parameters: [],
         columns: ['id'],
       });
     });
 
+    it('should keep the source it reads and the mode it was built for, which its stream reads it in', () => {
+      expect(new Statement(users, {}, StreamMode.Live)).toMatchObject({
+        source: users,
+        mode: StreamMode.Live,
+      });
+    });
+
     it('should reject selecting a column the source does not have', () => {
-      expect(() => buildSelect(users, { columns: ['nope'] })).toThrow(
+      expect(() => queryOf(users, { columns: ['nope'] })).toThrow(
         "Unknown field 'nope' to select",
       );
     });
@@ -71,7 +83,7 @@ describe('buildSelect', () => {
         fields: [{ name: 'we"ird', type: PostgresType.Text }],
       };
       expect(
-        buildSelect(source, { where: { 'we"ird': { _eq: 'x' } } }),
+        queryOf(source, { where: { 'we"ird': { _eq: 'x' } } }),
       ).toMatchObject({
         sql: 'select "we""ird" as "we""ird" from "odd""view" as "odd""view" where "we""ird" = $1',
         parameters: ['x'],
@@ -174,9 +186,7 @@ describe('buildSelect', () => {
       [OrderDirection.DescNullsFirst, 'desc nulls first'],
       [OrderDirection.DescNullsLast, 'desc nulls last'],
     ])('should compile %s to ORDER BY ... %s', (direction, sqlDirection) => {
-      expect(
-        buildSelect(users, { orderBy: [{ name: direction }] }),
-      ).toMatchObject({
+      expect(queryOf(users, { orderBy: [{ name: direction }] })).toMatchObject({
         sql: `${SELECT} order by "name" ${sqlDirection}`,
         parameters: [],
       });
@@ -184,7 +194,7 @@ describe('buildSelect', () => {
 
     it('should order by each column in turn', () => {
       expect(
-        buildSelect(users, {
+        queryOf(users, {
           orderBy: [{ rank: OrderDirection.Desc }, { id: OrderDirection.Asc }],
         }).sql,
       ).toBe(`${SELECT} order by "rank" desc, "id" asc`);
@@ -192,7 +202,7 @@ describe('buildSelect', () => {
 
     it('should pass the limit and offset as parameters, after the filter', () => {
       expect(
-        buildSelect(users, {
+        queryOf(users, {
           where: { active: { _eq: true } },
           orderBy: [{ id: OrderDirection.Asc }],
           limit: 10,
@@ -206,15 +216,15 @@ describe('buildSelect', () => {
 
     it('should reject ordering by a column the source does not have', () => {
       expect(() =>
-        buildSelect(users, { orderBy: [{ nope: OrderDirection.Asc }] }),
+        queryOf(users, { orderBy: [{ nope: OrderDirection.Asc }] }),
       ).toThrow("Unknown field 'nope' to order by");
     });
 
     it('should reject a negative limit or offset', () => {
-      expect(() => buildSelect(users, { limit: -1 })).toThrow(
+      expect(() => queryOf(users, { limit: -1 })).toThrow(
         "'limit' can't be negative",
       );
-      expect(() => buildSelect(users, { offset: -1 })).toThrow(
+      expect(() => queryOf(users, { offset: -1 })).toThrow(
         "'offset' can't be negative",
       );
     });
@@ -304,17 +314,17 @@ describe('buildSelect', () => {
 
     it('should reject values the enum does not have', () => {
       expect(() =>
-        buildSelect(users, { where: { rank: { _eq: 'diamond' } } }),
+        queryOf(users, { where: { rank: { _eq: 'diamond' } } }),
       ).toThrow("Invalid value 'diamond' for enum 'rank' on 'rank'");
       expect(() =>
-        buildSelect(users, { where: { rank: { _in: ['gold', 'diamond'] } } }),
+        queryOf(users, { where: { rank: { _in: ['gold', 'diamond'] } } }),
       ).toThrow("Invalid value 'diamond'");
     });
   });
 
   describe('validation', () => {
     it('should reject unknown fields before building any SQL', () => {
-      expect(() => buildSelect(users, { where: { nope: { _eq: 1 } } })).toThrow(
+      expect(() => queryOf(users, { where: { nope: { _eq: 1 } } })).toThrow(
         "Unknown field 'nope'",
       );
     });
@@ -328,15 +338,15 @@ describe('buildSelect', () => {
         { _nin: [null] },
         { _like: null },
       ]) {
-        expect(() =>
-          buildSelect(users, { where: { name: comparison } }),
-        ).toThrow("can't compare with null; use '_is_null'");
+        expect(() => queryOf(users, { where: { name: comparison } })).toThrow(
+          "can't compare with null; use '_is_null'",
+        );
       }
     });
 
     it('should reject unknown operators, such as _similar, which Materialize lacks', () => {
       expect(() =>
-        buildSelect(users, {
+        queryOf(users, {
           where: { name: { _similar: 'a' } } as unknown as WhereClause,
         }),
       ).toThrow("Unknown operator '_similar' on 'name'");

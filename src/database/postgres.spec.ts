@@ -7,7 +7,7 @@ import {
   TYPE_PARSERS,
 } from './postgres.js';
 import type { RawRow } from './postgres.js';
-import { RowUpdateType, PostgresType } from '../common/types.js';
+import { RowUpdateType, PostgresType, StreamMode } from '../common/types.js';
 import type { RowUpdateBatch } from '../common/types.js';
 
 describe('readSnapshot', () => {
@@ -18,6 +18,15 @@ describe('readSnapshot', () => {
   const readAll = async (client: pg.ClientBase) => {
     const batches: RowUpdateBatch[] = [];
     for await (const batch of readSnapshot(client, {
+      source: {
+        name: 'test',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'name', type: PostgresType.Text },
+        ],
+      },
+      mode: StreamMode.Snapshot,
       sql: 'select "id", "name" from "test" where "id" = $1',
       parameters: [7],
       columns: ['id', 'name'],

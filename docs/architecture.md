@@ -27,10 +27,10 @@ Three layers, each a Nest module that depends only on the one below.
 
 Connections and the database. Nothing above it sees SQL or how the database reports changes.
 
-- **`DatabaseService`** is the layer's one export: `stream(source, where, mode)`. It compiles the client's `where` to a `SELECT` with bind parameters (`select.ts`), opens a `DatabaseStream`, and closes any open streams first thing at shutdown.
+- **`DatabaseService`** is the layer's one export: `stream(source, selection, mode)`. It builds the client's selection into a `Statement` (`statement.ts`, with `filter.ts` for its `where`), a `SELECT` with bind parameters, opens a `DatabaseStream` of it, and closes any open streams first thing at shutdown.
 - **`DatabaseStream`** (`stream.ts`) is one stream: it borrows a connection for its mode on the first read, has the adapter read the stream in that mode, passes on what it reads, and gives the connection back when the stream ends, with the error if it failed. Stopping it cancels the connection at once, even mid-statement.
 - **`DatabaseConnectionService`** (`connection.service.ts`) is the one place connections are made: one pool, capped at `DATABASE_MAX_CONNECTIONS`, lending to streams of both modes. A `Live` stream holds its connection until it stops, and it's then discarded, which drops its `SUBSCRIBE`; a `Snapshot` borrows one for one `SELECT`, gives it back for reuse, and is cut off after `DATABASE_QUERY_TIMEOUT_MS`, waiting included. When every connection is taken, a new stream waits for a free one, up to the connect timeout. It stops lending once shutdown starts, and ends the pool last.
-- **`DatabaseAdapter`** is the database: one `read(client, source, select, mode)`. `DatabaseModule` provides `MaterializeAdapter`; another database would be another adapter, chosen there.
+- **`DatabaseAdapter`** is the database: one `read(client, statement)`, in the statement's mode. `DatabaseModule` provides `MaterializeAdapter`; another database would be another adapter, chosen there.
 - **`MaterializeAdapter`** (`materialize.ts`) reads a snapshot with `readSnapshot`, and a live stream through `DECLARE … CURSOR FOR SUBSCRIBE (…) WITH (SNAPSHOT, PROGRESS)` and a `FETCH` loop, holding each timestamp's rows until a progress row passes it, then pairing them into insert, update and delete events.
 - **`postgres.ts`** is what every Postgres-compatible database does the same way: values sent as text, typed by the schema (`parseRow`), and a snapshot as one plain `SELECT` (`readSnapshot`).
 

@@ -8,16 +8,9 @@ import {
 } from 'kysely';
 import type { OrderByItemBuilder } from 'kysely';
 import { OrderDirection } from '../common/types.js';
-import type { OrderBy, Selection } from '../common/types.js';
+import type { OrderBy, Selection, StreamMode } from '../common/types.js';
 import type { SourceDefinition, SourceField } from '../config/source.types.js';
 import { buildCondition } from './filter.js';
-
-export interface CompiledSelect {
-  sql: string;
-  parameters: readonly unknown[];
-  // The columns it returns, in the source's order, the key among them
-  columns: string[];
-}
 
 // Kysely only compiles here; tycostream runs the SQL itself
 const db = new Kysely<any>({
@@ -43,39 +36,48 @@ const SQL_DIRECTIONS: Record<
 };
 
 /**
- * Builds the SELECT for a source and a client's selection: its columns, its
- * filter as the WHERE, its order as the ORDER BY, and its limit and offset.
- * Source and column names are quoted, and every value is a bind parameter.
+ * The SELECT that reads a source's rows as a client selects them, in either
+ * mode: its columns, its filter as the WHERE, its order as the ORDER BY, and
+ * its limit and offset. Source and column names are quoted, and every value
+ * is a bind parameter.
  */
-export function buildSelect(
-  source: SourceDefinition,
-  { columns, where, orderBy, limit, offset }: Selection = {},
-): CompiledSelect {
-  const fields = new Map(source.fields.map((field) => [field.name, field]));
-  const selected = selectedColumns(source, fields, columns);
-  let query = db
-    .selectFrom(sql.id(source.name).as(source.name))
-    .select(selected.map((column) => sql.id(column).as(column)));
+export class Statement {
+  readonly sql: string;
+  readonly parameters: readonly unknown[];
+  // The columns it returns, in the source's order, the key among them
+  readonly columns: string[];
 
-  if (where && Object.keys(where).length > 0) {
-    query = query.where((eb) => buildCondition(eb, where, fields));
-  }
-  for (const [column, direction] of orderedColumns(orderBy, fields)) {
-    query = query.orderBy(sql.id(column), SQL_DIRECTIONS[direction]);
-  }
-  if (limit !== undefined) {
-    query = query.limit(checkNotNegative('limit', limit));
-  }
-  if (offset !== undefined) {
-    query = query.offset(checkNotNegative('offset', offset));
-  }
+  /**
+   * Throws if the selection is invalid
+   */
+  constructor(
+    readonly source: SourceDefinition,
+    { columns, where, orderBy, limit, offset }: Selection,
+    readonly mode: StreamMode,
+  ) {
+    const fields = new Map(source.fields.map((field) => [field.name, field]));
+    this.columns = selectedColumns(source, fields, columns);
+    let query = db
+      .selectFrom(sql.id(source.name).as(source.name))
+      .select(this.columns.map((column) => sql.id(column).as(column)));
 
-  const compiled = query.compile();
-  return {
-    sql: compiled.sql,
-    parameters: compiled.parameters,
-    columns: selected,
-  };
+    if (where && Object.keys(where).length > 0) {
+      query = query.where((eb) => buildCondition(eb, where, fields));
+    }
+    for (const [column, direction] of orderedColumns(orderBy, fields)) {
+      query = query.orderBy(sql.id(column), SQL_DIRECTIONS[direction]);
+    }
+    if (limit !== undefined) {
+      query = query.limit(checkNotNegative('limit', limit));
+    }
+    if (offset !== undefined) {
+      query = query.offset(checkNotNegative('offset', offset));
+    }
+
+    const compiled = query.compile();
+    this.sql = compiled.sql;
+    this.parameters = compiled.parameters;
+  }
 }
 
 // The columns to select, in the source's order: the ones asked for, or every

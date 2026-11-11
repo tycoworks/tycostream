@@ -7,7 +7,7 @@ import {
 } from './materialize.js';
 import type { DiffRow } from './materialize.js';
 import type { RawRow } from './postgres.js';
-import type { CompiledSelect } from './select.js';
+import type { Statement } from './statement.js';
 import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
 import type { Row, RowUpdateBatch } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
@@ -56,14 +56,15 @@ describe('MaterializeAdapter', () => {
   };
 
   const adapter = new MaterializeAdapter();
-  // A live read, as an iterator the tests can step through
+  // A live read of a statement of the source, as an iterator the tests can
+  // step through
   const readLive = (
     client: pg.ClientBase,
     source: SourceDefinition,
-    select: CompiledSelect,
+    select: Pick<Statement, 'sql' | 'parameters' | 'columns'>,
   ) =>
     adapter
-      .read(client, source, select, StreamMode.Live)
+      .read(client, { source, mode: StreamMode.Live, ...select })
       [Symbol.asyncIterator]();
   const readAll = (client: pg.ClientBase) =>
     readLive(client, idAndName, {
@@ -80,9 +81,13 @@ describe('MaterializeAdapter', () => {
       const batches: RowUpdateBatch[] = [];
       for await (const batch of adapter.read(
         { query } as unknown as pg.ClientBase,
-        idAndName,
-        { sql: 'select 1', parameters: [], columns: ['id', 'name'] },
-        StreamMode.Snapshot,
+        {
+          source: idAndName,
+          mode: StreamMode.Snapshot,
+          sql: 'select 1',
+          parameters: [],
+          columns: ['id', 'name'],
+        },
       )) {
         batches.push(batch);
       }

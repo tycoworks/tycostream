@@ -1,8 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
 import type { DatabaseConnectionService } from './connection.service.js';
-import type { SourceDefinition } from '../config/source.types.js';
-import type { CompiledSelect } from './select.js';
+import type { Statement } from './statement.js';
 import { StreamMode } from '../common/types.js';
 import type { RowUpdateBatch } from '../common/types.js';
 import type { DatabaseAdapter, RowUpdateBatches } from './types.js';
@@ -17,7 +16,7 @@ export interface StreamLifecycle {
 }
 
 /**
- * One stream on a source, in either mode. The adapter does all the talking
+ * One stream of a statement, in its mode. The adapter does all the talking
  * over the connection; this borrows it for as long as the stream runs, and
  * hands on what the adapter reads.
  */
@@ -26,10 +25,8 @@ export class DatabaseStream {
 
   constructor(
     private readonly connectionService: DatabaseConnectionService,
-    private readonly source: SourceDefinition,
-    private readonly mode: StreamMode,
     private readonly adapter: DatabaseAdapter,
-    private readonly select: CompiledSelect,
+    private readonly statement: Statement,
   ) {}
 
   /**
@@ -55,7 +52,7 @@ export class DatabaseStream {
 
       const readUntilStopped = async () => {
         const lease = await this.connectionService.acquire(
-          this.mode,
+          this.statement.mode,
           cancel.signal,
         );
         const onError = (error: Error) => void stop(error);
@@ -63,13 +60,11 @@ export class DatabaseStream {
         let failure: unknown;
         try {
           this.logger.debug(
-            `Streaming ${this.source.name} (${StreamMode[this.mode]})`,
+            `Streaming ${this.statement.source.name} (${StreamMode[this.statement.mode]})`,
           );
           for await (const batch of this.adapter.read(
             lease.client,
-            this.source,
-            this.select,
-            this.mode,
+            this.statement,
           )) {
             await push(batch);
             if (stopped) {
@@ -99,7 +94,7 @@ export class DatabaseStream {
       await stop;
       // Returns once the connection is given back
       await reading;
-      this.logger.debug(`Closed the stream on ${this.source.name}`);
+      this.logger.debug(`Closed the stream on ${this.statement.source.name}`);
       lifecycle.onClose?.();
     });
   }

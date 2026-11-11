@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { PostgresType, RowUpdateType } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
-import type { CompiledSelect } from './select.js';
+import type { Statement } from './statement.js';
 
 /**
  * What every Postgres-compatible database does the same way: typing each
@@ -88,14 +88,14 @@ export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
  */
 export async function* readSnapshot(
   client: pg.ClientBase,
-  select: CompiledSelect,
+  statement: Statement,
 ): AsyncGenerator<RowUpdateBatch> {
-  const { rows } = await client.query<RawRow>(select.sql, [
-    ...select.parameters,
+  const { rows } = await client.query<RawRow>(statement.sql, [
+    ...statement.parameters,
   ]);
   yield {
     events: rows.map((raw) =>
-      insertOf(pickRow(select.columns, raw), select.columns),
+      insertOf(pickRow(statement.columns, raw), statement.columns),
     ),
   };
 }

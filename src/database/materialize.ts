@@ -1,11 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import type pg from 'pg';
-import type { SourceDefinition } from '../config/source.types.js';
 import { RowUpdateType, StreamMode } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 import { insertOf, pickRow, readSnapshot } from './postgres.js';
 import type { RawRow } from './postgres.js';
-import type { CompiledSelect } from './select.js';
+import type { Statement } from './statement.js';
 import { DatabaseAdapter } from './types.js';
 
 /**
@@ -45,23 +44,20 @@ const FETCH_SIZE = 1000;
 export class MaterializeAdapter extends DatabaseAdapter {
   read(
     client: pg.ClientBase,
-    source: SourceDefinition,
-    select: CompiledSelect,
-    mode: StreamMode,
+    statement: Statement,
   ): AsyncIterable<RowUpdateBatch> {
-    return mode === StreamMode.Snapshot
-      ? readSnapshot(client, select)
-      : this.readLive(client, source, select);
+    return statement.mode === StreamMode.Snapshot
+      ? readSnapshot(client, statement)
+      : this.readLive(client, statement);
   }
 
   /**
-   * Reads SUBSCRIBE (<select>) WITH (SNAPSHOT, PROGRESS) through a cursor.
+   * Reads SUBSCRIBE (<statement>) WITH (SNAPSHOT, PROGRESS) through a cursor.
    * Never ends by itself; it stops when the connection closes.
    */
   private async *readLive(
     client: pg.ClientBase,
-    source: SourceDefinition,
-    select: CompiledSelect,
+    statement: Statement,
   ): AsyncGenerator<RowUpdateBatch> {
     // The transaction sits idle while the consumer works through a batch.
     // Materialize's cap on a subscription's backlog limits a slow consumer,
@@ -70,12 +66,12 @@ export class MaterializeAdapter extends DatabaseAdapter {
     // A cursor only lives inside a transaction
     await client.query('BEGIN');
     await client.query(
-      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${select.sql}) WITH (SNAPSHOT, PROGRESS)`,
-      [...select.parameters],
+      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${statement.sql}) WITH (SNAPSHOT, PROGRESS)`,
+      [...statement.parameters],
     );
 
     // FETCH without a timeout returns as soon as rows exist
-    const batcher = new ProgressBatcher(select.columns);
+    const batcher = new ProgressBatcher(statement.columns);
     let snapshot = true;
     while (true) {
       const { rows } = await client.query<RawRow>(
@@ -84,8 +80,8 @@ export class MaterializeAdapter extends DatabaseAdapter {
       for (const { timestamp, rows: changes } of batcher.take(rows)) {
         const events = pairChanges(
           changes,
-          source.primaryKeyField,
-          select.columns,
+          statement.source.primaryKeyField,
+          statement.columns,
         );
         // The snapshot is sent even when empty; after it, a timestamp whose
         // changes cancel out has nothing to send
