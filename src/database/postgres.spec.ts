@@ -11,6 +11,7 @@ import { Statement } from './statement.js';
 import { RowUpdateType, PostgresType, StreamMode } from '../common/types.js';
 import type { RowUpdateBatch } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
+import { addForeignKey } from '../config/sources.config.js';
 
 // A row's plain values, as the tests write them
 type Values = Record<string, string | number | boolean | null>;
@@ -107,31 +108,24 @@ describe('readSnapshot', () => {
 
   describe("a list's rows, by their path and keys", () => {
     // Positions, each with its trades and its orders
-    const listOf = (name: string): SourceDefinition => ({
-      name,
-      primaryKeyField: 'id',
-      fields: [
-        { name: 'id', type: PostgresType.Int4 },
-        { name: 'position_id', type: PostgresType.Int4 },
-      ],
-    });
-    const listed = (list: SourceDefinition) => ({
-      source: list,
-      column: 'id',
-      relatedColumn: 'position_id',
-      many: true,
-    });
-    const trades = listOf('trades');
-    const orders = listOf('orders');
     const positions: SourceDefinition = {
       name: 'positions',
       primaryKeyField: 'id',
       fields: [{ name: 'id', type: PostgresType.Int4 }],
-      relationships: new Map([
-        ['trades', listed(trades)],
-        ['orders', listed(orders)],
-      ]),
+      relationships: new Map(),
     };
+    for (const name of ['trades', 'orders']) {
+      const list: SourceDefinition = {
+        name,
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'position_id', type: PostgresType.Int4 },
+        ],
+        relationships: new Map(),
+      };
+      addForeignKey(list, 'position_id', positions);
+    }
     const withLists = new Statement(
       positions,
       { relationships: { trades: {}, orders: {} } },

@@ -11,6 +11,7 @@ import type {
   SourceField,
   SourceConfiguration,
 } from '../config/source.types.js';
+import { addForeignKey } from '../config/sources.config.js';
 
 describe('generateSchema', () => {
   // Helper to create a SourceConfiguration for tests
@@ -280,6 +281,7 @@ describe('generateSchema', () => {
           { name: 'instrument_id', type: PostgresType.Int4 },
           { name: 'symbol', type: PostgresType.Text },
         ],
+        relationships: new Map(),
       };
       const trades: SourceDefinition = {
         name: 'trades',
@@ -289,29 +291,9 @@ describe('generateSchema', () => {
           { name: 'instrument_id', type: PostgresType.Int4 },
           { name: tradeColumn, type: PostgresType.Int4 },
         ],
+        relationships: new Map(),
       };
-      trades.relationships = new Map([
-        [
-          'positions',
-          {
-            source: positions,
-            column: 'instrument_id',
-            relatedColumn: 'instrument_id',
-            many: false,
-          },
-        ],
-      ]);
-      positions.relationships = new Map([
-        [
-          'trades',
-          {
-            source: trades,
-            column: 'instrument_id',
-            relatedColumn: 'instrument_id',
-            many: true,
-          },
-        ],
-      ]);
+      addForeignKey(trades, 'instrument_id', positions);
       return createConfig(
         new Map([
           ['positions', positions],

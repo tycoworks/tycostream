@@ -6,7 +6,8 @@ import {
   PostgresType,
   StreamMode,
 } from '../common/types.js';
-import type { Relationship, SourceDefinition } from '../config/source.types.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { addForeignKey } from '../config/sources.config.js';
 
 const rank = { name: 'rank', values: ['bronze', 'silver', 'gold', 'platinum'] };
 
@@ -22,7 +23,7 @@ const users: SourceDefinition = {
 };
 
 // Instruments, their positions, and the positions' trades, each related to
-// the next both ways, as a foreign key relates them
+// the next by a foreign key
 const instruments: SourceDefinition = {
   name: 'instruments',
   primaryKeyField: 'id',
@@ -30,6 +31,7 @@ const instruments: SourceDefinition = {
     { name: 'id', type: PostgresType.Int4 },
     { name: 'name', type: PostgresType.Text },
   ],
+  relationships: new Map(),
 };
 const positions: SourceDefinition = {
   name: 'positions',
@@ -40,6 +42,7 @@ const positions: SourceDefinition = {
     { name: 'currency_code', type: PostgresType.Text },
     { name: 'net_position', type: PostgresType.Int8 },
   ],
+  relationships: new Map(),
 };
 const trades: SourceDefinition = {
   name: 'trades',
@@ -50,6 +53,7 @@ const trades: SourceDefinition = {
     { name: 'account_id', type: PostgresType.Int4 },
     { name: 'quantity', type: PostgresType.Int4 },
   ],
+  relationships: new Map(),
 };
 // A trade's account, beside its position; and a position's currency, which
 // the position references by a column that isn't its key
@@ -60,6 +64,7 @@ const accounts: SourceDefinition = {
     { name: 'id', type: PostgresType.Int4 },
     { name: 'name', type: PostgresType.Text },
   ],
+  relationships: new Map(),
 };
 const currencies: SourceDefinition = {
   name: 'currencies',
@@ -68,31 +73,12 @@ const currencies: SourceDefinition = {
     { name: 'code', type: PostgresType.Text },
     { name: 'name', type: PostgresType.Text },
   ],
+  relationships: new Map(),
 };
-const relate = (
-  from: SourceDefinition,
-  column: string,
-  to: SourceDefinition,
-) => {
-  const one: Relationship = {
-    source: to,
-    column,
-    relatedColumn: to.primaryKeyField,
-    many: false,
-  };
-  const many: Relationship = {
-    source: from,
-    column: to.primaryKeyField,
-    relatedColumn: column,
-    many: true,
-  };
-  from.relationships = new Map([...(from.relationships ?? []), [to.name, one]]);
-  to.relationships = new Map([...(to.relationships ?? []), [from.name, many]]);
-};
-relate(positions, 'instrument_id', instruments);
-relate(positions, 'currency_code', currencies);
-relate(trades, 'instrument_id', positions);
-relate(trades, 'account_id', accounts);
+addForeignKey(positions, 'instrument_id', instruments);
+addForeignKey(positions, 'currency_code', currencies);
+addForeignKey(trades, 'instrument_id', positions);
+addForeignKey(trades, 'account_id', accounts);
 
 // A query's statement of the source and selection
 const queryOf = (source: SourceDefinition, selection: Selection = {}) =>
