@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repeater } from '@repeaterjs/repeater';
 import { ApiService } from './api.service.js';
-import { GraphQLRowOperation } from './tree.js';
 import type { GraphQLUpdate } from './tree.js';
 import { ViewService } from '../view/view.service.js';
 import {
@@ -195,7 +194,7 @@ describe('ApiService', () => {
       expect(await take(updates, 1)).toEqual([
         [
           {
-            operation: GraphQLRowOperation.Insert,
+            operation: RowUpdateType.Insert,
             data: ROW,
             fields: ['id', 'name', 'value'],
           },
@@ -217,7 +216,7 @@ describe('ApiService', () => {
       expect(await take(updates, 1)).toEqual([
         [
           {
-            operation: GraphQLRowOperation.Update,
+            operation: RowUpdateType.Update,
             data: { id: '1', value: 7 },
             fields: ['id', 'value'],
           },
@@ -235,7 +234,7 @@ describe('ApiService', () => {
       expect(await take(updates, 1)).toEqual([
         [
           {
-            operation: GraphQLRowOperation.Delete,
+            operation: RowUpdateType.Delete,
             data: { id: '1' },
             fields: ['id'],
           },
@@ -264,10 +263,10 @@ describe('ApiService', () => {
         ),
       ).toEqual([
         [
-          [GraphQLRowOperation.Insert, '1'],
-          [GraphQLRowOperation.Insert, '2'],
+          [RowUpdateType.Insert, '1'],
+          [RowUpdateType.Insert, '2'],
         ],
-        [[GraphQLRowOperation.Delete, '1']],
+        [[RowUpdateType.Delete, '1']],
       ]);
     });
 

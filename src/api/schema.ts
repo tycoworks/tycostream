@@ -9,8 +9,8 @@ import {
   LogicalOperator,
   OrderDirection,
   PostgresType,
+  RowUpdateType,
 } from '../common/types.js';
-import { GraphQLRowOperation } from './tree.js';
 import {
   GraphQLString,
   GraphQLInt,
@@ -193,9 +193,9 @@ export function generateSchema(config: SourceConfiguration): string {
 
     # Row operation types for subscriptions
     enum ${ROW_OPERATION_TYPE} {
-      ${GraphQLRowOperation.Insert}
-      ${GraphQLRowOperation.Update}
-      ${GraphQLRowOperation.Delete}
+      ${RowUpdateType.Insert}
+      ${RowUpdateType.Update}
+      ${RowUpdateType.Delete}
     }
 
     # The ways a column can sort

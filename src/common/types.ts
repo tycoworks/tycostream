@@ -140,13 +140,13 @@ export interface Selection {
 }
 
 /**
- * Row update event types sent to GraphQL clients
- * Maps to GraphQL's row_operation enum (INSERT/UPDATE/DELETE)
+ * How a row changed, in SQL's words, which are also the values of GraphQL's
+ * row_operation enum
  */
 export enum RowUpdateType {
-  Insert,
-  Update,
-  Delete,
+  Insert = 'INSERT',
+  Update = 'UPDATE',
+  Delete = 'DELETE',
 }
 
 /**
