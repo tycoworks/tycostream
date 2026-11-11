@@ -12,18 +12,19 @@ This guide shows you how to serve the views in your streaming database as a Grap
 
 First, create a `schema.yaml` file, which tells tycostream which tables and views to serve through your API. You can write it by hand, or use the [schema generator](../scripts/generate-schema.sh) to read their columns from your database.
 
-For the positions-app example, to describe its `positions` view, keyed by `instrument_id`:
+The file has two parts, and positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/main/schema.yaml) is a complete example:
+
+- **`sources`** lists each table or view, with its `primary_key` and its `columns`, and gives each column a Postgres type. Names must match the database exactly, and each primary key must be unique. If tycostream doesn't support a column's type, it says so when it starts, and lists the types it does.
+- **`enums`** is optional, and lists the values of each GraphQL enum. To serve a text column as an enum, give it the enum's name as its type.
+
+To generate the file for the positions-app example, with its `positions` view keyed by `instrument_id`:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
   bash -s -- -s positions -p instrument_id > schema.yaml
 ```
 
-Add `-s` and `-p` again for each other table or view you want to serve. By default, the generator connects to Materialize on `localhost:6875`. To reach another database, set the `DATABASE_*` settings from step 2 in your environment or a `.env` file.
-
-positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/main/schema.yaml) is a complete file. It lists each view under `sources`, with its `primary_key` and its `columns`, and gives each column a Postgres type. Names must match the database exactly, and each primary key must be unique. If a column's type isn't supported, tycostream names it, and lists the types it supports, when it starts.
-
-To serve a text column as a GraphQL enum, name the enum and its values with `-e`, then map the column to it with `-c`, after its view's `-s`. For a `side` column in a `trades` view, that's `-e trade_side "buy,sell" -s trades -p id -c side:trade_side`.
+Add `-s` and `-p` again for each other table or view. To add an enum, name it and its values with `-e`, and map a column to it with `-c` after its view's `-s`, as in `-e trade_side "buy,sell" -s trades -p id -c side:trade_side`. By default, the generator connects to Materialize on `localhost:6875`, and to reach another database, you set the `DATABASE_*` settings from step 2 in your environment or a `.env` file.
 
 ## Step 2: Run tycostream
 
@@ -105,7 +106,7 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-To keep a copy of the rows in your app, select the key, and apply each message's updates by it. The first message holds the current rows, and every later one holds one transaction's changes, so apply each message whole and your copy never shows half a transaction. An `UPDATE` holds only the columns listed in `fields`, and the others come as `null`, so copy just those onto the row you have. A `DELETE` holds only the key, and a change to a column you didn't select sends nothing.
+A subscription sends the current rows first, and after that only what changes in the columns you selected, so your app keeps its own copy of the rows and folds each change into it. Select the key, since every update carries it. An `INSERT` adds a row, a `DELETE` removes the row with that key, and an `UPDATE` changes only the columns listed in `fields`, while the others arrive as `null`. Each message holds one transaction's changes, so apply each message whole, and your copy never shows half a transaction. For the positions-app example, [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57) does this for its grid.
 
 To show the rows in order, sort them in your app, since a subscription's updates arrive in no particular order, whatever its `order_by`. With `limit`, `order_by` picks a set, such as the two largest positions (`order_by: { market_value: desc }, limit: 2`), and a row that enters or leaves that set arrives as an `INSERT` or a `DELETE`.
 
