@@ -329,6 +329,40 @@ describe('generateSchema', () => {
       );
     });
 
+    it("should give an update type a list beside its data for each relationship to many rows, of the related source's updates, taking a selection of them as a root field does", () => {
+      const schema = buildSchema(generateSchema(positionsAndTrades()));
+
+      const trades = fieldOf(schema, 'positions_update', 'trades');
+      expect(trades.type.toString()).toBe('[trades_update!]!');
+      expect(trades.args.map((arg) => arg.name)).toEqual([
+        'where',
+        'order_by',
+        'limit',
+        'offset',
+      ]);
+      expect(fieldOf(schema, 'trades_update', 'positions')).toBeUndefined();
+    });
+
+    it("should fail on a list named like an update's own field, as GraphQL refuses two fields of one name", () => {
+      const config = positionsAndTrades();
+      const positions = config.sources.get('positions')!;
+      const data: SourceDefinition = {
+        name: 'data',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'instrument_id', type: PostgresType.Int4 },
+        ],
+        relationships: new Map(),
+      };
+      addForeignKey(data, 'instrument_id', positions);
+      config.sources.set('data', data);
+
+      expect(() => buildSchema(generateSchema(config))).toThrow(
+        'Field "positions_update.data" can only be defined once.',
+      );
+    });
+
     it('should fail on a relationship named like a column, as GraphQL refuses two fields of one name', () => {
       expect(() =>
         buildSchema(generateSchema(positionsAndTrades('positions'))),

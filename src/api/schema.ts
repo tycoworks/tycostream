@@ -52,7 +52,7 @@ const ORDER_DIRECTION_TYPE = 'order_by';
 const orderByTypeName = (sourceName: string) => `${sourceName}_order_by`;
 const boolExpTypeName = (sourceName: string) => `${sourceName}_bool_exp`;
 const comparisonTypeName = (typeName: string) => `${typeName}_comparison_exp`;
-const updateTypeName = (sourceName: string) => `${sourceName}_update`;
+export const updateTypeName = (sourceName: string) => `${sourceName}_update`;
 
 /**
  * The GraphQL scalars tycostream declares, for the Postgres types GraphQL's
@@ -357,11 +357,12 @@ function buildSourceTypes(sources: Map<string, SourceDefinition>): string {
 ${fields}
     }
     
-    # ${sourceName} update event
+    # ${sourceName} update event, its lists' updates beside its data
     type ${updateTypeName(sourceName)} {
       ${UpdateField.Operation}: ${ROW_OPERATION_TYPE}!
       ${UpdateField.Data}: ${sourceName}
       ${UpdateField.Fields}: [${GraphQLString.name}!]!
+${buildListFields(sourceDefinition, updateTypeName).join('\n')}
     }`);
   }
 
@@ -386,16 +387,33 @@ function buildRootFields(
 
 /**
  * A source type's relationship fields: one to one row is the related
- * source's type, null when no row matches; one to many rows is a list of
- * them, empty when none match, taking a selection of them, applied per row
+ * source's type, null when no row matches; then its lists of rows
  */
 function buildRelationshipFields(source: SourceDefinition): string[] {
-  return [...(source.relationships ?? [])].map(
-    ([field, { source: related, many }]) =>
-      many
-        ? `      ${field}(${selectionArguments(related.name)}): [${related.name}!]!`
-        : `      ${field}: ${related.name}`,
-  );
+  return [
+    ...[...(source.relationships ?? [])]
+      .filter(([, { many }]) => !many)
+      .map(([field, { source: related }]) => `      ${field}: ${related.name}`),
+    ...buildListFields(source, (sourceName) => sourceName),
+  ];
+}
+
+/**
+ * A type's lists, one per relationship to many rows: each a list of the
+ * given type of the related source, a row or an update, empty when there
+ * are none, taking a selection of the related source's rows, applied per
+ * row
+ */
+function buildListFields(
+  source: SourceDefinition,
+  typeName: (sourceName: string) => string,
+): string[] {
+  return [...(source.relationships ?? [])]
+    .filter(([, { many }]) => many)
+    .map(
+      ([field, { source: related }]) =>
+        `      ${field}(${selectionArguments(related.name)}): [${typeName(related.name)}!]!`,
+    );
 }
 
 /**

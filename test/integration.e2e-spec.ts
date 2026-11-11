@@ -715,6 +715,92 @@ describe('Integration Test', () => {
       });
     });
 
+    it("should send each position's latest trades beside its data: the snapshot as a tree, then a new trade and the one it pushes out under an update of the position's key", async () => {
+      type TradeUpdate = {
+        operation: string;
+        fields: string[];
+        data: { id: number; quantity: number | null };
+      };
+      type Update = {
+        operation: string;
+        fields: string[];
+        data: { instrument_id: number; symbol: string | null };
+        trades: TradeUpdate[];
+      };
+      // Rows the other tests don't read
+      await testEnv.executeSql(`INSERT INTO positions VALUES (7, 'TSLA', 30)`);
+      await testEnv.executeSql(
+        `INSERT INTO trades VALUES (30, 7, 1, 10), (31, 7, 1, 20)`,
+      );
+      // Each update's trades in id order, as updates are unordered
+      const sorted = (updates: Update[]) =>
+        updates.map((update) => ({
+          ...update,
+          trades: [...update.trades].sort((a, b) => a.data.id - b.data.id),
+        }));
+      const subscription = await subscribeOverSse<Update>(
+        `subscription {
+          positions(where: { instrument_id: { _eq: 7 } }) {
+            operation
+            fields
+            data { instrument_id symbol }
+            trades(order_by: [{ id: desc }], limit: 2) {
+              operation
+              fields
+              data { id quantity }
+            }
+          }
+        }`,
+        'positions',
+      );
+
+      try {
+        expect(sorted(await subscription.next())).toEqual([
+          {
+            operation: 'INSERT',
+            fields: ['instrument_id', 'symbol'],
+            data: { instrument_id: 7, symbol: 'TSLA' },
+            trades: [
+              {
+                operation: 'INSERT',
+                fields: ['id', 'quantity'],
+                data: { id: 30, quantity: 10 },
+              },
+              {
+                operation: 'INSERT',
+                fields: ['id', 'quantity'],
+                data: { id: 31, quantity: 20 },
+              },
+            ],
+          },
+        ]);
+
+        // The position's row doesn't change, so it comes as its key alone
+        await testEnv.executeSql(`INSERT INTO trades VALUES (32, 7, 2, 30)`);
+        expect(sorted(await subscription.next())).toEqual([
+          {
+            operation: 'UPDATE',
+            fields: ['instrument_id'],
+            data: { instrument_id: 7, symbol: null },
+            trades: [
+              {
+                operation: 'DELETE',
+                fields: ['id'],
+                data: { id: 30, quantity: null },
+              },
+              {
+                operation: 'INSERT',
+                fields: ['id', 'quantity'],
+                data: { id: 32, quantity: 30 },
+              },
+            ],
+          },
+        ]);
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+
     it("should send a trade's position inside its data, and each change to the position as an update of each of its trades, naming positions and sending it whole", async () => {
       type Update = {
         operation: string;

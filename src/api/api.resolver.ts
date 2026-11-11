@@ -16,7 +16,12 @@ import type { SourceDefinition } from '../config/source.types.js';
 import type { OrderBy, Row, Selection, WhereClause } from '../common/types.js';
 import { ApiService } from './api.service.js';
 import type { GraphQLUpdate } from './tree.js';
-import { RootType, SelectionArgument, UpdateField } from './schema.js';
+import {
+  RootType,
+  SelectionArgument,
+  UpdateField,
+  updateTypeName,
+} from './schema.js';
 
 // A selection of a source's rows takes these arguments: a root field's, and
 // a relationship to many rows'
@@ -58,11 +63,19 @@ type SubscriptionResolver = {
   resolve: (updates: GraphQLUpdate[]) => GraphQLUpdate[];
 };
 
+// What a selection set of a type selects of its source
+type SelectionSetReader = (
+  info: GraphQLResolveInfo,
+  source: SourceDefinition,
+  type: GraphQLObjectType,
+  fields: FieldNode[],
+) => Selection;
+
 /**
- * A list's resolver: its rows, or [] when there are none, as a query's tree
- * leaves out a list with no rows
+ * A list's resolver: a row's rows, or an update's updates, or [] when there
+ * are none, as the tree leaves out an empty list
  */
-type ListResolver = (row: Row) => Row[];
+type ListResolver<Parent> = (parent: Parent) => unknown[];
 
 /**
  * Creates a query resolver for a specific source
@@ -76,7 +89,7 @@ function createQueryResolver(
   return (_parent, args, context, info) =>
     apiService.query(
       source,
-      selectionOf(source, args, info),
+      selectionOf(source, args, info, selectionSetOf),
       context.request?.signal,
     );
 }
@@ -90,38 +103,42 @@ function createSubscriptionResolver(
   apiService: ApiService,
 ): SubscriptionResolver {
   return {
-    // Its columns are those its updates' data selects. Returns the service's
+    // Its selection is what its updates select. Returns the service's
     // iterator itself, not a generator wrapping it, so a client that
     // disconnects closes its subscription at once.
-    subscribe: (_parent, args, _context, info) => {
-      const selection = selectionOf(source, args, info, UpdateField.Data);
-      checkNoListsIn(source, selection);
-      return apiService.subscribe(source, selection);
-    },
+    subscribe: (_parent, args, _context, info) =>
+      apiService.subscribe(
+        source,
+        selectionOf(source, args, info, updateSelectionSetOf),
+      ),
     resolve: (updates) => updates,
   };
 }
 
 /**
  * Every source's resolvers: its query and subscription, under the root
- * types' names, and its lists', under its type's name. A type, not an
- * interface, so it fits the GraphQL module's resolver map.
+ * types' names, and its lists', under its type's and its update type's
+ * names. A type, not an interface, so it fits the GraphQL module's resolver
+ * map.
  */
 export type Resolvers = {
   [RootType.Query]: Record<string, QueryResolver>;
   [RootType.Subscription]: Record<string, SubscriptionResolver>;
-  // A source type's lists. TypeScript makes this cover the root types too,
-  // hence all three.
-  [sourceName: string]: Record<
+  // A type's lists. TypeScript makes this cover the root types too, hence
+  // every kind.
+  [typeName: string]: Record<
     string,
-    QueryResolver | SubscriptionResolver | ListResolver
+    | QueryResolver
+    | SubscriptionResolver
+    | ListResolver<Row>
+    | ListResolver<GraphQLUpdate>
   >;
 };
 
 /**
  * Builds the resolvers for every source, a query and a subscription each,
- * delegating to ApiService, and one for each of its relationships to many
- * rows
+ * delegating to ApiService, and one for each of its lists, in its type and
+ * its update type
  */
 export function buildResolvers(
   sources: Map<string, SourceDefinition>,
@@ -129,14 +146,20 @@ export function buildResolvers(
 ): Resolvers {
   const queries: Record<string, QueryResolver> = {};
   const subscriptions: Record<string, SubscriptionResolver> = {};
-  const lists: Record<string, Record<string, ListResolver>> = {};
+  const lists: Record<
+    string,
+    Record<string, ListResolver<Row> | ListResolver<GraphQLUpdate>>
+  > = {};
 
   sources.forEach((source, sourceName) => {
     queries[sourceName] = createQueryResolver(source, apiService);
     subscriptions[sourceName] = createSubscriptionResolver(source, apiService);
-    const resolvers = createListResolvers(source);
-    if (Object.keys(resolvers).length > 0) {
-      lists[sourceName] = resolvers;
+    if ([...(source.relationships?.values() ?? [])].some(({ many }) => many)) {
+      lists[sourceName] = createListResolvers<Row>(source, (row) => row);
+      lists[updateTypeName(sourceName)] = createListResolvers<GraphQLUpdate>(
+        source,
+        (update) => update.lists,
+      );
     }
   });
 
@@ -147,40 +170,74 @@ export function buildResolvers(
   };
 }
 
-// A source's lists' resolvers, by field
-function createListResolvers(
+// A source's lists' resolvers, by field, each reading the list from where its
+// parent, a row or an update, holds its lists
+function createListResolvers<Parent>(
   source: SourceDefinition,
-): Record<string, ListResolver> {
+  listsOf: (parent: Parent) => Record<string, unknown> | undefined,
+): Record<string, ListResolver<Parent>> {
   return Object.fromEntries(
     [...(source.relationships ?? [])]
       .filter(([, { many }]) => many)
       .map(([field]) => [
         field,
-        (row: Row) => (row[field] as Row[] | undefined) ?? [],
+        (parent: Parent) =>
+          (listsOf(parent)?.[field] as unknown[] | undefined) ?? [],
       ]),
   );
 }
 
-// The selection a root field makes of its source: its arguments, and what it
-// selects, or what one of its fields selects
+// The selection a root field makes of its source: its arguments, and what
+// its selection set selects, read as a query's rows or a subscription's
+// updates
 function selectionOf(
   source: SourceDefinition,
   args: Args,
   info: GraphQLResolveInfo,
-  within?: string,
+  selectionSetOf: SelectionSetReader,
 ): Selection {
-  let type = objectType(info.returnType);
-  let fields: FieldNode[] = [...info.fieldNodes];
-  if (within) {
-    fields = subfields(info, type, fields).filter(
-      (field) => field.name.value === within,
-    );
-    type = objectType(type.getFields()[within].type);
-  }
   return {
     ...argumentsOf(args),
-    ...selectionSetOf(info, source, type, fields),
+    ...selectionSetOf(info, source, objectType(info.returnType), [
+      ...info.fieldNodes,
+    ]),
   };
+}
+
+// What an update type's selection set selects of a source: data's columns
+// and related rows, and each list beside data as a selection of its own,
+// with its arguments, whose updates select in turn
+function updateSelectionSetOf(
+  info: GraphQLResolveInfo,
+  source: SourceDefinition,
+  type: GraphQLObjectType,
+  fields: FieldNode[],
+): Selection {
+  const selected = byName(subfields(info, type, fields));
+  const data = selected.get(UpdateField.Data) ?? [];
+  const selection = selectionSetOf(
+    info,
+    source,
+    objectType(type.getFields()[UpdateField.Data].type),
+    data,
+  );
+  checkNoListsIn(source, selection);
+  for (const [name, nodes] of selected) {
+    const relationship = source.relationships?.get(name);
+    if (relationship) {
+      const field = type.getFields()[name];
+      selection.relationships![name] = {
+        ...argumentsOf(sameArguments(name, field, nodes, info)),
+        ...updateSelectionSetOf(
+          info,
+          relationship.source,
+          objectType(field.type),
+          nodes,
+        ),
+      };
+    }
+  }
+  return selection;
 }
 
 // A subscription's lists go beside data, so none is selected within data,

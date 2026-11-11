@@ -77,11 +77,12 @@ describe('buildResolvers', () => {
     };
   };
 
-  it('should give every source a query and a subscription, under query_root and subscription_root, and each source with lists their resolvers, under its type', () => {
+  it('should give every source a query and a subscription, under query_root and subscription_root, and each source with lists their resolvers, under its type and its update type', () => {
     expect(Object.keys(resolvers)).toEqual([
       'query_root',
       'subscription_root',
       'positions',
+      'positions_update',
     ]);
     expect(Object.keys(resolvers[RootType.Query])).toEqual([
       'trades',
@@ -94,6 +95,7 @@ describe('buildResolvers', () => {
       'positions',
     ]);
     expect(Object.keys(resolvers.positions)).toEqual(['trades']);
+    expect(Object.keys(resolvers.positions_update)).toEqual(['trades']);
   });
 
   describe('queries', () => {
@@ -282,6 +284,47 @@ describe('buildResolvers', () => {
         expect(selection).toMatchObject({ columns: [] });
         await subscription.return(undefined);
       }
+    });
+
+    it('should read each list beside data as a selection of its own, with its arguments, its updates selecting in turn', async () => {
+      const { selection, subscription } = await subscribed(`subscription {
+        positions(limit: 10) {
+          operation
+          data { symbol }
+          trades(order_by: [{ id: desc }], limit: 2) {
+            operation
+            fields
+            data { id }
+          }
+        }
+      }`);
+
+      expect(selection).toEqual({
+        columns: ['symbol'],
+        limit: 10,
+        relationships: {
+          trades: {
+            columns: ['id'],
+            orderBy: [{ id: OrderDirection.Desc }],
+            limit: 2,
+            relationships: {},
+          },
+        },
+      });
+      await subscription.return(undefined);
+    });
+
+    it("should give an update's list as its updates, or [] when it has none", () => {
+      const trades = resolvers.positions_update.trades as (
+        update: unknown,
+      ) => unknown[];
+      const update = { operation: 'UPDATE', data: { id: 1 }, fields: ['id'] };
+      const inserted = { operation: 'INSERT', data: { id: 8 }, fields: ['id'] };
+
+      expect(trades(update)).toEqual([]);
+      expect(trades({ ...update, lists: { trades: [inserted] } })).toEqual([
+        inserted,
+      ]);
     });
 
     it("should read a related row inside data as a relationship: a trade's position", async () => {

@@ -318,7 +318,7 @@ One branch and one pull request. Each step is one commit, passes every test, and
 9. **Relationships in subscriptions, both kinds,** in three commits: the goal. Related rows inside `data`, lists beside it as the update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels; a related row's column changing (its field in `fields`, sent whole). End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
    - **9a:** related rows inside `data`: folded into an object, named in `fields` when any of its columns changes, and sent whole. Lists inside `data` are refused.
    - **9b:** `tree.ts` nests a subscription's updates: each under its parent's, a key-only UPDATE for a parent whose children changed, and a parent's DELETE carrying its children's.
-   - **9c:** lists beside `data`: the update types' list fields, reading them, and the end-to-end tests above.
+   - **9c,** in two commits: lists beside `data`, the update types' list fields and reading them; then the end-to-end tests above.
 10. **The README.**
 
 Then positions-app moves to one subscription, against a local build until a release. Immer's `produce` could apply each message's nested updates to its React state, changing only the positions and trades that changed, so only their rows re-render.
