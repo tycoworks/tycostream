@@ -2,11 +2,11 @@ import type pg from 'pg';
 import {
   insertOf,
   isoTimestamp,
-  pickRow,
   readSnapshot,
   TYPE_PARSERS,
 } from './postgres.js';
 import type { RawRow } from './postgres.js';
+import { Statement } from './statement.js';
 import { RowUpdateType, PostgresType, StreamMode } from '../common/types.js';
 import type { RowUpdateBatch } from '../common/types.js';
 
@@ -15,22 +15,22 @@ describe('readSnapshot', () => {
     const query = vi.fn(() => Promise.resolve({ rows }));
     return { client: { query } as unknown as pg.ClientBase, query };
   };
+  // A query of every test row with id 7
+  const statement = new Statement(
+    {
+      name: 'test',
+      primaryKeyField: 'id',
+      fields: [
+        { name: 'id', type: PostgresType.Int4 },
+        { name: 'name', type: PostgresType.Text },
+      ],
+    },
+    { where: { id: { _eq: 7 } } },
+    StreamMode.Snapshot,
+  );
   const readAll = async (client: pg.ClientBase) => {
     const batches: RowUpdateBatch[] = [];
-    for await (const batch of readSnapshot(client, {
-      source: {
-        name: 'test',
-        primaryKeyField: 'id',
-        fields: [
-          { name: 'id', type: PostgresType.Int4 },
-          { name: 'name', type: PostgresType.Text },
-        ],
-      },
-      mode: StreamMode.Snapshot,
-      sql: 'select "id", "name" from "test" where "id" = $1',
-      parameters: [7],
-      columns: ['id', 'name'],
-    })) {
+    for await (const batch of readSnapshot(client, statement)) {
       batches.push(batch);
     }
     return batches;
@@ -41,10 +41,7 @@ describe('readSnapshot', () => {
 
     await readAll(client);
 
-    expect(query).toHaveBeenCalledWith(
-      'select "id", "name" from "test" where "id" = $1',
-      [7],
-    );
+    expect(query).toHaveBeenCalledWith(statement.sql, [7]);
   });
 
   it('should yield the rows as one batch of inserts with no timestamp, then end', async () => {
@@ -140,14 +137,6 @@ describe('isoTimestamp', () => {
 
   it('should leave infinity as Postgres writes it', () => {
     expect(isoTimestamp('infinity')).toBe('infinity');
-  });
-});
-
-describe('pickRow', () => {
-  it('should keep only the given columns, as typed, with null for a missing value', () => {
-    expect(
-      pickRow(['id', 'name'], { id: 7, mz_timestamp: '42', email: 'a' }),
-    ).toEqual({ id: 7, name: null });
   });
 });
 

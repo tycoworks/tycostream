@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import { RowUpdateType, StreamMode } from '../common/types.js';
 import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
-import { insertOf, pickRow, readSnapshot } from './postgres.js';
+import { insertOf, readSnapshot } from './postgres.js';
 import type { RawRow } from './postgres.js';
 import type { Statement } from './statement.js';
 import { DatabaseAdapter } from './types.js';
@@ -31,6 +31,17 @@ enum SubscribeColumn {
   Timestamp = 'mz_timestamp',
   Progressed = 'mz_progressed',
   Diff = 'mz_diff',
+}
+
+const SUBSCRIBE_COLUMNS: ReadonlySet<string> = new Set(
+  Object.values(SubscribeColumn),
+);
+
+// A SUBSCRIBE row's own columns: the statement's
+function withoutSubscribeColumns(raw: RawRow): RawRow {
+  return Object.fromEntries(
+    Object.entries(raw).filter(([name]) => !SUBSCRIBE_COLUMNS.has(name)),
+  );
 }
 
 // FETCH waits until rows exist, so a bigger batch only helps a busy view
@@ -71,7 +82,7 @@ export class MaterializeAdapter extends DatabaseAdapter {
     );
 
     // FETCH without a timeout returns as soon as rows exist
-    const batcher = new ProgressBatcher(statement.columns);
+    const batcher = new ProgressBatcher();
     let snapshot = true;
     while (true) {
       const { rows } = await client.query<RawRow>(
@@ -79,7 +90,10 @@ export class MaterializeAdapter extends DatabaseAdapter {
       );
       for (const { timestamp, rows: changes } of batcher.take(rows)) {
         const events = pairChanges(
-          changes,
+          changes.map(({ diff, row }) => ({
+            diff,
+            row: statement.unpack(row),
+          })),
           statement.source.primaryKeyField,
           statement.columns,
         );
@@ -96,13 +110,11 @@ export class MaterializeAdapter extends DatabaseAdapter {
 
 /**
  * Holds a live stream's rows until a progress row says their timestamp is
- * complete, keeping only the SELECT's columns
+ * complete, each as the statement gives it, without SUBSCRIBE's own columns
  */
 export class ProgressBatcher {
   private readonly pending = new Map<bigint, DiffRow[]>();
   private started = false;
-
-  constructor(private readonly columns: string[]) {}
 
   /**
    * Takes fetched rows and returns each timestamp they complete, oldest
@@ -132,7 +144,7 @@ export class ProgressBatcher {
         const batch = this.pending.get(timestamp) ?? [];
         batch.push({
           diff: Number(raw[SubscribeColumn.Diff]),
-          row: pickRow(this.columns, raw),
+          row: withoutSubscribeColumns(raw),
         });
         this.pending.set(timestamp, batch);
       }

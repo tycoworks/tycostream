@@ -65,16 +65,6 @@ export const TYPE_PARSERS = {
 };
 
 /**
- * A row with only the given columns, already parsed; a row can carry other
- * columns too
- */
-export function pickRow(columns: string[], raw: RawRow): Row {
-  return Object.fromEntries(
-    columns.map((column) => [column, raw[column] ?? null]),
-  );
-}
-
-/**
  * A row arriving whole: an insert of every column
  */
 export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
@@ -95,7 +85,7 @@ export async function* readSnapshot(
   ]);
   yield {
     events: rows.map((raw) =>
-      insertOf(pickRow(statement.columns, raw), statement.columns),
+      insertOf(statement.unpack(raw), statement.columns),
     ),
   };
 }

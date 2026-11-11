@@ -8,9 +8,10 @@ import {
 } from 'kysely';
 import type { OrderByItemBuilder } from 'kysely';
 import { OrderDirection } from '../common/types.js';
-import type { OrderBy, Selection, StreamMode } from '../common/types.js';
+import type { OrderBy, Row, Selection, StreamMode } from '../common/types.js';
 import type { SourceDefinition, SourceField } from '../config/source.types.js';
 import { buildCondition } from './filter.js';
+import type { RawRow } from './postgres.js';
 
 // Kysely only compiles here; tycostream runs the SQL itself
 const db = new Kysely<any>({
@@ -77,6 +78,16 @@ export class Statement {
     const compiled = query.compile();
     this.sql = compiled.sql;
     this.parameters = compiled.parameters;
+  }
+
+  /**
+   * One of the statement's rows, as tycostream serves it: its own columns,
+   * with null for a missing value. A row can carry other columns too.
+   */
+  unpack(raw: RawRow): Row {
+    return Object.fromEntries(
+      this.columns.map((column) => [column, raw[column] ?? null]),
+    );
   }
 }
 

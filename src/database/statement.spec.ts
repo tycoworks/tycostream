@@ -70,6 +70,16 @@ describe('Statement', () => {
       });
     });
 
+    it('should unpack one of its rows as its own columns, with null for a missing value, whatever else the row carries', () => {
+      expect(
+        queryOf(users, { columns: ['name'] }).unpack({
+          id: 7,
+          mz_timestamp: 42,
+          email: 'a',
+        }),
+      ).toEqual({ id: 7, name: null });
+    });
+
     it('should reject selecting a column the source does not have', () => {
       expect(() => queryOf(users, { columns: ['nope'] })).toThrow(
         "Unknown field 'nope' to select",

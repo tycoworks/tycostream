@@ -7,8 +7,9 @@ import {
 } from './materialize.js';
 import type { DiffRow } from './materialize.js';
 import type { RawRow } from './postgres.js';
-import type { Statement } from './statement.js';
+import { Statement } from './statement.js';
 import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
+import type { Selection } from '../common/types.js';
 import type { Row, RowUpdateBatch } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
@@ -56,43 +57,33 @@ describe('MaterializeAdapter', () => {
   };
 
   const adapter = new MaterializeAdapter();
-  // A live read of a statement of the source, as an iterator the tests can
-  // step through
+  // A live read of the source's rows the selection selects, as an iterator
+  // the tests can step through
   const readLive = (
     client: pg.ClientBase,
     source: SourceDefinition,
-    select: Pick<Statement, 'sql' | 'parameters' | 'columns'>,
+    selection: Selection = {},
   ) =>
     adapter
-      .read(client, { source, mode: StreamMode.Live, ...select })
+      .read(client, new Statement(source, selection, StreamMode.Live))
       [Symbol.asyncIterator]();
-  const readAll = (client: pg.ClientBase) =>
-    readLive(client, idAndName, {
-      sql: 'select 1',
-      parameters: [],
-      columns: ['id', 'name'],
-    });
+  const readAll = (client: pg.ClientBase) => readLive(client, idAndName);
 
   describe('read, as a snapshot', () => {
     it('should run the SELECT alone, with no SUBSCRIBE, and yield its rows as inserts', async () => {
       const query = vi.fn(() =>
         Promise.resolve({ rows: [{ id: 1, name: 'a' }] }),
       );
+      const statement = new Statement(idAndName, {}, StreamMode.Snapshot);
       const batches: RowUpdateBatch[] = [];
       for await (const batch of adapter.read(
         { query } as unknown as pg.ClientBase,
-        {
-          source: idAndName,
-          mode: StreamMode.Snapshot,
-          sql: 'select 1',
-          parameters: [],
-          columns: ['id', 'name'],
-        },
+        statement,
       )) {
         batches.push(batch);
       }
 
-      expect(query.mock.calls).toEqual([['select 1', []]]);
+      expect(query.mock.calls).toEqual([[statement.sql, []]]);
       expect(batches).toEqual([
         {
           events: [
@@ -110,11 +101,12 @@ describe('MaterializeAdapter', () => {
   describe('read, live', () => {
     it('should turn off the idle timeout, then declare a cursor for the query inside a transaction, keeping its parameters', async () => {
       const { client, queries } = fakeClient([[progress(1)]]);
-      const batches = readLive(client, idAndName, {
-        sql: 'select "id" from "test" where "id" = $1',
-        parameters: [7],
-        columns: ['id'],
-      });
+      const statement = new Statement(
+        idAndName,
+        { where: { id: { _eq: 7 } } },
+        StreamMode.Live,
+      );
+      const batches = adapter.read(client, statement)[Symbol.asyncIterator]();
       void batches.next();
       await vi.waitFor(() => expect(queries.length).toBeGreaterThan(3));
 
@@ -123,7 +115,7 @@ describe('MaterializeAdapter', () => {
       ]);
       expect(queries[1]).toEqual(['BEGIN']);
       expect(queries[2]).toEqual([
-        'DECLARE c CURSOR FOR SUBSCRIBE (select "id" from "test" where "id" = $1) WITH (SNAPSHOT, PROGRESS)',
+        `DECLARE c CURSOR FOR SUBSCRIBE (${statement.sql}) WITH (SNAPSHOT, PROGRESS)`,
         [7],
       ]);
       expect(queries[3]).toEqual(['FETCH 1000 c']);
@@ -184,11 +176,7 @@ describe('MaterializeAdapter', () => {
         ],
         [change(3, 1, { id: 2, name: 'c' }), progress(4)],
       ]);
-      const batches = readLive(client, idAndName, {
-        sql: 'select "id" from "test"',
-        parameters: [],
-        columns: ['id'],
-      });
+      const batches = readLive(client, idAndName, { columns: [] });
 
       expect((await batches.next()).value).toEqual({
         timestamp: 1n,
@@ -250,16 +238,8 @@ describe('MaterializeAdapter', () => {
         [change(1, 1, { symbol: 'AAPL', price: 1.5 })],
         [progress(2)],
       ]);
-      const firstBatches = readLive(first.client, idAndName, {
-        sql: 'select 1',
-        parameters: [],
-        columns: ['id', 'name'],
-      });
-      const secondBatches = readLive(second.client, prices, {
-        sql: 'select 2',
-        parameters: [],
-        columns: ['symbol', 'price'],
-      });
+      const firstBatches = readLive(first.client, idAndName);
+      const secondBatches = readLive(second.client, prices);
 
       // Interleaved, so a batcher shared between them would mix their rows
       const [firstEvents, secondEvents] = await Promise.all([
@@ -332,7 +312,7 @@ describe('ProgressBatcher', () => {
   let batcher: ProgressBatcher;
 
   beforeEach(() => {
-    batcher = new ProgressBatcher(['id', 'name']);
+    batcher = new ProgressBatcher();
   });
 
   describe('batching by progress', () => {
@@ -411,14 +391,14 @@ describe('ProgressBatcher', () => {
     });
   });
 
-  it("should keep only the SELECT's columns of each row", () => {
+  it("should keep each row's own columns, without the ones SUBSCRIBE adds", () => {
     batcher.take([change(1, 1, { id: 7, name: 'a', email: 'a@b.c' })]);
     const [
       {
         rows: [{ row }],
       },
     ] = batcher.take([progress(2)]);
-    expect(row).toEqual({ id: 7, name: 'a' });
+    expect(row).toEqual({ id: 7, name: 'a', email: 'a@b.c' });
   });
 });
 
