@@ -21,11 +21,25 @@ const source = (fields: SourceDefinition['fields']): SourceDefinition => ({
 
 // The columns SUBSCRIBE adds to each row, then the row's own, as tycostream
 // parses them: mz_timestamp is numeric and mz_diff int8, so both are numbers
-const change = (timestamp: number, diff: number, row: Row): RawRow => ({
+// A row's plain values, as the tests write them
+type Values = Record<string, string | number | boolean | null>;
+
+// A row as the statement gives it: one JSON object of its columns' values,
+// as the text the database writes for them
+const packed = (row: Values): RawRow => ({
+  __row: Object.fromEntries(
+    Object.entries(row).map(([column, value]) => [
+      column,
+      value === null ? null : String(value),
+    ]),
+  ),
+});
+
+const change = (timestamp: number, diff: number, row: Values): RawRow => ({
   mz_timestamp: timestamp,
   mz_progressed: false,
   mz_diff: diff,
-  ...row,
+  ...packed(row),
 });
 const progress = (timestamp: number): RawRow => ({
   mz_timestamp: timestamp,
@@ -72,7 +86,7 @@ describe('MaterializeAdapter', () => {
   describe('read, as a snapshot', () => {
     it('should run the SELECT alone, with no SUBSCRIBE, and yield its rows as inserts', async () => {
       const query = vi.fn(() =>
-        Promise.resolve({ rows: [{ id: 1, name: 'a' }] }),
+        Promise.resolve({ rows: [packed({ id: 1, name: 'a' })] }),
       );
       const statement = new Statement(idAndName, {}, StreamMode.Snapshot);
       const batches: RowUpdateBatch[] = [];
@@ -327,8 +341,8 @@ describe('ProgressBatcher', () => {
         {
           timestamp: 1n,
           rows: [
-            { diff: 1, row: { id: 1, name: 'a' } },
-            { diff: 1, row: { id: 2, name: 'b' } },
+            { diff: 1, row: packed({ id: 1, name: 'a' }) },
+            { diff: 1, row: packed({ id: 2, name: 'b' }) },
           ],
         },
       ]);
@@ -349,12 +363,15 @@ describe('ProgressBatcher', () => {
           progress(4),
         ]),
       ).toEqual([
-        { timestamp: 1n, rows: [{ diff: 1, row: { id: 1, name: 'a' } }] },
+        {
+          timestamp: 1n,
+          rows: [{ diff: 1, row: packed({ id: 1, name: 'a' }) }],
+        },
         {
           timestamp: 3n,
           rows: [
-            { diff: -1, row: { id: 1, name: 'a' } },
-            { diff: 1, row: { id: 1, name: 'b' } },
+            { diff: -1, row: packed({ id: 1, name: 'a' }) },
+            { diff: 1, row: packed({ id: 1, name: 'b' }) },
           ],
         },
       ]);
@@ -367,8 +384,8 @@ describe('ProgressBatcher', () => {
         {
           timestamp: 1n,
           rows: [
-            { diff: 1, row: { id: 1, name: 'a' } },
-            { diff: 1, row: { id: 2, name: 'b' } },
+            { diff: 1, row: packed({ id: 1, name: 'a' }) },
+            { diff: 1, row: packed({ id: 2, name: 'b' }) },
           ],
         },
       ]);
@@ -398,7 +415,7 @@ describe('ProgressBatcher', () => {
         rows: [{ row }],
       },
     ] = batcher.take([progress(2)]);
-    expect(row).toEqual({ id: 7, name: 'a', email: 'a@b.c' });
+    expect(row).toEqual(packed({ id: 7, name: 'a', email: 'a@b.c' }));
   });
 });
 

@@ -284,6 +284,7 @@ Not measured: performance at positions-app's scale, and what Materialize keeps p
 - **One relationship selected twice with different arguments,** under two aliases.
 - **Exposing a source under another name.**
 - **Materialize's `LIMIT INPUT GROUP SIZE` hint,** against the memory each `limit` keeps.
+- **Check `schema.yaml`'s types against the database's at startup.** Values are parsed by the types `schema.yaml` declares, not the ones the database reports, so a column declared `int4` that's really `numeric` would turn `1.5` into `1`. The generator writes the right types; a hand edit could get them wrong.
 
 ## Open questions
 
@@ -296,16 +297,19 @@ One branch and one pull request. Each step is one commit, passes every test, and
 
 1. **`filter.ts`:** the `where` conditions move out of `select.ts`. A pure move.
 2. **`Statement`:** `buildSelect` becomes `new Statement(source, selection, mode)`, and the adapter and stream take the statement alone. No change for clients.
-3. **JSON rows, for one source:** rows come back as `__source`, `__keys` and `__row`, every statement is built the same way, and `statement.unpack(row)` parses each value by type. `char(n)` loses its padding, and queries lose the index fast path. Tests: every served type through the JSON.
+3. **JSON rows, for one source,** in three commits:
+   - **3a:** `statement.unpack(row)` reads the statement's rows back, so the adapters don't pick columns themselves.
+   - **3b:** every statement is built the same way: the source's rows as a CTE, and a query ordered by `__row_number`. Queries lose the index fast path.
+   - **3c:** each row comes back as one JSON object, `__row`, of its values as text, which `unpack` parses by type. `char(n)` loses its padding. Tests: every served type through the JSON.
 4. **Foreign keys:** `foreign_keys` in `schema.yaml`, both relationships derived from each, and the startup checks. Not in the API yet.
 5. **Relationships to one row,** in queries and subscriptions: their fields, nested selections, the `LEFT JOIN`s, and the API folding their columns into objects. Useful on its own: a trade blotter showing each trade's position.
-6. **Changes carry `path` and `keys`,** paired the same way for queries and subscriptions, in the database layer. A key that isn't unique now fails a query too.
-7. **The statement reads relationships to many rows:** planning several sources, and the `LATERAL` CTEs. Unit-tested, not yet reachable from GraphQL.
+6. **Changes carry `path` and `keys`,** paired the same way for queries and subscriptions, in the database layer; the statement adds `__keys`. A key that isn't unique now fails a query too.
+7. **The statement reads relationships to many rows:** planning several sources, the `LATERAL` CTEs, and the `__source` tag. Unit-tested, not yet reachable from GraphQL.
 8. **Relationships to many rows, in queries:** their fields and arguments, nesting in `tree.ts`, and `[]` from the resolvers. Useful on its own: Hasura's nested queries, in one consistent read.
 9. **Relationships to many rows, in subscriptions:** the goal. The update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels. End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
 10. **The README.**
 
-Then positions-app moves to one subscription, against a local build until a release.
+Then positions-app moves to one subscription, against a local build until a release. Immer's `produce` could apply each message's nested updates to its React state, changing only the positions and trades that changed, so only their rows re-render.
 
 ## Sources
 

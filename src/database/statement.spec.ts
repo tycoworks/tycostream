@@ -32,7 +32,7 @@ function sourceRowsOf(source: SourceDefinition, selection: Selection = {}) {
   const start = 'with "__source_0" as (';
   expect(sql.startsWith(start)).toBe(true);
   return {
-    sql: sql.slice(start.length, sql.indexOf(') select "__source_0".')),
+    sql: sql.slice(start.length, sql.indexOf(') select jsonb_build_object(')),
     parameters,
   };
 }
@@ -50,7 +50,7 @@ function where(clause: WhereClause) {
 
 describe('Statement', () => {
   describe('the statement', () => {
-    it("should read a query's rows from its source's rows, as a CTE, numbered in their order, and give them in that order", () => {
+    it("should read a query's rows from its source's rows, as a CTE, numbered in their order, and give each as one JSON object of its values as text, in that order", () => {
       expect(
         queryOf(users, {
           columns: ['name'],
@@ -61,7 +61,8 @@ describe('Statement', () => {
           'with "__source_0" as (select "id" as "id", "name" as "name", ' +
           'row_number() over(order by "name" asc) as "__row_number" ' +
           'from "users" as "users" order by "name" asc) ' +
-          'select "__source_0"."id" as "id", "__source_0"."name" as "name" ' +
+          'select jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
+          '\'name\', cast("__source_0"."name" as text)) as "__row" ' +
           'from "__source_0" as "__source_0" order by "__source_0"."__row_number"',
         parameters: [],
       });
@@ -77,7 +78,8 @@ describe('Statement', () => {
       ).toBe(
         'with "__source_0" as (select "id" as "id", "name" as "name" ' +
           'from "users" as "users" order by "name" asc) ' +
-          'select "__source_0"."id" as "id", "__source_0"."name" as "name" ' +
+          'select jsonb_build_object(\'id\', cast("__source_0"."id" as text), ' +
+          '\'name\', cast("__source_0"."name" as text)) as "__row" ' +
           'from "__source_0" as "__source_0"',
       );
     });
@@ -113,14 +115,21 @@ describe('Statement', () => {
       });
     });
 
-    it('should unpack one of its rows as its own columns, with null for a missing value, whatever else the row carries', () => {
+    it("should unpack one of its rows: each of its columns' values parsed from its text by the column's type", () => {
       expect(
-        queryOf(users, { columns: ['name'] }).unpack({
-          id: 7,
-          mz_timestamp: 42,
-          email: 'a',
+        queryOf(users).unpack({
+          __row: { id: '7', name: 'a', active: 't', rank: 'gold' },
         }),
-      ).toEqual({ id: 7, name: null });
+      ).toEqual({ id: 7, name: 'a', active: true, rank: 'gold' });
+    });
+
+    it('should unpack a null or missing value as null, whatever else the row carries', () => {
+      expect(
+        queryOf(users, { columns: ['name', 'active'] }).unpack({
+          __row: { id: '7', name: null, email: 'a' },
+          mz_timestamp: 42,
+        }),
+      ).toEqual({ id: 7, name: null, active: null });
     });
 
     it('should reject selecting a column the source does not have', () => {

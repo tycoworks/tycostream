@@ -65,6 +65,14 @@ export const TYPE_PARSERS = {
 };
 
 /**
+ * A value the database wrote as text, as tycostream serves values of its
+ * type: what the type parsers make of it as a column's value
+ */
+export function parseText(type: PostgresType, text: string | null): unknown {
+  return text === null ? null : TYPE_PARSERS.getTypeParser(type)(text);
+}
+
+/**
  * A row arriving whole: an insert of every column
  */
 export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {

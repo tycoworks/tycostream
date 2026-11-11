@@ -10,6 +10,20 @@ import { Statement } from './statement.js';
 import { RowUpdateType, PostgresType, StreamMode } from '../common/types.js';
 import type { RowUpdateBatch } from '../common/types.js';
 
+// A row's plain values, as the tests write them
+type Values = Record<string, string | number | boolean | null>;
+
+// A row as the statement gives it: one JSON object of its columns' values,
+// as the text the database writes for them
+const packed = (row: Values): RawRow => ({
+  __row: Object.fromEntries(
+    Object.entries(row).map(([column, value]) => [
+      column,
+      value === null ? null : String(value),
+    ]),
+  ),
+});
+
 describe('readSnapshot', () => {
   const clientReturning = (rows: RawRow[]) => {
     const query = vi.fn(() => Promise.resolve({ rows }));
@@ -46,8 +60,8 @@ describe('readSnapshot', () => {
 
   it('should yield the rows as one batch of inserts with no timestamp, then end', async () => {
     const { client } = clientReturning([
-      { id: 1, name: 'a', extra: 'dropped' },
-      { id: 2, name: null },
+      packed({ id: 1, name: 'a', extra: 'dropped' }),
+      packed({ id: 2, name: null }),
     ]);
 
     expect(await readAll(client)).toEqual([

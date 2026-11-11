@@ -449,6 +449,95 @@ describe('Integration Test', () => {
       });
     });
 
+    it('should return every served type as the database stores it, a char(n) without its trailing padding, and the text "null" apart from null', async () => {
+      await testEnv.executeSql(`
+        INSERT INTO all_types VALUES
+          (3, true, 7, 2147483647, 9007199254740991, 0.1, 12345.678, 1.5, 0.25,
+           'AAPL', 'v', 'null', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+           '2026-01-02', '09:30:00.25', '2026-01-01 09:30:00.5', '2026-01-01 09:30:00+02',
+           '{"a": [1, null]}', '"str"'),
+          (4, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+           NULL, NULL, NULL, NULL, NULL, NULL)
+      `);
+
+      const response = await graphql(`
+        {
+          all_types(where: { id: { _in: [3, 4] } }, order_by: [{ id: asc }]) {
+            id
+            bool_val
+            smallint_val
+            int_val
+            bigint_val
+            decimal_val
+            numeric_val
+            real_val
+            double_val
+            char_val
+            varchar_val
+            text_val
+            uuid_val
+            date_val
+            time_val
+            timestamp_val
+            timestamptz_val
+            json_val
+            jsonb_val
+          }
+        }
+      `);
+
+      expect(await response.json()).toEqual({
+        data: {
+          all_types: [
+            {
+              id: 3,
+              bool_val: true,
+              smallint_val: 7,
+              int_val: 2147483647,
+              bigint_val: 9007199254740991,
+              decimal_val: 0.1,
+              numeric_val: 12345.678,
+              real_val: 1.5,
+              double_val: 0.25,
+              // Postgres drops a char(n)'s trailing padding when it writes it
+              // as text
+              char_val: 'AAPL',
+              varchar_val: 'v',
+              text_val: 'null',
+              uuid_val: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+              date_val: '2026-01-02',
+              time_val: '09:30:00.25',
+              timestamp_val: '2026-01-01T09:30:00.5',
+              timestamptz_val: '2026-01-01T07:30:00+00:00',
+              json_val: { a: [1, null] },
+              jsonb_val: 'str',
+            },
+            {
+              id: 4,
+              bool_val: null,
+              smallint_val: null,
+              int_val: null,
+              bigint_val: null,
+              decimal_val: null,
+              numeric_val: null,
+              real_val: null,
+              double_val: null,
+              char_val: null,
+              varchar_val: null,
+              text_val: null,
+              uuid_val: null,
+              date_val: null,
+              time_val: null,
+              timestamp_val: null,
+              timestamptz_val: null,
+              json_val: null,
+              jsonb_val: null,
+            },
+          ],
+        },
+      });
+    });
+
     it('should return the rows in order, up to the limit', async () => {
       await testEnv.executeSql(`
         INSERT INTO users (user_id, name) VALUES
