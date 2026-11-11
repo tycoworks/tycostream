@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repeater } from '@repeaterjs/repeater';
-import { ApiService, GraphQLRowOperation } from './api.service.js';
-import type { GraphQLUpdate } from './api.service.js';
+import { ApiService } from './api.service.js';
+import type { GraphQLUpdate } from './tree.js';
 import { ViewService } from '../view/view.service.js';
 import {
   OrderDirection,
@@ -85,8 +85,10 @@ describe('ApiService', () => {
   });
 
   describe('query', () => {
-    const insert = (row: Row) => ({
+    const insert = (row: Row): RowUpdateEvent => ({
       type: RowUpdateType.Insert,
+      path: [],
+      keys: [row.id],
       fields: ALL_FIELDS,
       row,
     });
@@ -187,14 +189,22 @@ describe('ApiService', () => {
     });
 
     it('should send an insert with the whole row', async () => {
-      viewOf([{ type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW }]);
+      viewOf([
+        {
+          type: RowUpdateType.Insert,
+          path: [],
+          keys: ['1'],
+          fields: ALL_FIELDS,
+          row: ROW,
+        },
+      ]);
 
       const updates = apiService.subscribe(testSourceDefinition);
 
       expect(await take(updates, 1)).toEqual([
         [
           {
-            operation: GraphQLRowOperation.Insert,
+            operation: RowUpdateType.Insert,
             data: ROW,
             fields: ['id', 'name', 'value'],
           },
@@ -206,6 +216,8 @@ describe('ApiService', () => {
       viewOf([
         {
           type: RowUpdateType.Update,
+          path: [],
+          keys: ['1'],
           fields: new Set(['id', 'value']),
           row: ROW,
         },
@@ -216,7 +228,7 @@ describe('ApiService', () => {
       expect(await take(updates, 1)).toEqual([
         [
           {
-            operation: GraphQLRowOperation.Update,
+            operation: RowUpdateType.Update,
             data: { id: '1', value: 7 },
             fields: ['id', 'value'],
           },
@@ -226,7 +238,13 @@ describe('ApiService', () => {
 
     it('should send a delete with the key only', async () => {
       viewOf([
-        { type: RowUpdateType.Delete, fields: new Set(['id']), row: ROW },
+        {
+          type: RowUpdateType.Delete,
+          path: [],
+          keys: ['1'],
+          fields: new Set(['id']),
+          row: ROW,
+        },
       ]);
 
       const updates = apiService.subscribe(testSourceDefinition);
@@ -234,7 +252,7 @@ describe('ApiService', () => {
       expect(await take(updates, 1)).toEqual([
         [
           {
-            operation: GraphQLRowOperation.Delete,
+            operation: RowUpdateType.Delete,
             data: { id: '1' },
             fields: ['id'],
           },
@@ -245,14 +263,30 @@ describe('ApiService', () => {
     it("should send each timestamp's updates together, as one list, in order", async () => {
       viewOf(
         [
-          { type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW },
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: ['1'],
+            fields: ALL_FIELDS,
+            row: ROW,
+          },
+          {
+            type: RowUpdateType.Insert,
+            path: [],
+            keys: ['2'],
             fields: ALL_FIELDS,
             row: { ...ROW, id: '2' },
           },
         ],
-        [{ type: RowUpdateType.Delete, fields: new Set(['id']), row: ROW }],
+        [
+          {
+            type: RowUpdateType.Delete,
+            path: [],
+            keys: ['1'],
+            fields: new Set(['id']),
+            row: ROW,
+          },
+        ],
       );
 
       const updates = apiService.subscribe(testSourceDefinition);
@@ -263,10 +297,10 @@ describe('ApiService', () => {
         ),
       ).toEqual([
         [
-          [GraphQLRowOperation.Insert, '1'],
-          [GraphQLRowOperation.Insert, '2'],
+          [RowUpdateType.Insert, '1'],
+          [RowUpdateType.Insert, '2'],
         ],
-        [[GraphQLRowOperation.Delete, '1']],
+        [[RowUpdateType.Delete, '1']],
       ]);
     });
 
@@ -280,7 +314,13 @@ describe('ApiService', () => {
 
     it('should close the view as soon as the client stops, even while the view is idle', async () => {
       const closed = viewOf([
-        { type: RowUpdateType.Insert, fields: ALL_FIELDS, row: ROW },
+        {
+          type: RowUpdateType.Insert,
+          path: [],
+          keys: ['1'],
+          fields: ALL_FIELDS,
+          row: ROW,
+        },
       ]);
       const updates = apiService.subscribe(testSourceDefinition);
       await take(updates, 1);

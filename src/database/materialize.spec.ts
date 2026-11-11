@@ -1,14 +1,16 @@
 import type pg from 'pg';
 import {
-  KeyViolationError,
   MaterializeAdapter,
   pairChanges,
   ProgressBatcher,
 } from './materialize.js';
 import type { DiffRow } from './materialize.js';
+import { KeyViolationError } from './postgres.js';
 import type { RawRow } from './postgres.js';
-import type { CompiledSelect } from './select.js';
+import { Statement } from './statement.js';
+import type { UnpackedRow } from './statement.js';
 import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
+import type { Selection } from '../common/types.js';
 import type { Row, RowUpdateBatch } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 
@@ -20,11 +22,27 @@ const source = (fields: SourceDefinition['fields']): SourceDefinition => ({
 
 // The columns SUBSCRIBE adds to each row, then the row's own, as tycostream
 // parses them: mz_timestamp is numeric and mz_diff int8, so both are numbers
-const change = (timestamp: number, diff: number, row: Row): RawRow => ({
+// A row's plain values, as the tests write them
+type Values = Record<string, string | number | boolean | null>;
+
+// A selected row as the statement gives it: its source's number, and one
+// JSON object of its columns' values, as the text the database writes for them
+const packed = (row: Values): RawRow => ({
+  __source: 0,
+  __keys: [String(Object.values(row)[0])],
+  __row: Object.fromEntries(
+    Object.entries(row).map(([column, value]) => [
+      column,
+      value === null ? null : String(value),
+    ]),
+  ),
+});
+
+const change = (timestamp: number, diff: number, row: Values): RawRow => ({
   mz_timestamp: timestamp,
   mz_progressed: false,
   mz_diff: diff,
-  ...row,
+  ...packed(row),
 });
 const progress = (timestamp: number): RawRow => ({
   mz_timestamp: timestamp,
@@ -56,43 +74,40 @@ describe('MaterializeAdapter', () => {
   };
 
   const adapter = new MaterializeAdapter();
-  // A live read, as an iterator the tests can step through
+  // A live read of the source's rows the selection selects, as an iterator
+  // the tests can step through
   const readLive = (
     client: pg.ClientBase,
     source: SourceDefinition,
-    select: CompiledSelect,
+    selection: Selection = {},
   ) =>
     adapter
-      .read(client, source, select, StreamMode.Live)
+      .read(client, new Statement(source, selection, StreamMode.Live))
       [Symbol.asyncIterator]();
-  const readAll = (client: pg.ClientBase) =>
-    readLive(client, idAndName, {
-      sql: 'select 1',
-      parameters: [],
-      columns: ['id', 'name'],
-    });
+  const readAll = (client: pg.ClientBase) => readLive(client, idAndName);
 
   describe('read, as a snapshot', () => {
     it('should run the SELECT alone, with no SUBSCRIBE, and yield its rows as inserts', async () => {
       const query = vi.fn(() =>
-        Promise.resolve({ rows: [{ id: 1, name: 'a' }] }),
+        Promise.resolve({ rows: [packed({ id: 1, name: 'a' })] }),
       );
+      const statement = new Statement(idAndName, {}, StreamMode.Snapshot);
       const batches: RowUpdateBatch[] = [];
       for await (const batch of adapter.read(
         { query } as unknown as pg.ClientBase,
-        idAndName,
-        { sql: 'select 1', parameters: [], columns: ['id', 'name'] },
-        StreamMode.Snapshot,
+        statement,
       )) {
         batches.push(batch);
       }
 
-      expect(query.mock.calls).toEqual([['select 1', []]]);
+      expect(query.mock.calls).toEqual([[statement.sql, []]]);
       expect(batches).toEqual([
         {
           events: [
             {
               type: RowUpdateType.Insert,
+              path: [],
+              keys: [1],
               fields: new Set(['id', 'name']),
               row: { id: 1, name: 'a' },
             },
@@ -105,11 +120,12 @@ describe('MaterializeAdapter', () => {
   describe('read, live', () => {
     it('should turn off the idle timeout, then declare a cursor for the query inside a transaction, keeping its parameters', async () => {
       const { client, queries } = fakeClient([[progress(1)]]);
-      const batches = readLive(client, idAndName, {
-        sql: 'select "id" from "test" where "id" = $1',
-        parameters: [7],
-        columns: ['id'],
-      });
+      const statement = new Statement(
+        idAndName,
+        { where: { id: { _eq: 7 } } },
+        StreamMode.Live,
+      );
+      const batches = adapter.read(client, statement)[Symbol.asyncIterator]();
       void batches.next();
       await vi.waitFor(() => expect(queries.length).toBeGreaterThan(3));
 
@@ -118,7 +134,7 @@ describe('MaterializeAdapter', () => {
       ]);
       expect(queries[1]).toEqual(['BEGIN']);
       expect(queries[2]).toEqual([
-        'DECLARE c CURSOR FOR SUBSCRIBE (select "id" from "test" where "id" = $1) WITH (SNAPSHOT, PROGRESS)',
+        `DECLARE c CURSOR FOR SUBSCRIBE (${statement.sql}) WITH (SNAPSHOT, PROGRESS)`,
         [7],
       ]);
       expect(queries[3]).toEqual(['FETCH 1000 c']);
@@ -142,11 +158,15 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [2],
             fields: new Set(['id', 'name']),
             row: { id: 2, name: 'b' },
           },
@@ -157,11 +177,15 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Update,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'c' },
           },
           {
             type: RowUpdateType.Delete,
+            path: [],
+            keys: [2],
             fields: new Set(['id']),
             row: { id: 2, name: 'b' },
           },
@@ -179,17 +203,15 @@ describe('MaterializeAdapter', () => {
         ],
         [change(3, 1, { id: 2, name: 'c' }), progress(4)],
       ]);
-      const batches = readLive(client, idAndName, {
-        sql: 'select "id" from "test"',
-        parameters: [],
-        columns: ['id'],
-      });
+      const batches = readLive(client, idAndName, { columns: [] });
 
       expect((await batches.next()).value).toEqual({
         timestamp: 1n,
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id']),
             row: { id: 1 },
           },
@@ -201,6 +223,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [2],
             fields: new Set(['id']),
             row: { id: 2 },
           },
@@ -225,6 +249,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
@@ -245,16 +271,8 @@ describe('MaterializeAdapter', () => {
         [change(1, 1, { symbol: 'AAPL', price: 1.5 })],
         [progress(2)],
       ]);
-      const firstBatches = readLive(first.client, idAndName, {
-        sql: 'select 1',
-        parameters: [],
-        columns: ['id', 'name'],
-      });
-      const secondBatches = readLive(second.client, prices, {
-        sql: 'select 2',
-        parameters: [],
-        columns: ['symbol', 'price'],
-      });
+      const firstBatches = readLive(first.client, idAndName);
+      const secondBatches = readLive(second.client, prices);
 
       // Interleaved, so a batcher shared between them would mix their rows
       const [firstEvents, secondEvents] = await Promise.all([
@@ -266,6 +284,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
@@ -276,6 +296,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: ['AAPL'],
             fields: new Set(['symbol', 'price']),
             row: { symbol: 'AAPL', price: 1.5 },
           },
@@ -301,6 +323,8 @@ describe('MaterializeAdapter', () => {
         events: [
           {
             type: RowUpdateType.Delete,
+            path: [],
+            keys: [1],
             fields: new Set(['id']),
             row: { id: 1, name: 'a' },
           },
@@ -327,7 +351,7 @@ describe('ProgressBatcher', () => {
   let batcher: ProgressBatcher;
 
   beforeEach(() => {
-    batcher = new ProgressBatcher(['id', 'name']);
+    batcher = new ProgressBatcher();
   });
 
   describe('batching by progress', () => {
@@ -342,8 +366,8 @@ describe('ProgressBatcher', () => {
         {
           timestamp: 1n,
           rows: [
-            { diff: 1, row: { id: 1, name: 'a' } },
-            { diff: 1, row: { id: 2, name: 'b' } },
+            { diff: 1, row: packed({ id: 1, name: 'a' }) },
+            { diff: 1, row: packed({ id: 2, name: 'b' }) },
           ],
         },
       ]);
@@ -364,12 +388,15 @@ describe('ProgressBatcher', () => {
           progress(4),
         ]),
       ).toEqual([
-        { timestamp: 1n, rows: [{ diff: 1, row: { id: 1, name: 'a' } }] },
+        {
+          timestamp: 1n,
+          rows: [{ diff: 1, row: packed({ id: 1, name: 'a' }) }],
+        },
         {
           timestamp: 3n,
           rows: [
-            { diff: -1, row: { id: 1, name: 'a' } },
-            { diff: 1, row: { id: 1, name: 'b' } },
+            { diff: -1, row: packed({ id: 1, name: 'a' }) },
+            { diff: 1, row: packed({ id: 1, name: 'b' }) },
           ],
         },
       ]);
@@ -382,8 +409,8 @@ describe('ProgressBatcher', () => {
         {
           timestamp: 1n,
           rows: [
-            { diff: 1, row: { id: 1, name: 'a' } },
-            { diff: 1, row: { id: 2, name: 'b' } },
+            { diff: 1, row: packed({ id: 1, name: 'a' }) },
+            { diff: 1, row: packed({ id: 2, name: 'b' }) },
           ],
         },
       ]);
@@ -406,14 +433,14 @@ describe('ProgressBatcher', () => {
     });
   });
 
-  it("should keep only the SELECT's columns of each row", () => {
+  it("should keep each row's own columns, without the ones SUBSCRIBE adds", () => {
     batcher.take([change(1, 1, { id: 7, name: 'a', email: 'a@b.c' })]);
     const [
       {
         rows: [{ row }],
       },
     ] = batcher.take([progress(2)]);
-    expect(row).toEqual({ id: 7, name: 'a' });
+    expect(row).toEqual(packed({ id: 7, name: 'a', email: 'a@b.c' }));
   });
 });
 
@@ -426,19 +453,26 @@ describe('pairChanges', () => {
     qty,
     traded_at: at,
   });
-  const add = (r: Row): DiffRow => ({ diff: 1, row: r });
-  const remove = (r: Row): DiffRow => ({
-    diff: -1,
+  // A selected row, unpacked: a trade, by its id
+  const unpacked = (r: Row, path: string[] = []): UnpackedRow => ({
+    path,
+    keys: [r.id],
+    keyField: 'id',
     row: r,
   });
-
-  const pair = (rows: DiffRow[]) => pairChanges(rows, 'id', FIELDS);
+  const add = (r: Row): DiffRow<UnpackedRow> => ({ diff: 1, row: unpacked(r) });
+  const remove = (r: Row): DiffRow<UnpackedRow> => ({
+    diff: -1,
+    row: unpacked(r),
+  });
 
   describe('one row per key', () => {
     it('should make a lone +1 an insert with every field', () => {
-      expect(pair([add(row(1, 'AAPL', 10))])).toEqual([
+      expect(pairChanges([add(row(1, 'AAPL', 10))])).toEqual([
         {
           type: RowUpdateType.Insert,
+          path: [],
+          keys: [1],
           fields: new Set(FIELDS),
           row: row(1, 'AAPL', 10),
         },
@@ -446,9 +480,11 @@ describe('pairChanges', () => {
     });
 
     it('should make a lone -1 a delete of the key', () => {
-      expect(pair([remove(row(1, 'AAPL', 10))])).toEqual([
+      expect(pairChanges([remove(row(1, 'AAPL', 10))])).toEqual([
         {
           type: RowUpdateType.Delete,
+          path: [],
+          keys: [1],
           fields: new Set(['id']),
           row: row(1, 'AAPL', 10),
         },
@@ -459,10 +495,15 @@ describe('pairChanges', () => {
   describe('updates', () => {
     it('should pair a -1 and a +1 into an update of the changed fields', () => {
       expect(
-        pair([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', 15, 'T2'))]),
+        pairChanges([
+          remove(row(1, 'AAPL', 10)),
+          add(row(1, 'AAPL', 15, 'T2')),
+        ]),
       ).toEqual([
         {
           type: RowUpdateType.Update,
+          path: [],
+          keys: [1],
           fields: new Set(['id', 'qty', 'traded_at']),
           row: row(1, 'AAPL', 15, 'T2'),
         },
@@ -471,10 +512,12 @@ describe('pairChanges', () => {
 
     it('should pair them whichever arrives first', () => {
       expect(
-        pair([add(row(1, 'AAPL', 15)), remove(row(1, 'AAPL', 10))]),
+        pairChanges([add(row(1, 'AAPL', 15)), remove(row(1, 'AAPL', 10))]),
       ).toEqual([
         {
           type: RowUpdateType.Update,
+          path: [],
+          keys: [1],
           fields: new Set(['id', 'qty']),
           row: row(1, 'AAPL', 15),
         },
@@ -483,16 +526,19 @@ describe('pairChanges', () => {
 
     it('should count a field changing to or from null as a change', () => {
       expect(
-        pair([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', null))]),
+        pairChanges([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', null))]),
       ).toEqual([
         {
           type: RowUpdateType.Update,
+          path: [],
+          keys: [1],
           fields: new Set(['id', 'qty']),
           row: row(1, 'AAPL', null),
         },
       ]);
       expect(
-        pair([remove(row(1, 'AAPL', null)), add(row(1, 'AAPL', 0))])[0].fields,
+        pairChanges([remove(row(1, 'AAPL', null)), add(row(1, 'AAPL', 0))])[0]
+          .fields,
       ).toEqual(new Set(['id', 'qty']));
     });
 
@@ -504,10 +550,10 @@ describe('pairChanges', () => {
         traded_at: 'T1',
       };
       expect(
-        pair([remove(before), add({ ...before, qty: { lots: [1] } })]),
+        pairChanges([remove(before), add({ ...before, qty: { lots: [1] } })]),
       ).toEqual([]);
       expect(
-        pair([remove(before), add({ ...before, qty: { lots: [2] } })])[0]
+        pairChanges([remove(before), add({ ...before, qty: { lots: [2] } })])[0]
           .fields,
       ).toEqual(new Set(['id', 'qty']));
     });
@@ -516,13 +562,13 @@ describe('pairChanges', () => {
   describe('netting', () => {
     it('should drop identical rows that cancel out', () => {
       expect(
-        pair([add(row(1, 'AAPL', 10)), remove(row(1, 'AAPL', 10))]),
+        pairChanges([add(row(1, 'AAPL', 10)), remove(row(1, 'AAPL', 10))]),
       ).toEqual([]);
     });
 
     it('should net before pairing, so a change that is undone within the timestamp is no change', () => {
       expect(
-        pair([
+        pairChanges([
           remove(row(1, 'AAPL', 10)),
           add(row(1, 'AAPL', 15)),
           remove(row(1, 'AAPL', 15)),
@@ -534,7 +580,7 @@ describe('pairChanges', () => {
     it('should not net rows that differ only by null and the text "null"', () => {
       const nullSymbol = { id: 1, symbol: null, qty: 1, traded_at: 'T1' };
       const textNull = { id: 1, symbol: 'null', qty: 1, traded_at: 'T1' };
-      expect(pair([remove(nullSymbol), add(textNull)])[0].type).toBe(
+      expect(pairChanges([remove(nullSymbol), add(textNull)])[0].type).toBe(
         RowUpdateType.Update,
       );
     });
@@ -542,7 +588,7 @@ describe('pairChanges', () => {
 
   describe('several keys in one timestamp', () => {
     it('should give each key its own event', () => {
-      const events = pair([
+      const events = pairChanges([
         add(row(3, 'MSFT', 5)),
         remove(row(1, 'AAPL', 10)),
         add(row(1, 'AAPL', 15)),
@@ -558,7 +604,7 @@ describe('pairChanges', () => {
 
     it('should make a snapshot, all +1, into inserts', () => {
       const snapshot = [1, 2, 3].map((id) => add(row(id, 'AAPL', id)));
-      expect(pair(snapshot).map((e) => e.type)).toEqual([
+      expect(pairChanges(snapshot).map((e) => e.type)).toEqual([
         RowUpdateType.Insert,
         RowUpdateType.Insert,
         RowUpdateType.Insert,
@@ -569,10 +615,10 @@ describe('pairChanges', () => {
   describe('rows entering and leaving a filter', () => {
     it('should make a row entering the filter an insert, and one leaving it a delete', () => {
       // A filtered SUBSCRIBE sends only the side of a change that matches
-      expect(pair([add(row(1, 'AAPL', 15))])[0].type).toBe(
+      expect(pairChanges([add(row(1, 'AAPL', 15))])[0].type).toBe(
         RowUpdateType.Insert,
       );
-      expect(pair([remove(row(1, 'AAPL', 10))])[0].type).toBe(
+      expect(pairChanges([remove(row(1, 'AAPL', 10))])[0].type).toBe(
         RowUpdateType.Delete,
       );
     });
@@ -581,20 +627,72 @@ describe('pairChanges', () => {
   describe('key violations', () => {
     it('should reject two +1 rows for one key', () => {
       expect(() =>
-        pair([add(row(1, 'AAPL', 10)), add(row(1, 'MSFT', 10))]),
+        pairChanges([add(row(1, 'AAPL', 10)), add(row(1, 'MSFT', 10))]),
       ).toThrow(KeyViolationError);
     });
 
     it('should reject a diff of +2', () => {
-      expect(() => pair([{ diff: 2, row: row(1, 'AAPL', 10) }])).toThrow(
-        "More than one row for id = 1: the key isn't unique",
+      expect(() =>
+        pairChanges([{ diff: 2, row: unpacked(row(1, 'AAPL', 10)) }]),
+      ).toThrow(
+        "More than one row for id with keys [1]: its key, a parent's or a related row's isn't unique",
       );
     });
 
     it('should reject two -1 rows for one key', () => {
       expect(() =>
-        pair([remove(row(1, 'AAPL', 10)), remove(row(1, 'MSFT', 10))]),
+        pairChanges([remove(row(1, 'AAPL', 10)), remove(row(1, 'MSFT', 10))]),
       ).toThrow(KeyViolationError);
+    });
+
+    it("should name a related source's key by its path", () => {
+      const trade = {
+        diff: 1,
+        row: {
+          ...unpacked({ id: 7, quantity: 100 }, ['trades']),
+          keys: [1, 7],
+        },
+      };
+      expect(() => pairChanges([trade, trade])).toThrow(
+        "More than one row for trades.id with keys [1,7]: its key, a parent's or a related row's isn't unique",
+      );
+    });
+  });
+
+  describe('each row by its path and keys', () => {
+    // A position's trade or order, under position 1
+    const listed = (path: string, keys: unknown[], diff: number) => ({
+      diff,
+      row: {
+        path: [path],
+        keys,
+        keyField: 'id',
+        row: { id: keys.at(-1), quantity: 100 },
+      },
+    });
+
+    it("should keep two related sources' rows apart, though their keys match: trade 5's and order 5's", () => {
+      expect(
+        pairChanges([
+          listed('trades', [1, 5], 1),
+          listed('orders', [1, 5], 1),
+        ]).map(({ path, keys, type }) => ({ path, keys, type })),
+      ).toEqual([
+        { path: ['trades'], keys: [1, 5], type: RowUpdateType.Insert },
+        { path: ['orders'], keys: [1, 5], type: RowUpdateType.Insert },
+      ]);
+    });
+
+    it('should make a trade moved to another position a delete under one and an insert under the other', () => {
+      expect(
+        pairChanges([
+          listed('trades', [2, 9], -1),
+          listed('trades', [1, 9], 1),
+        ]).map(({ keys, type }) => [keys, type]),
+      ).toEqual([
+        [[2, 9], RowUpdateType.Delete],
+        [[1, 9], RowUpdateType.Insert],
+      ]);
     });
   });
 });

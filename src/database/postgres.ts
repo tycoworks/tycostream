@@ -1,7 +1,12 @@
 import pg from 'pg';
-import { PostgresType, RowUpdateType } from '../common/types.js';
-import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
-import type { CompiledSelect } from './select.js';
+import {
+  PostgresType,
+  RowUpdateType,
+  pathAndKeysOf,
+  pathName,
+} from '../common/types.js';
+import type { RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
+import type { Statement, UnpackedRow } from './statement.js';
 
 /**
  * What every Postgres-compatible database does the same way: typing each
@@ -65,37 +70,74 @@ export const TYPE_PARSERS = {
 };
 
 /**
- * A row with only the given columns, already parsed; a row can carry other
- * columns too
+ * A value the database wrote as text, as tycostream serves values of its
+ * type: what the type parsers make of it as a column's value
  */
-export function pickRow(columns: string[], raw: RawRow): Row {
-  return Object.fromEntries(
-    columns.map((column) => [column, raw[column] ?? null]),
-  );
+export function parseText(type: PostgresType, text: string | null): unknown {
+  return text === null ? null : TYPE_PARSERS.getTypeParser(type)(text);
+}
+
+/**
+ * Thrown when a read's rows can't be explained by one row per path and keys,
+ * so a declared primary key isn't unique: a query with a row twice, or a
+ * timestamp's changes with one. The key is named by its path, as trades.id.
+ * A parent's or a related row's key can be the one that isn't unique, as two
+ * positions for one instrument make a trade two rows.
+ */
+export class KeyViolationError extends Error {
+  constructor({ path, keys, keyField }: UnpackedRow) {
+    super(
+      `More than one row for ${pathName([...path, keyField])} with keys ${JSON.stringify(keys)}: its key, a parent's or a related row's isn't unique`,
+    );
+    this.name = 'KeyViolationError';
+  }
+}
+
+/**
+ * A change to one row: its type, its path and keys, the fields it sends, and
+ * the row
+ */
+export function changeOf(
+  type: RowUpdateType,
+  { path, keys, row }: UnpackedRow,
+  fields: Iterable<string>,
+): RowUpdateEvent {
+  return { type, path, keys, fields: new Set(fields), row };
 }
 
 /**
  * A row arriving whole: an insert of every column
  */
-export function insertOf(row: Row, fieldNames: string[]): RowUpdateEvent {
-  return { type: RowUpdateType.Insert, fields: new Set(fieldNames), row };
+export function insertOf(unpacked: UnpackedRow): RowUpdateEvent {
+  return changeOf(RowUpdateType.Insert, unpacked, Object.keys(unpacked.row));
 }
 
 /**
- * A snapshot, as every Postgres-compatible database gives one: the SELECT's
- * rows, typed, as one batch of inserts, even when there are none. A plain
- * SELECT doesn't give its timestamp. Any adapter can read snapshots this way.
+ * A snapshot, as every Postgres-compatible database gives one: the
+ * statement's rows, typed, as one batch of inserts, one per row, even when
+ * there are none. A plain SELECT doesn't give its timestamp. Any adapter can
+ * read snapshots this way.
  */
 export async function* readSnapshot(
   client: pg.ClientBase,
-  select: CompiledSelect,
+  statement: Statement,
 ): AsyncGenerator<RowUpdateBatch> {
-  const { rows } = await client.query<RawRow>(select.sql, [
-    ...select.parameters,
+  const { rows } = await client.query<RawRow>(statement.sql, [
+    ...statement.parameters,
   ]);
-  yield {
-    events: rows.map((raw) =>
-      insertOf(pickRow(select.columns, raw), select.columns),
-    ),
-  };
+  yield { events: insertsOf(rows.map((raw) => statement.unpack(raw))) };
+}
+
+// A snapshot's rows as inserts, one per row: a path and keys seen twice
+// means a key isn't unique
+function insertsOf(rows: UnpackedRow[]): RowUpdateEvent[] {
+  const seen = new Set<string>();
+  return rows.map((row) => {
+    const id = pathAndKeysOf(row.path, row.keys);
+    if (seen.has(id)) {
+      throw new KeyViolationError(row);
+    }
+    seen.add(id);
+    return insertOf(row);
+  });
 }

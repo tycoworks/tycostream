@@ -1,27 +1,55 @@
 import type pg from 'pg';
 import {
+  KeyViolationError,
   insertOf,
   isoTimestamp,
-  pickRow,
   readSnapshot,
   TYPE_PARSERS,
 } from './postgres.js';
 import type { RawRow } from './postgres.js';
-import { RowUpdateType, PostgresType } from '../common/types.js';
+import { Statement } from './statement.js';
+import { RowUpdateType, PostgresType, StreamMode } from '../common/types.js';
 import type { RowUpdateBatch } from '../common/types.js';
+import type { SourceDefinition } from '../config/source.types.js';
+import { addForeignKey } from '../config/sources.config.js';
+
+// A row's plain values, as the tests write them
+type Values = Record<string, string | number | boolean | null>;
+
+// A selected row as the statement gives it: its source's number, and one
+// JSON object of its columns' values, as the text the database writes for them
+const packed = (row: Values): RawRow => ({
+  __source: 0,
+  __keys: [String(Object.values(row)[0])],
+  __row: Object.fromEntries(
+    Object.entries(row).map(([column, value]) => [
+      column,
+      value === null ? null : String(value),
+    ]),
+  ),
+});
 
 describe('readSnapshot', () => {
   const clientReturning = (rows: RawRow[]) => {
     const query = vi.fn(() => Promise.resolve({ rows }));
     return { client: { query } as unknown as pg.ClientBase, query };
   };
-  const readAll = async (client: pg.ClientBase) => {
+  // A query of every test row with id 7
+  const statement = new Statement(
+    {
+      name: 'test',
+      primaryKeyField: 'id',
+      fields: [
+        { name: 'id', type: PostgresType.Int4 },
+        { name: 'name', type: PostgresType.Text },
+      ],
+    },
+    { where: { id: { _eq: 7 } } },
+    StreamMode.Snapshot,
+  );
+  const readAll = async (client: pg.ClientBase, read = statement) => {
     const batches: RowUpdateBatch[] = [];
-    for await (const batch of readSnapshot(client, {
-      sql: 'select "id", "name" from "test" where "id" = $1',
-      parameters: [7],
-      columns: ['id', 'name'],
-    })) {
+    for await (const batch of readSnapshot(client, read)) {
       batches.push(batch);
     }
     return batches;
@@ -32,16 +60,13 @@ describe('readSnapshot', () => {
 
     await readAll(client);
 
-    expect(query).toHaveBeenCalledWith(
-      'select "id", "name" from "test" where "id" = $1',
-      [7],
-    );
+    expect(query).toHaveBeenCalledWith(statement.sql, [7]);
   });
 
   it('should yield the rows as one batch of inserts with no timestamp, then end', async () => {
     const { client } = clientReturning([
-      { id: 1, name: 'a', extra: 'dropped' },
-      { id: 2, name: null },
+      packed({ id: 1, name: 'a', extra: 'dropped' }),
+      packed({ id: 2, name: null }),
     ]);
 
     expect(await readAll(client)).toEqual([
@@ -49,11 +74,15 @@ describe('readSnapshot', () => {
         events: [
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [2],
             fields: new Set(['id', 'name']),
             row: { id: 2, name: null },
           },
@@ -66,6 +95,79 @@ describe('readSnapshot', () => {
     const { client } = clientReturning([]);
 
     expect(await readAll(client)).toEqual([{ events: [] }]);
+  });
+
+  it("should fail when two rows have one key, as the source's key isn't unique, as a live stream does", async () => {
+    const { client } = clientReturning([
+      packed({ id: 1, name: 'a' }),
+      packed({ id: 1, name: 'b' }),
+    ]);
+
+    await expect(readAll(client)).rejects.toThrow(KeyViolationError);
+  });
+
+  describe("a related source's rows, by their path and keys", () => {
+    // Positions, each with its trades and its orders
+    const positions: SourceDefinition = {
+      name: 'positions',
+      primaryKeyField: 'id',
+      fields: [{ name: 'id', type: PostgresType.Int4 }],
+      relationships: new Map(),
+    };
+    for (const name of ['trades', 'orders']) {
+      const related: SourceDefinition = {
+        name,
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'position_id', type: PostgresType.Int4 },
+        ],
+        relationships: new Map(),
+      };
+      addForeignKey(related, 'position_id', positions);
+    }
+    const withLists = new Statement(
+      positions,
+      { relationships: { trades: {}, orders: {} } },
+      StreamMode.Snapshot,
+    );
+    // Row 5 of a related source, under a position: a trade's is source 1, an
+    // order's source 2
+    const fifth = (source: number, position = '1'): RawRow => ({
+      __source: source,
+      __keys: [position, '5'],
+      __row: { id: '5', position_id: position },
+    });
+
+    it("should keep two related sources' rows apart, though their keys match: trade 5's and order 5's", async () => {
+      const { client } = clientReturning([fifth(1), fifth(2)]);
+
+      const [{ events }] = await readAll(client, withLists);
+
+      expect(events.map(({ path, keys }) => [path, keys])).toEqual([
+        [['trades'], [1, 5]],
+        [['orders'], [1, 5]],
+      ]);
+    });
+
+    it('should keep one row under two parents apart: trade 5 under positions 1 and 2', async () => {
+      const { client } = clientReturning([fifth(1, '1'), fifth(1, '2')]);
+
+      const [{ events }] = await readAll(client, withLists);
+
+      expect(events.map(({ keys }) => keys)).toEqual([
+        [1, 5],
+        [2, 5],
+      ]);
+    });
+
+    it("should fail when a related source has a row twice for one parent, naming the row's key by its path", async () => {
+      const { client } = clientReturning([fifth(1), fifth(1)]);
+
+      await expect(readAll(client, withLists)).rejects.toThrow(
+        "More than one row for trades.id with keys [1,5]: its key, a parent's or a related row's isn't unique",
+      );
+    });
   });
 });
 
@@ -134,18 +236,19 @@ describe('isoTimestamp', () => {
   });
 });
 
-describe('pickRow', () => {
-  it('should keep only the given columns, as typed, with null for a missing value', () => {
-    expect(
-      pickRow(['id', 'name'], { id: 7, mz_timestamp: '42', email: 'a' }),
-    ).toEqual({ id: 7, name: null });
-  });
-});
-
 describe('insertOf', () => {
   it('should make a row an insert of every column', () => {
-    expect(insertOf({ id: 1, name: 'a' }, ['id', 'name'])).toEqual({
+    expect(
+      insertOf({
+        path: [],
+        keys: [1],
+        keyField: 'id',
+        row: { id: 1, name: 'a' },
+      }),
+    ).toEqual({
       type: RowUpdateType.Insert,
+      path: [],
+      keys: [1],
       fields: new Set(['id', 'name']),
       row: { id: 1, name: 'a' },
     });

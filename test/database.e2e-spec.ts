@@ -163,6 +163,8 @@ describe('DatabaseService on Materialize', () => {
         expect(byId(await nextEvents(batches))).toEqual([
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [1],
             fields: ALL_FIELDS,
             row: {
               id: 1,
@@ -177,6 +179,8 @@ describe('DatabaseService on Materialize', () => {
           },
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [2],
             fields: ALL_FIELDS,
             row: {
               id: 2,
@@ -190,6 +194,8 @@ describe('DatabaseService on Materialize', () => {
           },
           {
             type: RowUpdateType.Insert,
+            path: [],
+            keys: [3],
             fields: ALL_FIELDS,
             row: {
               id: 3,
@@ -227,6 +233,8 @@ describe('DatabaseService on Materialize', () => {
         expect(await nextEvents(batches)).toEqual([
           {
             type: RowUpdateType.Update,
+            path: [],
+            keys: [1],
             fields: new Set(['id', 'qty']),
             row: expect.objectContaining({ id: 1, qty: 15 }),
           },
@@ -236,10 +244,76 @@ describe('DatabaseService on Materialize', () => {
         expect(await nextEvents(batches)).toEqual([
           {
             type: RowUpdateType.Delete,
+            path: [],
+            keys: [2],
             fields: new Set(['id']),
             row: expect.objectContaining({ id: 2 }),
           },
         ]);
+      } finally {
+        await batches.return();
+      }
+    });
+
+    it("should send a list's rows with their path and keys, and a trade moved to another position as a delete under one and an insert under the other", async () => {
+      await sql(
+        `CREATE TABLE trades (id INT, instrument_id INT, quantity INT)`,
+      );
+      await sql(`CREATE TABLE positions (instrument_id INT, symbol TEXT)`);
+      await sql(`INSERT INTO positions VALUES (1, 'AAPL'), (2, 'MSFT')`);
+      await sql(`INSERT INTO trades VALUES (8, 1, 100)`);
+      const trades: SourceDefinition = {
+        name: 'trades',
+        primaryKeyField: 'id',
+        fields: [
+          { name: 'id', type: PostgresType.Int4 },
+          { name: 'instrument_id', type: PostgresType.Int4 },
+          { name: 'quantity', type: PostgresType.Int4 },
+        ],
+      };
+      const positions: SourceDefinition = {
+        name: 'positions',
+        primaryKeyField: 'instrument_id',
+        fields: [
+          { name: 'instrument_id', type: PostgresType.Int4 },
+          { name: 'symbol', type: PostgresType.Text },
+        ],
+        relationships: new Map([
+          [
+            'trades',
+            {
+              source: trades,
+              column: 'instrument_id',
+              relatedColumn: 'instrument_id',
+              many: true,
+            },
+          ],
+        ]),
+      };
+      // Each event's type, path and keys, in whatever order its batch has them
+      const placed = (events: RowUpdateEvent[]) =>
+        new Set(events.map(({ type, path, keys }) => [type, path, keys]));
+      const batches = databaseService.stream(
+        positions,
+        { relationships: { trades: {} } },
+        StreamMode.Live,
+      );
+      try {
+        expect(placed(await nextEvents(batches))).toEqual(
+          new Set([
+            [RowUpdateType.Insert, [], [1]],
+            [RowUpdateType.Insert, [], [2]],
+            [RowUpdateType.Insert, ['trades'], [1, 8]],
+          ]),
+        );
+
+        await sql(`UPDATE trades SET instrument_id = 2 WHERE id = 8`);
+        expect(placed(await nextEvents(batches))).toEqual(
+          new Set([
+            [RowUpdateType.Delete, ['trades'], [1, 8]],
+            [RowUpdateType.Insert, ['trades'], [2, 8]],
+          ]),
+        );
       } finally {
         await batches.return();
       }

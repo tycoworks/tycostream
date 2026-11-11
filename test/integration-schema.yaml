@@ -49,6 +49,42 @@ sources:
       json_val: jsonb
       jsonb_val: jsonb
 
+  # Positions, their trades, each trade's account and its fills, related by
+  # foreign keys
+  positions:
+    primary_key: instrument_id
+    columns:
+      instrument_id: int4
+      symbol: text
+      net_position: int8
+
+  accounts:
+    primary_key: id
+    columns:
+      id: int4
+      name: text
+
+  trades:
+    primary_key: id
+    columns:
+      id: int4
+      instrument_id: int4
+      account_id: int4
+      quantity: int4
+    foreign_keys:
+      instrument_id: positions
+      account_id: accounts
+
+  # Each trade's fills
+  fills:
+    primary_key: id
+    columns:
+      id: int4
+      trade_id: int4
+      quantity: int4
+    foreign_keys:
+      trade_id: trades
+
   # Its one row takes Materialize seconds to work out, so a query of it is
   # still running when its client leaves
   slow_count:

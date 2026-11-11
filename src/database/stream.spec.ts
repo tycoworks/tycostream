@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type pg from 'pg';
+import { Statement } from './statement.js';
 import { DatabaseStream } from './stream.js';
 import type {
   DatabaseConnectionService,
@@ -10,8 +11,6 @@ import { RowUpdateType, StreamMode, PostgresType } from '../common/types.js';
 import type { SourceDefinition } from '../config/source.types.js';
 import type { RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
 
-const SELECT = { sql: 'select 1', parameters: [], columns: ['id'] };
-
 const TRADES: SourceDefinition = {
   name: 'trades',
   primaryKeyField: 'id',
@@ -20,6 +19,8 @@ const TRADES: SourceDefinition = {
 
 const insert = (id: number): RowUpdateEvent => ({
   type: RowUpdateType.Insert,
+  path: [],
+  keys: [id],
   fields: new Set(['id']),
   row: { id },
 });
@@ -83,14 +84,20 @@ const adapterOf = (batches: RowUpdateBatch[], ends = false) => ({
   }),
 });
 
+// A stream of a statement of every trade, in the mode
 const streamOf = (
   connectionService: DatabaseConnectionService,
   adapter: DatabaseAdapter,
   mode = StreamMode.Live,
-) => new DatabaseStream(connectionService, TRADES, mode, adapter, SELECT);
+) =>
+  new DatabaseStream(
+    connectionService,
+    adapter,
+    new Statement(TRADES, {}, mode),
+  );
 
 describe('DatabaseStream', () => {
-  it('should borrow a subscription connection, hand it, the source, the query and the mode to the adapter, and pass on its batches in order', async () => {
+  it('should borrow a subscription connection, hand it and the statement to the adapter, and pass on its batches in order', async () => {
     const { connectionService, acquire, client } = fakeConnectionService();
     const adapter = adapterOf([batchAt(1, insert(1)), batchAt(2, insert(2))]);
     const changes = streamOf(connectionService, adapter).read();
@@ -104,9 +111,7 @@ describe('DatabaseStream', () => {
     );
     expect(adapter.read).toHaveBeenCalledWith(
       client,
-      TRADES,
-      SELECT,
-      StreamMode.Live,
+      expect.objectContaining({ source: TRADES, mode: StreamMode.Live }),
     );
     await changes.return();
   });

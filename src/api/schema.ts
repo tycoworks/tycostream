@@ -9,8 +9,8 @@ import {
   LogicalOperator,
   OrderDirection,
   PostgresType,
+  RowUpdateType,
 } from '../common/types.js';
-import { GraphQLRowOperation } from './api.service.js';
 import {
   GraphQLString,
   GraphQLInt,
@@ -27,9 +27,10 @@ export enum RootType {
 }
 
 /**
- * The arguments every root field takes: a selection of a source's rows
+ * The arguments a selection of a source's rows takes: every root field's,
+ * and every relationship to many rows'
  */
-export enum RootFieldArgument {
+export enum SelectionArgument {
   Where = 'where',
   OrderBy = 'order_by',
   Limit = 'limit',
@@ -51,7 +52,7 @@ const ORDER_DIRECTION_TYPE = 'order_by';
 const orderByTypeName = (sourceName: string) => `${sourceName}_order_by`;
 const boolExpTypeName = (sourceName: string) => `${sourceName}_bool_exp`;
 const comparisonTypeName = (typeName: string) => `${typeName}_comparison_exp`;
-const updateTypeName = (sourceName: string) => `${sourceName}_update`;
+export const updateTypeName = (sourceName: string) => `${sourceName}_update`;
 
 /**
  * The GraphQL scalars tycostream declares, for the Postgres types GraphQL's
@@ -193,9 +194,9 @@ export function generateSchema(config: SourceConfiguration): string {
 
     # Row operation types for subscriptions
     enum ${ROW_OPERATION_TYPE} {
-      ${GraphQLRowOperation.Insert}
-      ${GraphQLRowOperation.Update}
-      ${GraphQLRowOperation.Delete}
+      ${RowUpdateType.Insert}
+      ${RowUpdateType.Update}
+      ${RowUpdateType.Delete}
     }
 
     # The ways a column can sort
@@ -346,18 +347,22 @@ function buildSourceTypes(sources: Map<string, SourceDefinition>): string {
   const types: string[] = [];
 
   for (const [sourceName, sourceDefinition] of sources) {
-    const fields = buildFieldDefinitions(sourceDefinition);
+    const fields = [
+      buildFieldDefinitions(sourceDefinition),
+      ...buildRelationshipFields(sourceDefinition),
+    ].join('\n');
 
     types.push(`    # ${sourceName} type
     type ${sourceName} {
 ${fields}
     }
     
-    # ${sourceName} update event
+    # ${sourceName} update event, its lists' updates beside its data
     type ${updateTypeName(sourceName)} {
       ${UpdateField.Operation}: ${ROW_OPERATION_TYPE}!
       ${UpdateField.Data}: ${sourceName}
       ${UpdateField.Fields}: [${GraphQLString.name}!]!
+${buildListFields(sourceDefinition, updateTypeName).join('\n')}
     }`);
   }
 
@@ -366,8 +371,7 @@ ${fields}
 
 /**
  * Build a root type's fields: one per source, named after it, taking a
- * selection of its rows (where, order_by, limit and offset), and returning
- * the given type
+ * selection of its rows, and returning the given type
  */
 function buildRootFields(
   sources: Map<string, SourceDefinition>,
@@ -376,14 +380,53 @@ function buildRootFields(
   return Array.from(sources.keys())
     .map(
       (sourceName) =>
-        `      ${sourceName}(` +
-        `${RootFieldArgument.Where}: ${boolExpTypeName(sourceName)}, ` +
-        `${RootFieldArgument.OrderBy}: [${orderByTypeName(sourceName)}!], ` +
-        `${RootFieldArgument.Limit}: ${GraphQLInt.name}, ` +
-        `${RootFieldArgument.Offset}: ${GraphQLInt.name}` +
-        `): ${returnType(sourceName)}`,
+        `      ${sourceName}(${selectionArguments(sourceName)}): ${returnType(sourceName)}`,
     )
     .join('\n');
+}
+
+/**
+ * A source type's relationship fields: one to one row is the related
+ * source's type, null when no row matches; then its lists of rows
+ */
+function buildRelationshipFields(source: SourceDefinition): string[] {
+  return [
+    ...[...(source.relationships ?? [])]
+      .filter(([, { many }]) => !many)
+      .map(([field, { source: related }]) => `      ${field}: ${related.name}`),
+    ...buildListFields(source, (sourceName) => sourceName),
+  ];
+}
+
+/**
+ * A type's lists, one per relationship to many rows: each a list of the
+ * given type of the related source, a row or an update, empty when there
+ * are none, taking a selection of the related source's rows, applied per
+ * row
+ */
+function buildListFields(
+  source: SourceDefinition,
+  typeName: (sourceName: string) => string,
+): string[] {
+  return [...(source.relationships ?? [])]
+    .filter(([, { many }]) => many)
+    .map(
+      ([field, { source: related }]) =>
+        `      ${field}(${selectionArguments(related.name)}): [${typeName(related.name)}!]!`,
+    );
+}
+
+/**
+ * The arguments of a selection of a source's rows: where, order_by, limit
+ * and offset
+ */
+function selectionArguments(sourceName: string): string {
+  return [
+    `${SelectionArgument.Where}: ${boolExpTypeName(sourceName)}`,
+    `${SelectionArgument.OrderBy}: [${orderByTypeName(sourceName)}!]`,
+    `${SelectionArgument.Limit}: ${GraphQLInt.name}`,
+    `${SelectionArgument.Offset}: ${GraphQLInt.name}`,
+  ].join(', ');
 }
 
 /**

@@ -21,13 +21,27 @@ export interface SourceField {
 }
 
 /**
+ * A field of a source holding the rows of another source that a foreign key
+ * relates to it: one row, by the source's own foreign key, as a trade's
+ * position, or many, by the other source's, as a position's trades. Both
+ * directions of a foreign key share its join condition.
+ */
+export interface Relationship {
+  source: SourceDefinition; // The related rows' source
+  column: string; // This source's column the join matches
+  relatedColumn: string; // The related source's column it matches
+  many: boolean; // Many related rows, or at most one
+}
+
+/**
  * Complete definition of a data source for streaming
  * Maps to a database view that we subscribe to and expose via GraphQL
  */
 export interface SourceDefinition {
-  name: string; // Source name (e.g., 'trades', 'live_pnl')
+  name: string; // Source name (e.g., 'trades', 'positions')
   primaryKeyField: string; // Which field is the primary key
   fields: SourceField[]; // All fields in this source
+  relationships?: Map<string, Relationship>; // By field name
 }
 
 /**
@@ -41,11 +55,13 @@ export interface SourceConfiguration {
 
 /**
  * Structure of a single source in the YAML file
- * Contains primary_key and columns mapping
+ * Contains primary_key and columns mapping, and its foreign keys: each
+ * column that references another source, by that source's name
  */
 export interface YamlSourceConfig {
   primary_key: string;
   columns: Record<string, string>;
+  foreign_keys?: Record<string, string>;
 }
 
 /**

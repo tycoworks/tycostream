@@ -5,6 +5,7 @@ import { OrderDirection, PostgresType } from '../common/types.js';
 import type { ApiService } from './api.service.js';
 import { RootType, generateSchema } from './schema.js';
 import type { SourceDefinition } from '../config/source.types.js';
+import { addForeignKey } from '../config/sources.config.js';
 
 const source = (name: string): SourceDefinition => ({
   name,
@@ -13,7 +14,9 @@ const source = (name: string): SourceDefinition => ({
     { name: 'id', type: PostgresType.Int4 },
     { name: 'symbol', type: PostgresType.Text },
     { name: 'price', type: PostgresType.Numeric },
+    { name: 'position_id', type: PostgresType.Int4 },
   ],
+  relationships: new Map(),
 });
 
 describe('buildResolvers', () => {
@@ -30,10 +33,17 @@ describe('buildResolvers', () => {
     query: vi.fn(() => Promise.resolve(rows)),
     subscribe: vi.fn(() => updates),
   } as unknown as ApiService;
+  // Trades, each of one position
   const sources = new Map([
     ['trades', source('trades')],
     ['prices', source('prices')],
+    ['positions', source('positions')],
   ]);
+  addForeignKey(
+    sources.get('trades')!,
+    'position_id',
+    sources.get('positions')!,
+  );
   const resolvers = buildResolvers(sources, apiService);
   // The schema the server runs: the generated SDL with these resolvers
   const schema = createSchema({
@@ -67,16 +77,25 @@ describe('buildResolvers', () => {
     };
   };
 
-  it('should give every source a query and a subscription, under query_root and subscription_root', () => {
-    expect(Object.keys(resolvers)).toEqual(['query_root', 'subscription_root']);
+  it('should give every source a query and a subscription, under query_root and subscription_root, and each source with lists their resolvers, under its type and its update type', () => {
+    expect(Object.keys(resolvers)).toEqual([
+      'query_root',
+      'subscription_root',
+      'positions',
+      'positions_update',
+    ]);
     expect(Object.keys(resolvers[RootType.Query])).toEqual([
       'trades',
       'prices',
+      'positions',
     ]);
     expect(Object.keys(resolvers[RootType.Subscription])).toEqual([
       'trades',
       'prices',
+      'positions',
     ]);
+    expect(Object.keys(resolvers.positions)).toEqual(['trades']);
+    expect(Object.keys(resolvers.positions_update)).toEqual(['trades']);
   });
 
   describe('queries', () => {
@@ -102,6 +121,7 @@ describe('buildResolvers', () => {
           orderBy: [{ id: OrderDirection.Desc }],
           limit: 10,
           offset: 20,
+          relationships: {},
         },
         cancel.signal,
       );
@@ -146,6 +166,91 @@ describe('buildResolvers', () => {
         await queried(operation, { withPrice: true, skipNamed: false }),
       ).toMatchObject({ columns: ['id', 'price', 'symbol'] });
     });
+
+    describe('relationships', () => {
+      it("should read each relationship as a selection of its own, with its arguments: a position's trades, and each trade's position", async () => {
+        expect(
+          await queried(`{
+            positions {
+              symbol
+              trades(where: { price: { _gt: 100 } }, order_by: [{ id: desc }], limit: 2, offset: 1) {
+                id
+                positions { symbol }
+              }
+            }
+          }`),
+        ).toEqual({
+          columns: ['symbol'],
+          relationships: {
+            trades: {
+              columns: ['id'],
+              where: { price: { _gt: 100 } },
+              orderBy: [{ id: OrderDirection.Desc }],
+              limit: 2,
+              offset: 1,
+              relationships: {
+                positions: { columns: ['symbol'], relationships: {} },
+              },
+            },
+          },
+        });
+      });
+
+      it("should merge a relationship's aliases and fragments into one selection, its arguments read from variables", async () => {
+        expect(
+          await queried(
+            `query ($latest: Int!) {
+              positions {
+                latest: trades(limit: $latest) { id }
+                ...withPrices
+              }
+            }
+            fragment withPrices on positions {
+              trades(limit: $latest) { price __typename }
+            }`,
+            { latest: 2 },
+          ),
+        ).toEqual({
+          columns: [],
+          relationships: {
+            trades: {
+              columns: ['id', 'price'],
+              limit: 2,
+              relationships: {},
+            },
+          },
+        });
+      });
+
+      it('should refuse a relationship selected twice with different arguments', async () => {
+        const result = await graphql({
+          schema,
+          source:
+            '{ positions { a: trades(limit: 1) { id } b: trades(limit: 2) { id } } }',
+          contextValue: {},
+        });
+
+        expect(result.errors?.map((error) => error.message)).toEqual([
+          "'trades' is selected twice with different arguments; select it once",
+        ]);
+      });
+
+      it('should give a list with no rows as []', async () => {
+        vi.mocked(apiService.query).mockResolvedValueOnce([
+          { id: 1, symbol: 'AAPL' },
+        ]);
+
+        const result = await graphql({
+          schema,
+          source: '{ positions { symbol trades { id } } }',
+          contextValue: {},
+        });
+
+        expect(result).toEqual({
+          data: { positions: [{ symbol: 'AAPL', trades: [] }] },
+        });
+      });
+    });
   });
 
   describe('subscriptions', () => {
@@ -165,6 +270,7 @@ describe('buildResolvers', () => {
         orderBy: undefined,
         limit: 10,
         offset: undefined,
+        relationships: {},
       });
       await subscription.return(undefined);
     });
@@ -178,6 +284,77 @@ describe('buildResolvers', () => {
         expect(selection).toMatchObject({ columns: [] });
         await subscription.return(undefined);
       }
+    });
+
+    it('should read each list beside data as a selection of its own, with its arguments, its updates selecting in turn', async () => {
+      const { selection, subscription } = await subscribed(`subscription {
+        positions(limit: 10) {
+          operation
+          data { symbol }
+          trades(order_by: [{ id: desc }], limit: 2) {
+            operation
+            fields
+            data { id }
+          }
+        }
+      }`);
+
+      expect(selection).toEqual({
+        columns: ['symbol'],
+        limit: 10,
+        relationships: {
+          trades: {
+            columns: ['id'],
+            orderBy: [{ id: OrderDirection.Desc }],
+            limit: 2,
+            relationships: {},
+          },
+        },
+      });
+      await subscription.return(undefined);
+    });
+
+    it("should give an update's list as its updates, or [] when it has none", () => {
+      const trades = resolvers.positions_update.trades as (
+        update: unknown,
+      ) => unknown[];
+      const update = { operation: 'UPDATE', data: { id: 1 }, fields: ['id'] };
+      const inserted = { operation: 'INSERT', data: { id: 8 }, fields: ['id'] };
+
+      expect(trades(update)).toEqual([]);
+      expect(trades({ ...update, lists: { trades: [inserted] } })).toEqual([
+        inserted,
+      ]);
+    });
+
+    it("should read a related row inside data as a relationship: a trade's position", async () => {
+      const { selection, subscription } = await subscribed(
+        'subscription { trades { data { id positions { symbol } } } }',
+      );
+
+      expect(selection).toMatchObject({
+        columns: ['id'],
+        relationships: {
+          positions: { columns: ['symbol'], relationships: {} },
+        },
+      });
+      await subscription.return(undefined);
+    });
+
+    it('should refuse a list inside data, or inside a related row in it, as lists go beside data', async () => {
+      const refusal = async (operation: string) => {
+        const result = await subscribe({ schema, document: parse(operation) });
+        return 'errors' in result && result.errors?.map((e) => e.message);
+      };
+
+      expect(
+        await refusal('subscription { positions { data { trades { id } } } }'),
+      ).toEqual(["Subscriptions select 'trades' beside 'data', not inside it"]);
+      expect(
+        await refusal(
+          'subscription { trades { data { positions { trades { id } } } } }',
+        ),
+      ).toEqual(["Subscriptions can't select 'trades' inside 'positions'"]);
     });
 
     it("should close the source's subscription at once when the client leaves, so it's handed to GraphQL itself", async () => {

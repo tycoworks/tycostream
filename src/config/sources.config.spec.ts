@@ -70,6 +70,108 @@ sources:
     expect(config.enums.size).toBe(0); // No enums in this test
   });
 
+  describe('foreign keys', () => {
+    const positions = {
+      primary_key: 'instrument_id',
+      columns: { instrument_id: 'int4', symbol: 'text', net_position: 'int8' },
+    };
+    const load = (trades: object) => {
+      (fs.readFileSync as Mock).mockReturnValue('');
+      (yaml.load as Mock).mockReturnValue({ sources: { trades, positions } });
+      return sourcesConfig();
+    };
+
+    it('should give both sources a relationship from each foreign key, sharing its join: the source one row of the source it references, and that source many of its rows', () => {
+      const config = load({
+        primary_key: 'id',
+        columns: { id: 'int4', instrument_id: 'int4', quantity: 'int4' },
+        foreign_keys: { instrument_id: 'positions' },
+      });
+      const trades = config.sources.get('trades');
+      const positions = config.sources.get('positions');
+
+      expect(trades?.relationships).toEqual(
+        new Map([
+          [
+            'positions',
+            {
+              source: positions,
+              column: 'instrument_id',
+              relatedColumn: 'instrument_id',
+              many: false,
+            },
+          ],
+        ]),
+      );
+      expect(positions?.relationships).toEqual(
+        new Map([
+          [
+            'trades',
+            {
+              source: trades,
+              column: 'instrument_id',
+              relatedColumn: 'instrument_id',
+              many: true,
+            },
+          ],
+        ]),
+      );
+    });
+
+    it('should throw when two foreign keys would give relationships of one name, as two between the same sources do', () => {
+      expect(() =>
+        load({
+          primary_key: 'id',
+          columns: { id: 'int4', instrument_id: 'int4', hedge_id: 'int4' },
+          foreign_keys: { instrument_id: 'positions', hedge_id: 'positions' },
+        }),
+      ).toThrow(
+        "Source 'trades' would have two relationships named 'positions'",
+      );
+    });
+
+    it('should throw on a foreign key from a source to itself, whose two relationships would share its name', () => {
+      (fs.readFileSync as Mock).mockReturnValue('');
+      (yaml.load as Mock).mockReturnValue({
+        sources: {
+          orders: {
+            primary_key: 'id',
+            columns: { id: 'int4', parent_id: 'int4' },
+            foreign_keys: { parent_id: 'orders' },
+          },
+        },
+      });
+
+      expect(() => sourcesConfig()).toThrow(
+        "Source 'orders' would have two relationships named 'orders'",
+      );
+    });
+
+    it("should throw on a foreign key column the source doesn't have", () => {
+      expect(() =>
+        load({
+          primary_key: 'id',
+          columns: { id: 'int4', quantity: 'int4' },
+          foreign_keys: { instrument_id: 'positions' },
+        }),
+      ).toThrow(
+        "Foreign key 'instrument_id' not found in columns for source 'trades'",
+      );
+    });
+
+    it('should throw on a foreign key that references an unknown source', () => {
+      expect(() =>
+        load({
+          primary_key: 'id',
+          columns: { id: 'int4', instrument_id: 'int4' },
+          foreign_keys: { instrument_id: 'position' },
+        }),
+      ).toThrow(
+        "Foreign key 'instrument_id' of source 'trades' references unknown source 'position'",
+      );
+    });
+  });
+
   it('should throw error when schema file is missing', () => {
     const error = new Error('ENOENT') as NodeJS.ErrnoException;
     error.code = 'ENOENT';

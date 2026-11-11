@@ -1,20 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import type pg from 'pg';
-import type { SourceDefinition } from '../config/source.types.js';
-import { RowUpdateType, StreamMode } from '../common/types.js';
-import type { Row, RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
-import { insertOf, pickRow, readSnapshot } from './postgres.js';
+import { RowUpdateType, StreamMode, pathAndKeysOf } from '../common/types.js';
+import type { RowUpdateBatch, RowUpdateEvent } from '../common/types.js';
+import {
+  KeyViolationError,
+  changeOf,
+  insertOf,
+  readSnapshot,
+} from './postgres.js';
 import type { RawRow } from './postgres.js';
-import type { CompiledSelect } from './select.js';
+import type { Statement, UnpackedRow } from './statement.js';
 import { DatabaseAdapter } from './types.js';
 
 /**
  * One row of a live stream's changes: +1 when it was added, -1 when it was
- * removed, and the row's values
+ * removed, and the row, as the statement gives it or unpacked
  */
-export interface DiffRow {
+export interface DiffRow<R = RawRow> {
   diff: number;
-  row: Row;
+  row: R;
 }
 
 /**
@@ -34,6 +38,17 @@ enum SubscribeColumn {
   Diff = 'mz_diff',
 }
 
+const SUBSCRIBE_COLUMNS: ReadonlySet<string> = new Set(
+  Object.values(SubscribeColumn),
+);
+
+// A SUBSCRIBE row's own columns: the statement's
+function withoutSubscribeColumns(raw: RawRow): RawRow {
+  return Object.fromEntries(
+    Object.entries(raw).filter(([name]) => !SUBSCRIBE_COLUMNS.has(name)),
+  );
+}
+
 // FETCH waits until rows exist, so a bigger batch only helps a busy view
 const FETCH_SIZE = 1000;
 
@@ -45,23 +60,20 @@ const FETCH_SIZE = 1000;
 export class MaterializeAdapter extends DatabaseAdapter {
   read(
     client: pg.ClientBase,
-    source: SourceDefinition,
-    select: CompiledSelect,
-    mode: StreamMode,
+    statement: Statement,
   ): AsyncIterable<RowUpdateBatch> {
-    return mode === StreamMode.Snapshot
-      ? readSnapshot(client, select)
-      : this.readLive(client, source, select);
+    return statement.mode === StreamMode.Snapshot
+      ? readSnapshot(client, statement)
+      : this.readLive(client, statement);
   }
 
   /**
-   * Reads SUBSCRIBE (<select>) WITH (SNAPSHOT, PROGRESS) through a cursor.
+   * Reads SUBSCRIBE (<statement>) WITH (SNAPSHOT, PROGRESS) through a cursor.
    * Never ends by itself; it stops when the connection closes.
    */
   private async *readLive(
     client: pg.ClientBase,
-    source: SourceDefinition,
-    select: CompiledSelect,
+    statement: Statement,
   ): AsyncGenerator<RowUpdateBatch> {
     // The transaction sits idle while the consumer works through a batch.
     // Materialize's cap on a subscription's backlog limits a slow consumer,
@@ -70,12 +82,12 @@ export class MaterializeAdapter extends DatabaseAdapter {
     // A cursor only lives inside a transaction
     await client.query('BEGIN');
     await client.query(
-      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${select.sql}) WITH (SNAPSHOT, PROGRESS)`,
-      [...select.parameters],
+      `DECLARE ${CURSOR} CURSOR FOR SUBSCRIBE (${statement.sql}) WITH (SNAPSHOT, PROGRESS)`,
+      [...statement.parameters],
     );
 
     // FETCH without a timeout returns as soon as rows exist
-    const batcher = new ProgressBatcher(select.columns);
+    const batcher = new ProgressBatcher();
     let snapshot = true;
     while (true) {
       const { rows } = await client.query<RawRow>(
@@ -83,9 +95,10 @@ export class MaterializeAdapter extends DatabaseAdapter {
       );
       for (const { timestamp, rows: changes } of batcher.take(rows)) {
         const events = pairChanges(
-          changes,
-          source.primaryKeyField,
-          select.columns,
+          changes.map(({ diff, row }) => ({
+            diff,
+            row: statement.unpack(row),
+          })),
         );
         // The snapshot is sent even when empty; after it, a timestamp whose
         // changes cancel out has nothing to send
@@ -100,13 +113,11 @@ export class MaterializeAdapter extends DatabaseAdapter {
 
 /**
  * Holds a live stream's rows until a progress row says their timestamp is
- * complete, keeping only the SELECT's columns
+ * complete, each as the statement gives it, without SUBSCRIBE's own columns
  */
 export class ProgressBatcher {
   private readonly pending = new Map<bigint, DiffRow[]>();
   private started = false;
-
-  constructor(private readonly columns: string[]) {}
 
   /**
    * Takes fetched rows and returns each timestamp they complete, oldest
@@ -136,7 +147,7 @@ export class ProgressBatcher {
         const batch = this.pending.get(timestamp) ?? [];
         batch.push({
           diff: Number(raw[SubscribeColumn.Diff]),
-          row: pickRow(this.columns, raw),
+          row: withoutSubscribeColumns(raw),
         });
         this.pending.set(timestamp, batch);
       }
@@ -146,86 +157,57 @@ export class ProgressBatcher {
 }
 
 /**
- * Thrown when a timestamp's rows can't be explained by one row per key,
- * so the declared primary key isn't unique
- */
-export class KeyViolationError extends Error {
-  constructor(primaryKeyField: string, key: unknown) {
-    super(
-      `More than one row for ${primaryKeyField} = ${String(key)}: the key isn't unique`,
-    );
-    this.name = 'KeyViolationError';
-  }
-}
-
-/**
  * Turns the rows of one complete timestamp into insert, update and delete
- * events. Rows can arrive in any order.
+ * events, one per row, by its path and keys. Rows can arrive in any order.
+ * This is how Materialize's bare diffs become changes.
  *
  * - Identical rows are netted first: their diffs are summed, and rows that
  *   come to zero are dropped.
- * - Then, per key: a -1 alone is a delete, a +1 alone is an insert, and a -1
- *   with a +1 is an update of the columns that differ. Anything else means
- *   the key isn't unique.
+ * - Then, per path and keys: a -1 alone is a delete, a +1 alone is an insert, and a
+ *   -1 with a +1 is an update of the columns that differ. Anything else
+ *   means a key isn't unique.
  *
  * An update's and a delete's `fields` follow RowUpdateEvent: the key plus the
  * changed columns, and the key alone.
  */
-export function pairChanges(
-  rows: DiffRow[],
-  primaryKeyField: string,
-  fieldNames: string[],
-): RowUpdateEvent[] {
-  const byKey = new Map<string, DiffRow[]>();
-  for (const netted of netIdenticalRows(rows, fieldNames)) {
-    const key = valueKey(netted.row[primaryKeyField]);
-    const forKey = byKey.get(key) ?? [];
-    forKey.push(netted);
-    byKey.set(key, forKey);
+export function pairChanges(rows: DiffRow<UnpackedRow>[]): RowUpdateEvent[] {
+  const byRow = new Map<string, DiffRow<UnpackedRow>[]>();
+  for (const netted of netIdenticalRows(rows)) {
+    const { path, keys } = netted.row;
+    const id = pathAndKeysOf(path, keys);
+    const forRow = byRow.get(id) ?? [];
+    forRow.push(netted);
+    byRow.set(id, forRow);
   }
-
-  return Array.from(byKey.values()).map((forKey) =>
-    toEvent(forKey, primaryKeyField, fieldNames),
-  );
+  return Array.from(byRow.values()).map(toEvent);
 }
 
-function toEvent(
-  forKey: DiffRow[],
-  primaryKeyField: string,
-  fieldNames: string[],
-): RowUpdateEvent {
-  const removed = forKey.find((r) => r.diff === -1);
-  const added = forKey.find((r) => r.diff === 1);
-  const key = forKey[0].row[primaryKeyField];
+function toEvent(forRow: DiffRow<UnpackedRow>[]): RowUpdateEvent {
+  const removed = forRow.find((r) => r.diff === -1)?.row;
+  const added = forRow.find((r) => r.diff === 1)?.row;
 
-  if (forKey.length === 1 && added) {
-    return insertOf(added.row, fieldNames);
+  if (forRow.length === 1 && added) {
+    return insertOf(added);
   }
-  if (forKey.length === 1 && removed) {
-    return {
-      type: RowUpdateType.Delete,
-      fields: new Set([primaryKeyField]),
-      row: removed.row,
-    };
+  if (forRow.length === 1 && removed) {
+    return changeOf(RowUpdateType.Delete, removed, [removed.keyField]);
   }
-  if (forKey.length === 2 && removed && added) {
-    const changed = fieldNames.filter(
-      (field) => valueKey(removed.row[field]) !== valueKey(added.row[field]),
+  if (forRow.length === 2 && removed && added) {
+    const changed = Object.keys(added.row).filter(
+      (column) => valueKey(removed.row[column]) !== valueKey(added.row[column]),
     );
-    return {
-      type: RowUpdateType.Update,
-      fields: new Set([primaryKeyField, ...changed]),
-      row: added.row,
-    };
+    return changeOf(RowUpdateType.Update, added, [added.keyField, ...changed]);
   }
-  throw new KeyViolationError(primaryKeyField, key);
+  throw new KeyViolationError(forRow[0].row);
 }
 
 // Sums the diffs of identical rows, keeping each row's first appearance
-function netIdenticalRows(rows: DiffRow[], fieldNames: string[]): DiffRow[] {
-  const netted = new Map<string, DiffRow>();
+function netIdenticalRows(
+  rows: DiffRow<UnpackedRow>[],
+): DiffRow<UnpackedRow>[] {
+  const netted = new Map<string, DiffRow<UnpackedRow>>();
   for (const { diff, row } of rows) {
-    const id = valueKey(fieldNames.map((field) => row[field]));
+    const id = valueKey([row.path, row.keys, row.row]);
     const existing = netted.get(id);
     netted.set(id, { diff: (existing?.diff ?? 0) + diff, row });
   }

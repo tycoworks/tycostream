@@ -263,6 +263,15 @@ describe('Integration Test', () => {
 
   // A subscription over SSE, as a browser opens one, and its messages one at
   // a time: each `next` message's updates of the source, skipping keep-alives
+  // A query over HTTP
+  const graphql = (query: string, signal?: AbortSignal) =>
+    fetch(`http://localhost:${testEnv.port}/graphql`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query }),
+      signal,
+    });
+
   const subscribeOverSse = async <Update>(query: string, source: string) => {
     const controller = new AbortController();
     const response = await fetch(`http://localhost:${testEnv.port}/graphql`, {
@@ -389,14 +398,6 @@ describe('Integration Test', () => {
   }, 30000);
 
   describe('queries', () => {
-    const graphql = (query: string, signal?: AbortSignal) =>
-      fetch(`http://localhost:${testEnv.port}/graphql`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ query }),
-        signal,
-      });
-
     it('should filter and return custom scalars, such as bigint, numeric, uuid, timestamps and jsonb, in their JSON forms', async () => {
       await testEnv.executeSql(`
         INSERT INTO all_types (id, smallint_val, bigint_val, numeric_val, double_val, uuid_val, timestamptz_val, timestamp_val, date_val, jsonb_val) VALUES
@@ -443,6 +444,95 @@ describe('Integration Test', () => {
               date_val: '2026-01-02',
               // JSON, not its text
               jsonb_val: { side: 'buy', lots: [1, 2] },
+            },
+          ],
+        },
+      });
+    });
+
+    it('should return every served type as the database stores it, a char(n) without its trailing padding, and the text "null" apart from null', async () => {
+      await testEnv.executeSql(`
+        INSERT INTO all_types VALUES
+          (3, true, 7, 2147483647, 9007199254740991, 0.1, 12345.678, 1.5, 0.25,
+           'AAPL', 'v', 'null', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+           '2026-01-02', '09:30:00.25', '2026-01-01 09:30:00.5', '2026-01-01 09:30:00+02',
+           '{"a": [1, null]}', '"str"'),
+          (4, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+           NULL, NULL, NULL, NULL, NULL, NULL)
+      `);
+
+      const response = await graphql(`
+        {
+          all_types(where: { id: { _in: [3, 4] } }, order_by: [{ id: asc }]) {
+            id
+            bool_val
+            smallint_val
+            int_val
+            bigint_val
+            decimal_val
+            numeric_val
+            real_val
+            double_val
+            char_val
+            varchar_val
+            text_val
+            uuid_val
+            date_val
+            time_val
+            timestamp_val
+            timestamptz_val
+            json_val
+            jsonb_val
+          }
+        }
+      `);
+
+      expect(await response.json()).toEqual({
+        data: {
+          all_types: [
+            {
+              id: 3,
+              bool_val: true,
+              smallint_val: 7,
+              int_val: 2147483647,
+              bigint_val: 9007199254740991,
+              decimal_val: 0.1,
+              numeric_val: 12345.678,
+              real_val: 1.5,
+              double_val: 0.25,
+              // Postgres drops a char(n)'s trailing padding when it writes it
+              // as text
+              char_val: 'AAPL',
+              varchar_val: 'v',
+              text_val: 'null',
+              uuid_val: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+              date_val: '2026-01-02',
+              time_val: '09:30:00.25',
+              timestamp_val: '2026-01-01T09:30:00.5',
+              timestamptz_val: '2026-01-01T07:30:00+00:00',
+              json_val: { a: [1, null] },
+              jsonb_val: 'str',
+            },
+            {
+              id: 4,
+              bool_val: null,
+              smallint_val: null,
+              int_val: null,
+              bigint_val: null,
+              decimal_val: null,
+              numeric_val: null,
+              real_val: null,
+              double_val: null,
+              char_val: null,
+              varchar_val: null,
+              text_val: null,
+              uuid_val: null,
+              date_val: null,
+              time_val: null,
+              timestamp_val: null,
+              timestamptz_val: null,
+              json_val: null,
+              jsonb_val: null,
             },
           ],
         },
@@ -526,5 +616,577 @@ describe('Integration Test', () => {
       // Well within the 30 s time limit that would otherwise end it
       await testEnv.waitUntil(async () => (await queriesRunning()) === 0);
     }, 30000);
+  });
+
+  describe('relationships', () => {
+    beforeAll(async () => {
+      await testEnv.executeSql(
+        'CREATE TABLE positions (instrument_id INT, symbol TEXT, net_position BIGINT)',
+      );
+      await testEnv.executeSql('CREATE TABLE accounts (id INT, name TEXT)');
+      await testEnv.executeSql(
+        'CREATE TABLE trades (id INT, instrument_id INT, account_id INT, quantity INT)',
+      );
+      await testEnv.executeSql(
+        'CREATE TABLE fills (id INT, trade_id INT, quantity INT)',
+      );
+      await testEnv.executeSql(`
+        INSERT INTO positions VALUES (1, 'AAPL', 600), (2, 'MSFT', 0), (3, 'GOOG', 100)
+      `);
+      await testEnv.executeSql(`
+        INSERT INTO accounts VALUES (1, 'Growth Fund'), (2, 'Income Fund')
+      `);
+      // Trade 9 has no account, and trade 10 no position
+      await testEnv.executeSql(`
+        INSERT INTO trades VALUES
+          (5, 1, 1, 100), (7, 1, 2, 400), (8, 1, 1, 100),
+          (9, 3, NULL, 100), (10, 4, 2, 50)
+      `);
+    });
+
+    // A subscription's update, and any of its lists' updates beside its data
+    type Update = {
+      operation?: string;
+      fields?: string[];
+      data: Record<string, unknown>;
+      [list: string]: unknown;
+    };
+    // Updates, and their lists' updates, in one order, by their data, as
+    // updates are unordered
+    const inOrder = (updates: Update[]): Update[] =>
+      updates
+        .map(
+          (update) =>
+            Object.fromEntries(
+              Object.entries(update).map(([field, value]) => [
+                field,
+                Array.isArray(value) && typeof value[0] === 'object'
+                  ? inOrder(value as Update[])
+                  : value,
+              ]),
+            ) as Update,
+        )
+        .sort((a, b) =>
+          JSON.stringify(a.data).localeCompare(JSON.stringify(b.data)),
+        );
+
+    it("should nest each position's latest trades under it, each with its account, and give a position with none []", async () => {
+      const response = await graphql(`
+        {
+          positions(
+            where: { instrument_id: { _in: [1, 2, 3] } }
+            order_by: [{ symbol: asc }]
+          ) {
+            symbol
+            net_position
+            trades(order_by: [{ id: desc }], limit: 2) {
+              id
+              quantity
+              accounts {
+                name
+              }
+            }
+          }
+        }
+      `);
+
+      expect(await response.json()).toEqual({
+        data: {
+          positions: [
+            {
+              symbol: 'AAPL',
+              net_position: 600,
+              trades: [
+                { id: 8, quantity: 100, accounts: { name: 'Growth Fund' } },
+                { id: 7, quantity: 400, accounts: { name: 'Income Fund' } },
+              ],
+            },
+            {
+              symbol: 'GOOG',
+              net_position: 100,
+              trades: [{ id: 9, quantity: 100, accounts: null }],
+            },
+            { symbol: 'MSFT', net_position: 0, trades: [] },
+          ],
+        },
+      });
+    });
+
+    it("should give each trade its position, null when it has none, and that position's trades", async () => {
+      const response = await graphql(`
+        {
+          trades(where: { id: { _in: [8, 9, 10] } }, order_by: [{ id: asc }]) {
+            id
+            positions {
+              symbol
+              trades(order_by: [{ id: asc }]) {
+                id
+              }
+            }
+          }
+        }
+      `);
+
+      expect(await response.json()).toEqual({
+        data: {
+          trades: [
+            {
+              id: 8,
+              positions: {
+                symbol: 'AAPL',
+                trades: [{ id: 5 }, { id: 7 }, { id: 8 }],
+              },
+            },
+            { id: 9, positions: { symbol: 'GOOG', trades: [{ id: 9 }] } },
+            { id: 10, positions: null },
+          ],
+        },
+      });
+    });
+
+    it("should send each position's latest trades beside its data: the snapshot as a tree, then a new trade and the one it pushes out under an update of the position's key", async () => {
+      // Rows the other tests don't read
+      await testEnv.executeSql(`INSERT INTO positions VALUES (7, 'TSLA', 30)`);
+      await testEnv.executeSql(
+        `INSERT INTO trades VALUES (30, 7, 1, 10), (31, 7, 1, 20)`,
+      );
+      const subscription = await subscribeOverSse<Update>(
+        `subscription {
+          positions(where: { instrument_id: { _eq: 7 } }) {
+            operation
+            fields
+            data { instrument_id symbol }
+            trades(order_by: [{ id: desc }], limit: 2) {
+              operation
+              fields
+              data { id quantity }
+            }
+          }
+        }`,
+        'positions',
+      );
+
+      try {
+        expect(inOrder(await subscription.next())).toEqual([
+          {
+            operation: 'INSERT',
+            fields: ['instrument_id', 'symbol'],
+            data: { instrument_id: 7, symbol: 'TSLA' },
+            trades: [
+              {
+                operation: 'INSERT',
+                fields: ['id', 'quantity'],
+                data: { id: 30, quantity: 10 },
+              },
+              {
+                operation: 'INSERT',
+                fields: ['id', 'quantity'],
+                data: { id: 31, quantity: 20 },
+              },
+            ],
+          },
+        ]);
+
+        // The position's row doesn't change, so it comes as its key alone
+        await testEnv.executeSql(`INSERT INTO trades VALUES (32, 7, 2, 30)`);
+        expect(inOrder(await subscription.next())).toEqual([
+          {
+            operation: 'UPDATE',
+            fields: ['instrument_id'],
+            data: { instrument_id: 7, symbol: null },
+            trades: [
+              {
+                operation: 'DELETE',
+                fields: ['id'],
+                data: { id: 30, quantity: null },
+              },
+              {
+                operation: 'INSERT',
+                fields: ['id', 'quantity'],
+                data: { id: 32, quantity: 30 },
+              },
+            ],
+          },
+        ]);
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+
+    it("should send a trade's position inside its data, and each change to the position as an update of each of its trades, naming positions and sending it whole", async () => {
+      // Rows the queries don't read: two NVDA trades, and one whose position
+      // doesn't exist yet
+      await testEnv.executeSql(`INSERT INTO positions VALUES (5, 'NVDA', 300)`);
+      await testEnv.executeSql(
+        `INSERT INTO trades VALUES (20, 5, 1, 100), (21, 5, 2, 200), (22, 6, 1, 50)`,
+      );
+      const subscription = await subscribeOverSse<Update>(
+        `subscription {
+          trades(where: { id: { _in: [20, 21, 22] } }) {
+            operation
+            fields
+            data { id positions { symbol net_position } }
+          }
+        }`,
+        'trades',
+      );
+
+      try {
+        const nvda = { symbol: 'NVDA', net_position: 300 };
+        expect(inOrder(await subscription.next())).toEqual([
+          {
+            operation: 'INSERT',
+            fields: ['id', 'positions'],
+            data: { id: 20, positions: nvda },
+          },
+          {
+            operation: 'INSERT',
+            fields: ['id', 'positions'],
+            data: { id: 21, positions: nvda },
+          },
+          {
+            operation: 'INSERT',
+            fields: ['id', 'positions'],
+            data: { id: 22, positions: null },
+          },
+        ]);
+
+        await testEnv.executeSql(
+          `UPDATE positions SET net_position = 400 WHERE instrument_id = 5`,
+        );
+        const changed = { symbol: 'NVDA', net_position: 400 };
+        expect(inOrder(await subscription.next())).toEqual([
+          {
+            operation: 'UPDATE',
+            fields: ['id', 'positions'],
+            data: { id: 20, positions: changed },
+          },
+          {
+            operation: 'UPDATE',
+            fields: ['id', 'positions'],
+            data: { id: 21, positions: changed },
+          },
+        ]);
+
+        // Trade 22's position arrives
+        await testEnv.executeSql(`INSERT INTO positions VALUES (6, 'AMD', 50)`);
+        expect(await subscription.next()).toEqual([
+          {
+            operation: 'UPDATE',
+            fields: ['id', 'positions'],
+            data: { id: 22, positions: { symbol: 'AMD', net_position: 50 } },
+          },
+        ]);
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+    // Subscribes to the given positions with their trades, as positions-app
+    // would, and gives the subscription with its snapshot read
+    const positionsWithTrades = async (where: string) => {
+      const subscription = await subscribeOverSse<Update>(
+        `subscription {
+          positions(where: ${where}) {
+            operation
+            fields
+            data { instrument_id symbol }
+            trades { operation fields data { id quantity } }
+          }
+        }`,
+        'positions',
+      );
+      await subscription.next();
+      return subscription;
+    };
+
+    it("should send a corrected trade under an update of its position's key", async () => {
+      await testEnv.executeSql(`INSERT INTO positions VALUES (40, 'AMZN', 30)`);
+      await testEnv.executeSql(
+        `INSERT INTO trades VALUES (40, 40, 1, 10), (41, 40, 1, 20)`,
+      );
+      const subscription = await positionsWithTrades(
+        '{ instrument_id: { _eq: 40 } }',
+      );
+
+      try {
+        await testEnv.executeSql(
+          `UPDATE trades SET quantity = 15 WHERE id = 40`,
+        );
+        expect(await subscription.next()).toEqual([
+          {
+            operation: 'UPDATE',
+            fields: ['instrument_id'],
+            data: { instrument_id: 40, symbol: null },
+            trades: [
+              {
+                operation: 'UPDATE',
+                fields: ['id', 'quantity'],
+                data: { id: 40, quantity: 15 },
+              },
+            ],
+          },
+        ]);
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+
+    it("should send a closed position's DELETE with its trades' DELETEs", async () => {
+      await testEnv.executeSql(`INSERT INTO positions VALUES (45, 'ADBE', 30)`);
+      await testEnv.executeSql(
+        `INSERT INTO trades VALUES (45, 45, 1, 10), (46, 45, 1, 20)`,
+      );
+      const subscription = await positionsWithTrades(
+        '{ instrument_id: { _eq: 45 } }',
+      );
+
+      try {
+        await testEnv.executeSql(
+          `DELETE FROM positions WHERE instrument_id = 45`,
+        );
+        expect(inOrder(await subscription.next())).toEqual(
+          inOrder([
+            {
+              operation: 'DELETE',
+              fields: ['instrument_id'],
+              data: { instrument_id: 45, symbol: null },
+              trades: [
+                {
+                  operation: 'DELETE',
+                  fields: ['id'],
+                  data: { id: 45, quantity: null },
+                },
+                {
+                  operation: 'DELETE',
+                  fields: ['id'],
+                  data: { id: 46, quantity: null },
+                },
+              ],
+            },
+          ]),
+        );
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+
+    it('should send a trade moved between positions as a DELETE under one and an INSERT under the other', async () => {
+      await testEnv.executeSql(
+        `INSERT INTO positions VALUES (50, 'META', 10), (51, 'NFLX', 0)`,
+      );
+      await testEnv.executeSql(`INSERT INTO trades VALUES (50, 50, 1, 10)`);
+      const subscription = await positionsWithTrades(
+        '{ instrument_id: { _in: [50, 51] } }',
+      );
+
+      try {
+        await testEnv.executeSql(
+          `UPDATE trades SET instrument_id = 51 WHERE id = 50`,
+        );
+        expect(inOrder(await subscription.next())).toEqual(
+          inOrder([
+            {
+              operation: 'UPDATE',
+              fields: ['instrument_id'],
+              data: { instrument_id: 50, symbol: null },
+              trades: [
+                {
+                  operation: 'DELETE',
+                  fields: ['id'],
+                  data: { id: 50, quantity: null },
+                },
+              ],
+            },
+            {
+              operation: 'UPDATE',
+              fields: ['instrument_id'],
+              data: { instrument_id: 51, symbol: null },
+              trades: [
+                {
+                  operation: 'INSERT',
+                  fields: ['id', 'quantity'],
+                  data: { id: 50, quantity: 10 },
+                },
+              ],
+            },
+          ]),
+        );
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+
+    it("should send a change two lists deep under an update of each parent's key: a fill of a position's trade", async () => {
+      await testEnv.executeSql(`INSERT INTO positions VALUES (60, 'ORCL', 10)`);
+      await testEnv.executeSql(`INSERT INTO trades VALUES (60, 60, 1, 10)`);
+      await testEnv.executeSql(`INSERT INTO fills VALUES (600, 60, 5)`);
+      const subscription = await subscribeOverSse<Update>(
+        `subscription {
+          positions(where: { instrument_id: { _eq: 60 } }) {
+            operation
+            fields
+            data { instrument_id }
+            trades {
+              operation
+              fields
+              data { id }
+              fills { operation fields data { id quantity } }
+            }
+          }
+        }`,
+        'positions',
+      );
+
+      try {
+        await subscription.next();
+        await testEnv.executeSql(`INSERT INTO fills VALUES (601, 60, 5)`);
+        expect(await subscription.next()).toEqual([
+          {
+            operation: 'UPDATE',
+            fields: ['instrument_id'],
+            data: { instrument_id: 60 },
+            trades: [
+              {
+                operation: 'UPDATE',
+                fields: ['id'],
+                data: { id: 60 },
+                fills: [
+                  {
+                    operation: 'INSERT',
+                    fields: ['id', 'quantity'],
+                    data: { id: 601, quantity: 5 },
+                  },
+                ],
+              },
+            ],
+          },
+        ]);
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+
+    it('should bring a position entering the top N with its trades, and take one leaving with its trades', async () => {
+      await testEnv.executeSql(
+        `INSERT INTO positions VALUES (70, 'INTC', 300), (71, 'CSCO', 200), (72, 'IBM', 100)`,
+      );
+      await testEnv.executeSql(
+        `INSERT INTO trades VALUES (70, 70, 1, 10), (71, 71, 1, 10), (72, 72, 1, 10)`,
+      );
+      const subscription = await subscribeOverSse<Update>(
+        `subscription {
+          positions(
+            where: { instrument_id: { _in: [70, 71, 72] } }
+            order_by: [{ net_position: desc }]
+            limit: 2
+          ) {
+            operation
+            fields
+            data { instrument_id }
+            trades { operation fields data { id } }
+          }
+        }`,
+        'positions',
+      );
+
+      try {
+        expect(inOrder(await subscription.next())).toEqual(
+          inOrder([
+            {
+              operation: 'INSERT',
+              fields: ['instrument_id'],
+              data: { instrument_id: 70 },
+              trades: [
+                { operation: 'INSERT', fields: ['id'], data: { id: 70 } },
+              ],
+            },
+            {
+              operation: 'INSERT',
+              fields: ['instrument_id'],
+              data: { instrument_id: 71 },
+              trades: [
+                { operation: 'INSERT', fields: ['id'], data: { id: 71 } },
+              ],
+            },
+          ]),
+        );
+
+        // IBM overtakes both, which pushes CSCO out
+        await testEnv.executeSql(
+          `UPDATE positions SET net_position = 400 WHERE instrument_id = 72`,
+        );
+        expect(inOrder(await subscription.next())).toEqual(
+          inOrder([
+            {
+              operation: 'INSERT',
+              fields: ['instrument_id'],
+              data: { instrument_id: 72 },
+              trades: [
+                { operation: 'INSERT', fields: ['id'], data: { id: 72 } },
+              ],
+            },
+            {
+              operation: 'DELETE',
+              fields: ['instrument_id'],
+              data: { instrument_id: 71 },
+              trades: [
+                { operation: 'DELETE', fields: ['id'], data: { id: 71 } },
+              ],
+            },
+          ]),
+        );
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+
+    it('should answer two aliases of one list, selected with the same arguments, from the same updates', async () => {
+      await testEnv.executeSql(`INSERT INTO positions VALUES (80, 'SAP', 10)`);
+      await testEnv.executeSql(
+        `INSERT INTO trades VALUES (80, 80, 1, 10), (81, 80, 1, 20)`,
+      );
+      const subscription = await subscribeOverSse<Update>(
+        `subscription {
+          positions(where: { instrument_id: { _eq: 80 } }) {
+            data { instrument_id }
+            latest: trades(order_by: [{ id: desc }], limit: 1) { operation data { id } }
+            newest: trades(order_by: [{ id: desc }], limit: 1) { data { id } }
+          }
+        }`,
+        'positions',
+      );
+
+      try {
+        expect(await subscription.next()).toEqual([
+          {
+            data: { instrument_id: 80 },
+            latest: [{ operation: 'INSERT', data: { id: 81 } }],
+            newest: [{ data: { id: 81 } }],
+          },
+        ]);
+      } finally {
+        subscription.close();
+      }
+    }, 30000);
+
+    it('should refuse a list inside data, and one list selected twice with different arguments', async () => {
+      const refusal = async (subscription: string) =>
+        (
+          (await (await graphql(subscription)).json()) as {
+            errors: { message: string }[];
+          }
+        ).errors.map((error) => error.message);
+
+      expect(
+        await refusal('subscription { positions { data { trades { id } } } }'),
+      ).toEqual(["Subscriptions select 'trades' beside 'data', not inside it"]);
+      expect(
+        await refusal(
+          'subscription { positions { a: trades(limit: 1) { fields } b: trades(limit: 2) { fields } } }',
+        ),
+      ).toEqual([
+        "'trades' is selected twice with different arguments; select it once",
+      ]);
+    });
   });
 });

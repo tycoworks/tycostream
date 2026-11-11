@@ -126,6 +126,5 @@ The [API reference](api.md) covers what each update holds, and every filter, sor
 - Each source in `schema.yaml` needs a single-column primary key.
 - `int8` and `numeric` values arrive as JSON numbers, so values past about 15 significant digits lose precision.
 - tycostream doesn't serve [array columns](https://github.com/tycoworks/tycostream/issues/33) yet.
-- tycostream doesn't serve [relationships](https://github.com/tycoworks/tycostream/issues/2), such as a position's trades, yet.
 
 If something breaks, open an [issue](https://github.com/tycoworks/tycostream/issues).

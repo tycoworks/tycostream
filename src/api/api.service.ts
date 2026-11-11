@@ -1,38 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Repeater } from '@repeaterjs/repeater';
 import { ViewService } from '../view/view.service.js';
-import { RowUpdateType, StreamMode } from '../common/types.js';
+import { StreamMode } from '../common/types.js';
 import type { Row, RowUpdateEvent, Selection } from '../common/types.js';
 import { truncateForLog } from '../common/logging.utils.js';
 import type { SourceDefinition } from '../config/source.types.js';
-
-/**
- * GraphQL row operation types
- * These map to the values used in the GraphQL schema
- */
-export enum GraphQLRowOperation {
-  Insert = 'INSERT',
-  Update = 'UPDATE',
-  Delete = 'DELETE',
-}
-
-/**
- * GraphQL subscription update structure
- */
-export interface GraphQLUpdate {
-  operation: GraphQLRowOperation;
-  data: Row;
-  fields: string[];
-}
-
-/**
- * Maps RowUpdateType enum values to GraphQL operation enum values
- */
-const ROW_UPDATE_TYPE_MAP = {
-  [RowUpdateType.Insert]: GraphQLRowOperation.Insert,
-  [RowUpdateType.Update]: GraphQLRowOperation.Update,
-  [RowUpdateType.Delete]: GraphQLRowOperation.Delete,
-} as const;
+import { toRows, toUpdates } from './tree.js';
+import type { GraphQLUpdate } from './tree.js';
 
 /**
  * The API layer's one service: GraphQL's operations on a source, each a
@@ -66,13 +40,13 @@ export class ApiService {
     const stop = () => void batches.return();
     signal?.addEventListener('abort', stop, { once: true });
     try {
-      const rows: Row[] = [];
-      for await (const { events } of batches) {
-        rows.push(...events.map((event) => event.row));
+      const events: RowUpdateEvent[] = [];
+      for await (const batch of batches) {
+        events.push(...batch.events);
       }
       // A stopped stream just ends, so say why it stopped
       signal?.throwIfAborted();
-      return rows;
+      return toRows(source, events);
     } finally {
       signal?.removeEventListener('abort', stop);
     }
@@ -97,9 +71,7 @@ export class ApiService {
     return new Repeater<GraphQLUpdate[]>(async (push, stop) => {
       const forward = async () => {
         for await (const { timestamp, events } of batches) {
-          const updates = events.map((event) =>
-            this.transformToGraphQLUpdate(event),
-          );
+          const updates = toUpdates(source, events);
           this.logger.debug(
             `Sending GraphQL updates - source: ${source.name}, timestamp: ${timestamp}, ` +
               `updates: ${truncateForLog(updates)}`,
@@ -116,23 +88,6 @@ export class ApiService {
       // failed, forward already reported its error.
       await batches.return().catch(() => {});
     });
-  }
-
-  /**
-   * Transforms a row event into a GraphQL update
-   * Sends only the event's fields: the whole row for an insert, the key and
-   * the changed fields for an update, and the key alone for a delete
-   */
-  private transformToGraphQLUpdate(event: RowUpdateEvent): GraphQLUpdate {
-    const operation = ROW_UPDATE_TYPE_MAP[event.type];
-
-    // Convert Set to array for GraphQL
-    const fields = Array.from(event.fields);
-    const data = Object.fromEntries(
-      fields.map((field) => [field, event.row[field]]),
-    );
-
-    return { operation, data, fields };
   }
 }
 

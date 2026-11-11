@@ -3,6 +3,8 @@ import { readFileSync } from 'fs';
 import { load } from 'js-yaml';
 import { Logger } from '@nestjs/common';
 import type {
+  Relationship,
+  YamlSourceConfig,
   YamlSourcesFile,
   SourceDefinition,
   SourceField,
@@ -111,7 +113,13 @@ export default registerAs('sources', (): SourceConfiguration => {
         name: sourceName,
         primaryKeyField: sourceConfig.primary_key,
         fields,
+        relationships: new Map(),
       });
+    }
+
+    // Relationships, once every source a foreign key can reference exists
+    for (const [sourceName, sourceConfig] of Object.entries(yamlData.sources)) {
+      addRelationships(sources.get(sourceName)!, sourceConfig, sources);
     }
 
     logger.log(
@@ -156,4 +164,69 @@ function readColumnType(typeName: string): PostgresType {
     );
   }
   return type;
+}
+
+/**
+ * Adds both relationships each of a source's foreign keys gives. The column
+ * must be the source's own, and the source it references must exist.
+ */
+function addRelationships(
+  source: SourceDefinition,
+  sourceConfig: YamlSourceConfig,
+  sources: Map<string, SourceDefinition>,
+): void {
+  for (const [column, referenced] of Object.entries(
+    sourceConfig.foreign_keys ?? {},
+  )) {
+    if (!sourceConfig.columns[column]) {
+      throw new Error(
+        `Foreign key '${column}' not found in columns for source '${source.name}'`,
+      );
+    }
+    const target = sources.get(referenced);
+    if (!target) {
+      throw new Error(
+        `Foreign key '${column}' of source '${source.name}' references unknown source '${referenced}'`,
+      );
+    }
+    addForeignKey(source, column, target);
+  }
+}
+
+/**
+ * Adds both relationships a foreign key gives: to the source, the one row of
+ * the target its column references, named after the target; to the target,
+ * the source's many rows that reference it, named after the source
+ */
+export function addForeignKey(
+  source: SourceDefinition,
+  column: string,
+  target: SourceDefinition,
+): void {
+  relate(source, target.name, {
+    source: target,
+    column,
+    relatedColumn: target.primaryKeyField,
+    many: false,
+  });
+  relate(target, source.name, {
+    source,
+    column: target.primaryKeyField,
+    relatedColumn: column,
+    many: true,
+  });
+}
+
+// Gives a source a relationship under a field's name, which only one may have
+function relate(
+  source: SourceDefinition,
+  field: string,
+  relationship: Relationship,
+): void {
+  if (source.relationships!.has(field)) {
+    throw new Error(
+      `Source '${source.name}' would have two relationships named '${field}': two foreign keys between the same sources, or one from a source to itself, need names of their own, which aren't supported yet`,
+    );
+  }
+  source.relationships!.set(field, relationship);
 }
