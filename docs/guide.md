@@ -112,7 +112,7 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-tycostream only sends the columns that changed in each update. To do that, it first sends a snapshot of `INSERT` messages, and then a stream of `INSERT`, `UPDATE`, and `DELETE` messages. In an `UPDATE`, `fields` lists the key and the columns that changed, and the other columns are `null`. See how positions-app applies them in [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57).
+tycostream only sends the columns that change in each update, as a stream of `INSERT`, `UPDATE`, and `DELETE` messages. See how positions-app applies them in [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57).
 
 tycostream serves subscriptions over server-sent events, not WebSockets. Apollo Client supports them through Yoga's [Apollo link](https://github.com/graphql-hive/graphql-yoga/tree/main/packages/client/apollo-link), as in positions-app's [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js).
 

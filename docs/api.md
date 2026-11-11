@@ -1,6 +1,6 @@
 # GraphQL API
 
-tycostream gives each source in `schema.yaml` a query and a subscription, both named after the source, and both taking the same arguments. A query returns the rows as they are now, and a subscription returns them and then every change, over server-sent events. The examples use the `positions` view from [positions-app](https://github.com/tycoworks/positions-app).
+tycostream gives each source in `schema.yaml` a query and a subscription, both named after the source, and both taking the same arguments. The examples use the `positions` view from [positions-app](https://github.com/tycoworks/positions-app).
 
 ## Queries and subscriptions
 
