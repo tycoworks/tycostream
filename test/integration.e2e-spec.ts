@@ -590,6 +590,104 @@ describe('Integration Test', () => {
       });
     });
 
+    describe('relationships', () => {
+      beforeAll(async () => {
+        await testEnv.executeSql(
+          'CREATE TABLE positions (instrument_id INT, symbol TEXT, net_position BIGINT)',
+        );
+        await testEnv.executeSql('CREATE TABLE accounts (id INT, name TEXT)');
+        await testEnv.executeSql(
+          'CREATE TABLE trades (id INT, instrument_id INT, account_id INT, quantity INT)',
+        );
+        await testEnv.executeSql(`
+          INSERT INTO positions VALUES (1, 'AAPL', 600), (2, 'MSFT', 0), (3, 'GOOG', 100)
+        `);
+        await testEnv.executeSql(`
+          INSERT INTO accounts VALUES (1, 'Growth Fund'), (2, 'Income Fund')
+        `);
+        // Trade 9 has no account, and trade 10 no position
+        await testEnv.executeSql(`
+          INSERT INTO trades VALUES
+            (5, 1, 1, 100), (7, 1, 2, 400), (8, 1, 1, 100),
+            (9, 3, NULL, 100), (10, 4, 2, 50)
+        `);
+      });
+
+      it("should nest each position's latest trades under it, each with its account, and give a position with none []", async () => {
+        const response = await graphql(`
+          {
+            positions(order_by: [{ symbol: asc }]) {
+              symbol
+              net_position
+              trades(order_by: [{ id: desc }], limit: 2) {
+                id
+                quantity
+                accounts {
+                  name
+                }
+              }
+            }
+          }
+        `);
+
+        expect(await response.json()).toEqual({
+          data: {
+            positions: [
+              {
+                symbol: 'AAPL',
+                net_position: 600,
+                trades: [
+                  { id: 8, quantity: 100, accounts: { name: 'Growth Fund' } },
+                  { id: 7, quantity: 400, accounts: { name: 'Income Fund' } },
+                ],
+              },
+              {
+                symbol: 'GOOG',
+                net_position: 100,
+                trades: [{ id: 9, quantity: 100, accounts: null }],
+              },
+              { symbol: 'MSFT', net_position: 0, trades: [] },
+            ],
+          },
+        });
+      });
+
+      it("should give each trade its position, null when it has none, and that position's trades", async () => {
+        const response = await graphql(`
+          {
+            trades(
+              where: { id: { _in: [8, 9, 10] } }
+              order_by: [{ id: asc }]
+            ) {
+              id
+              positions {
+                symbol
+                trades(order_by: [{ id: asc }]) {
+                  id
+                }
+              }
+            }
+          }
+        `);
+
+        expect(await response.json()).toEqual({
+          data: {
+            trades: [
+              {
+                id: 8,
+                positions: {
+                  symbol: 'AAPL',
+                  trades: [{ id: 5 }, { id: 7 }, { id: 8 }],
+                },
+              },
+              { id: 9, positions: { symbol: 'GOOG', trades: [{ id: 9 }] } },
+              { id: 10, positions: null },
+            ],
+          },
+        });
+      });
+    });
+
     it('should end a query in Materialize as soon as its client leaves', async () => {
       const queriesRunning = async () => {
         const [{ n }] = await testEnv.querySql<{ n: string }>(

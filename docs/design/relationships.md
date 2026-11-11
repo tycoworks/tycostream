@@ -10,10 +10,11 @@ The other direction comes too: a trade showing its position, as a trade blotter 
 
 ## Terms
 
-Five, and no others:
+Six, and no others:
 
 - **Source:** a view or table in `schema.yaml`, as now.
 - **Relationship:** a field that reaches another source's rows, to one row (a trade's position) or to many (a position's trades).
+- **List:** the rows a relationship to many rows gives one row, as GraphQL's list type `[trades!]!` holds them: a position's trades.
 - **Path:** the fields from a selected row to a row, as GraphQL uses the word: `[]` for a position, `["trades"]` for one of its trades.
 - **Keys:** a row's keys from the selected row down: `[1]` is position 1, `[1, 8]` its trade 8.
 - **Row number:** SQL's `row_number()`, which keeps a query's rows in order.
@@ -312,7 +313,7 @@ One branch and one pull request. Each step is one commit, passes every test, and
    - **7b:** the statement adds `__keys`; each row's change carries its `path` and `keys`, and both the query's check and Materialize's pairing go by them.
 8. **Relationships in queries, both kinds,** in two commits. Useful on its own: Hasura's nested queries, in one consistent read.
    - **8a:** the schema: each relationship a field of its source's type, one to many rows taking `where`, `order_by`, `limit` and `offset`. Selecting one fails until 8b.
-   - **8b:** the resolver reads nested selections, and `tree.ts` folds related rows into objects and nests lists, `[]` for none.
+   - **8b,** in two commits: `tree.ts` builds a query's tree, folding related rows into objects and nesting lists; then the resolver reads nested selections, and a list with no rows resolves to `[]`. Subscriptions refuse relationships until step 9.
 9. **Relationships in subscriptions, both kinds:** the goal. Related rows inside `data`, lists beside it as the update types' fields, reading a subscription's selection, the key-only UPDATE, and the refusal inside `data`. Tests, a rule each: the snapshot as a tree; a price tick; a new trade; a trade's price corrected (the key-only UPDATE); two relationships under a key-only UPDATE; a trade pushed out of `limit: 2`; a position closed (its DELETE with its trades' DELETEs); a trade moved between positions; two levels; a related row's column changing (its field in `fields`, sent whole). End to end, against Materialize: the same, plus a position entering and leaving the top N, aliases, and the refusals.
 10. **The README.**
 
