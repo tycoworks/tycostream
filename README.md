@@ -23,9 +23,9 @@ tycostream turns [Materialize](https://materialize.com/) views into GraphQL quer
 
 ## Getting started
 
-1. **Describe your views.** Generate a [`schema.yaml`](docs/guide.md#schemayaml) that lists the tables and views to serve, with the [schema generator](scripts/generate-schema.sh).
-2. **Run tycostream.** Start the Docker image, `ghcr.io/tycoworks/tycostream`, with your database's [connection settings](docs/guide.md#configuration) and your `schema.yaml`.
-3. **Query and subscribe.** Try your [API](docs/guide.md#the-graphql-api) in the built-in GraphQL explorer, then connect any GraphQL client.
+1. **Describe your views.** Generate a [`schema.yaml`](docs/guide.md#step-1-describe-your-views) that lists the tables and views to serve, with the [schema generator](scripts/generate-schema.sh).
+2. **Run tycostream.** Start the Docker image, `ghcr.io/tycoworks/tycostream`, with your database's [connection settings](docs/guide.md#step-2-run-tycostream) and your `schema.yaml`.
+3. **Query and subscribe.** Try your [API](docs/guide.md#step-3-query-and-subscribe) in the built-in GraphQL explorer, then connect any GraphQL client.
 
 ## See it working
 
