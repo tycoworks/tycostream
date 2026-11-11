@@ -1,10 +1,10 @@
 # GraphQL API
 
-tycostream gives each source in `schema.yaml` a query and a subscription, both named after the source, and both taking the same arguments. The examples use the `positions` view from [positions-app](https://github.com/tycoworks/positions-app).
+tycostream generates a GraphQL API from your `schema.yaml`. The examples use the `positions` and `trades` views from [positions-app](https://github.com/tycoworks/positions-app), an example trading app built on tycostream.
 
 ## Queries and subscriptions
 
-For the positions-app example, tycostream generates:
+tycostream creates a query and a subscription for each source in your `schema.yaml`. A query returns the rows at the time of the query, whereas a subscription sends a snapshot, then each change as it happens. For example, tycostream generates:
 
 ```graphql
 type query_root {
@@ -22,23 +22,41 @@ type positions_update {
 }
 ```
 
-Each column in `schema.yaml` is a field of the source's type, and the primary key is the only one that's non-null.
+Each column becomes a field, and only the primary key is non-null.
+
+tycostream creates a nested field on both sources for each foreign key in your `schema.yaml`. For example:
+
+```graphql
+type trades {
+  positions: positions
+}
+
+type positions {
+  trades(where: trades_bool_exp, order_by: [trades_order_by!], limit: Int, offset: Int): [trades!]!
+}
+```
+
+A trade's `positions` is `null` if it has no position, and a position's `trades` is `[]` if it has no trades. A nested list's arguments apply per parent, so `limit: 2` returns up to two trades per position. Nesting can go to any depth. Aliases of one nested field must use the same arguments.
 
 ## Updates
 
-A subscription first sends a snapshot of `INSERT` messages, and then a stream of `INSERT`, `UPDATE`, and `DELETE` messages. Each message is a list of updates holding every change at one Materialize timestamp, so all of a transaction's changes arrive in the same message. Messages arrive in timestamp order, and the updates within a message in no particular order, whatever the subscription's `order_by`.
+A subscription sends a snapshot as `INSERT`s, then each change as an `INSERT`, `UPDATE`, or `DELETE`. Each message holds every change at one Materialize timestamp, so a transaction's changes arrive together. Messages arrive in timestamp order, but the updates within a message are unordered, whatever the `order_by`.
 
-`fields` lists the columns an update sends, and the other columns in `data` are `null`. It always names the key, but `data` holds the key only if you select it.
+Each update is one row's change. `fields` lists the columns it sends, always including the key, and every other column in `data` is `null`. `data` holds the key only if you select it.
 
 - An `INSERT` sends the key and every selected column.
 - An `UPDATE` sends the key and the selected columns that changed. A change to a column you didn't select sends nothing.
 - A `DELETE` sends only the key.
 
-A row that starts or stops matching `where` arrives as an `INSERT` or a `DELETE`. So does a row that moves in or out of the rows that `order_by` picks with `limit` or `offset`. For the positions-app example, with `order_by: [{ market_value: desc }], limit: 2`, a position that moves into the top two arrives as an `INSERT`, and one that drops out as a `DELETE`.
+A row that enters or leaves the results, through `where`, `limit`, or `offset`, arrives as an `INSERT` or a `DELETE`. For example, with `order_by: [{ market_value: desc }], limit: 2`, a position that moves into the top two arrives as an `INSERT`, and the one it displaces as a `DELETE`.
+
+A nested row, such as a trade's `positions`, counts as one column. If any of its columns change, `fields` names it and `data` sends it whole.
+
+A nested list sits beside `data` and holds its own updates. A position's `INSERT` includes its trades' `INSERT`s, and its `DELETE` their `DELETE`s. If only a position's trades change, the position arrives as an `UPDATE` of its key alone. A trade that moves between positions arrives as a `DELETE` under one and an `INSERT` under the other, in the same message.
 
 ## Filters
 
-`where` takes the same format as Hasura's. For the positions-app example, to get the GOOG position and any position over 30,000 shares:
+`where` filters rows, in Hasura's format. For example, to get the GOOG position and any position over 30,000 shares:
 
 ```graphql
 {
@@ -61,7 +79,7 @@ A row that starts or stops matching `where` arrives as an `INSERT` or a `DELETE`
 }
 ```
 
-Every column takes the first four rows of operators, and text columns (`text`, `varchar`, and `bpchar`) take the rest:
+Every column supports the first four rows of operators, and text columns (`text`, `varchar`, and `bpchar`) also support the rest:
 
 | Operator | Matches |
 |---|---|
@@ -74,13 +92,17 @@ Every column takes the first four rows of operators, and text columns (`text`, `
 | `_regex`, `_nregex` | A regular expression, or not |
 | `_iregex`, `_niregex` | A regular expression ignoring case, or not |
 
-Materialize's regular expressions use Rust's syntax, not POSIX. Comparisons side by side in one object must all match. `_and` and `_or` take a list of conditions, and `_not` takes one. A null column matches only `_is_null`, as in SQL, and comparing a column with `null` is refused. An enum column compares in the order of the enum's values in `schema.yaml`. `int8` and `numeric` arguments take a number or a string, and a string keeps every digit.
+- Comparisons in one object must all match. `_and` and `_or` take a list of conditions, and `_not` takes one.
+- A null column matches only `_is_null`, as in SQL. Comparing a column with `null` is refused.
+- An enum column compares in its enum's order.
+- `int8` and `numeric` arguments take a number or a string, and a string keeps every digit.
+- Regular expressions use Rust's syntax, as Materialize's do, not POSIX.
 
 ## Sorting and paging
 
-`order_by` takes a list of columns, each with a direction, and applies them in turn. The directions are `asc`, `desc`, `asc_nulls_first`, `asc_nulls_last`, `desc_nulls_first`, and `desc_nulls_last`. `limit` caps the number of rows, and `offset` skips that many first.
+`order_by` sorts rows by a list of columns, each with a direction, applied in turn. The directions are `asc`, `desc`, `asc_nulls_first`, `asc_nulls_last`, `desc_nulls_first`, and `desc_nulls_last`. `limit` caps the number of rows, and `offset` skips that many first.
 
-For the positions-app example, to get the two largest positions:
+For example, to get the two largest positions:
 
 ```graphql
 {
@@ -113,7 +135,7 @@ tycostream serves each Postgres type as a GraphQL type and JSON value:
 | `float8` | `float8` | `2.25` |
 | `numeric` | `numeric` | `1234.5678` |
 | `text`, `varchar` | `String` | `"hello"` |
-| `bpchar` | `bpchar` | `"ab "`, padded to the column's length |
+| `bpchar` | `bpchar` | `"ab"`, without its trailing padding |
 | `bool` | `Boolean` | `true` |
 | `uuid` | `uuid` | `"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"` |
 | `timestamp` | `timestamp` | `"2026-01-01T09:30:00.5"` |
@@ -124,4 +146,4 @@ tycostream serves each Postgres type as a GraphQL type and JSON value:
 | `json`, `jsonb` | `json`, `jsonb` | `{"side": "buy"}` |
 | `bytea` | `bytea` | `"\\x0102"`, in hex |
 
-An enum in `schema.yaml` becomes a GraphQL enum of the same name, and its values arrive as strings.
+An enum becomes a GraphQL enum of the same name, and its values arrive as strings.

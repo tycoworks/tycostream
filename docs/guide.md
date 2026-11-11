@@ -1,6 +1,6 @@
 # How to set up tycostream
 
-This guide shows you how to serve the views in your streaming database as a GraphQL API. You'll describe the views in a `schema.yaml` file, run tycostream against your database, and then query and subscribe from a GraphQL client, so your app gets every change to a view as it happens. The examples use the `positions` view from [positions-app](https://github.com/tycoworks/positions-app), which you can run yourself. The view holds a trading desk's live positions.
+This guide shows you how to serve your streaming database's views as a GraphQL API. You describe the views in `schema.yaml`, run tycostream, then query and subscribe from any GraphQL client. The examples use the `positions` and `trades` views from [positions-app](https://github.com/tycoworks/positions-app), an example trading app you can run yourself: a trading desk's live positions, and their trades.
 
 ## What you'll need
 
@@ -10,23 +10,36 @@ This guide shows you how to serve the views in your streaming database as a Grap
 
 ## Step 1: Describe your views
 
-First, create a `schema.yaml` file that lists the tables and views to serve through your API. You can write it by hand, or use the [schema generator](../scripts/generate-schema.sh) to read the columns from your database.
+First, create a `schema.yaml` that lists the tables and views to serve. Write it by hand, or generate it from your database with the [schema generator](../scripts/generate-schema.sh).
 
 The file has two parts:
 
-- **`sources`** lists each table or view, with its `primary_key` and its `columns`, and gives each column one of the Postgres [types](api.md#types) tycostream supports. Names must match the database exactly, and each primary key must be unique. tycostream fails to start on any other type, and lists the ones it supports.
+- **`sources`** lists each table or view, with its `primary_key` and its `columns`, each of a supported Postgres [type](api.md#types). Names must match the database exactly, and each primary key must be unique. An unsupported type stops tycostream at startup, with a list of the supported ones.
 - **`enums`** is an optional list of each GraphQL enum's values. To serve a text column as an enum, set the column's type to the enum's name.
+
+To describe relationships between two sources, add `foreign_keys` to the one that references the other. For example, each trade's `instrument_id` holds its position's key:
+
+```yaml
+sources:
+  trades:
+    primary_key: id
+    columns: { ... }
+    foreign_keys:
+      instrument_id: positions
+```
+
+A foreign key relates both ways, so each trade has a position, and each position has trades.
 
 positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/main/schema.yaml) is a complete example.
 
-For the positions-app example, to generate the file:
+To generate the file for positions-app:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
   bash -s -- -s positions -p instrument_id > schema.yaml
 ```
 
-Add `-s` and `-p` again for each other table or view. For an enum, add `-e` with the enum's name and values, and `-c column:enum` after the column's view, as in `-e trade_side "buy,sell" -s trades -p id -c side:trade_side`.
+Add `-s` and `-p` for each other table or view. For an enum column, declare the enum with `-e` and map the column with `-c column:enum` after its view: `-e trade_side "buy,sell" -s trades -p id -c side:trade_side`. For a foreign key, add `-f column:source` after its view: `-s trades -p id -f instrument_id:positions`.
 
 The generator connects to `localhost:6875` by default. For another database, set the `DATABASE_*` settings from step 2 in your environment or a `.env` file.
 
@@ -34,7 +47,7 @@ The generator connects to `localhost:6875` by default. For another database, set
 
 Next, start tycostream's Docker image, `ghcr.io/tycoworks/tycostream`, with your `schema.yaml` and your database's connection settings. Mount the file at `/app/schema.yaml`, and pass the settings with `-e` or `--env-file`.
 
-For the positions-app example, with Materialize running on your own machine:
+For example, with Materialize running on your own machine:
 
 ```bash
 docker run -p 4000:4000 \
@@ -64,9 +77,9 @@ tycostream takes these settings:
 
 ## Step 3: Query and subscribe
 
-Finally, use a query to get the rows as they are now, or a subscription to get them and then every change. Try both in the GraphQL explorer, then from your app.
+Finally, query to get the rows at that moment, or subscribe to get a snapshot, then each change as it happens. Try both in the GraphQL explorer, then from your app.
 
-For the positions-app example, to get every position, sorted by symbol:
+For example, to get every position, sorted by symbol:
 
 ```graphql
 {
@@ -112,7 +125,22 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-tycostream only sends the columns that change in each update, as a stream of `INSERT`, `UPDATE`, and `DELETE` messages. See how positions-app applies them in [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57).
+After the snapshot, each `UPDATE` sends only the columns that changed, and the rest are `null`. See how positions-app applies them in [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57).
+
+You can nest related sources in a query or a subscription, and in a subscription you nest them beside `data`. For example, to follow each position with its trades:
+
+```graphql
+subscription {
+  positions {
+    operation
+    data { instrument_id symbol net_position }
+    fields
+    trades { operation data { id quantity price } fields }
+  }
+}
+```
+
+A new trade then arrives in the same message as the change it makes to its position. For a flat row with both sources' columns, join them in a view and serve that. The API reference covers [nested fields](api.md#queries-and-subscriptions) and their [updates](api.md#updates).
 
 tycostream serves subscriptions over server-sent events, not WebSockets. Apollo Client supports them through Yoga's [Apollo link](https://github.com/graphql-hive/graphql-yoga/tree/main/packages/client/apollo-link), as in positions-app's [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js).
 
