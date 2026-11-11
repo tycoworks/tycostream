@@ -35,7 +35,7 @@ enum StatementName {
   Row = '__row', // A row's own columns, as one JSON object
   Rows = '__rows', // A source's rows, before their related rows are joined on
   Keys = '__keys', // A row's keys, as a JSON array: its parent's, then its own
-  Key = '__key', // A parent's key a list's rows carry: __key_0, __key_1…
+  Key = '__key', // A parent's key a related source's rows carry: __key_0, __key_1…
 }
 
 /**
@@ -59,26 +59,28 @@ interface RelatedRow {
   holder: string; // The alias of the row it's joined onto
 }
 
-// A list a selection reaches by a relationship to many rows, at a path of
-// fields from a source's row, with its own selection
-interface List {
+// A source a selection reaches by a relationship to many rows, at a path of
+// fields from a source's row, with its own selection: read as a source of
+// its own
+interface RelatedSource {
   path: string[];
   relationship: Relationship;
   selection: Selection;
 }
 
 // What a selection's relationships ask of a source's rows: the related rows
-// to join onto each row, and the lists to read as sources of their own
+// to join onto each row, and the related sources to read as sources of their
+// own
 interface Plan {
   related: RelatedRow[];
-  lists: List[];
+  relatedSources: RelatedSource[];
 }
 
 // A source the statement reads as rows of its own: the selected rows, or a
-// list in them at any depth, read for each row of its parent
+// related source in them at any depth, read for each row of its parent
 interface SelectedSource {
   index: number; // Its rows' tag, and its CTE's number; parents come first
-  path: string[]; // The fields from a selected row to the list; none for the selected rows
+  path: string[]; // The fields from a selected row to the source; none for the selected rows
   source: SourceDefinition;
   selection: Selection;
   own: string[]; // Its own selected columns
@@ -87,12 +89,12 @@ interface SelectedSource {
   // Its CTE's columns holding its keys, its parent's then its own, each with
   // its type
   keyTypes: Map<string, PostgresType>;
-  parent?: Parent; // A list's
+  parent?: Parent; // A related source's
 }
 
-// How a list's rows are read for each row of its parent: matched on a column
-// of the parent's row by a column of the list's source, and carrying the
-// parent's keys
+// How a related source's rows are read for each row of its parent: matched
+// on a column of the parent's row by a column of the related source, and
+// carrying the parent's keys
 interface Parent {
   of: SelectedSource;
   column: string; // Named by its path in the parent's row
@@ -129,17 +131,17 @@ const SQL_ROW_NUMBER = 'row_number';
 
 /**
  * The statement that reads a source's rows as a client selects them, with
- * their related rows and lists, at any depth, in either mode. Every
- * statement is built the same way:
+ * their related rows and related sources, at any depth, in either mode.
+ * Every statement is built the same way:
  *
- *   sources: the selected rows, then each list in them, parents first      sourcesOf
+ *   sources: the selected rows, then each related source, parents first    sourcesOf
  *     each one's relationships, planned:                                   plan
  *       to one row:   a related row, joined onto its row
- *       to many rows: a list, a source of its own
+ *       to many rows: a related source, read as a source of its own
  *   for each source, a CTE of its rows:                                    rowsOf
  *     its own rows, filtered, ordered, limited and offset, and in a
  *       query numbered in that order                                       sourceRows
- *     a list's, read for each row of its parent                            forEachParentRow
+ *     a related source's, read for each row of its parent                  forEachParentRow
  *     each related row left joined on                                      withRelatedRows
  *   every row, as its source's number, its keys, and one JSON object of
  *     its columns, stacked with UNION ALL, a query's ordered by number     statementOf
@@ -149,7 +151,8 @@ const SQL_ROW_NUMBER = 'row_number';
 export class Statement {
   readonly sql: string;
   readonly parameters: readonly unknown[];
-  // The sources it reads, by their number: the selected rows, then each list
+  // The sources it reads, by their number: the selected rows, then each
+  // related source
   private readonly sources: SelectedSource[];
 
   /**
@@ -198,7 +201,7 @@ export class Statement {
 // ---- Planning: the sources a selection reads, and their related rows ----
 
 // The sources a selection reads as rows of their own: the selected rows, then
-// each list in them, at any depth, parents first
+// each related source in them, at any depth, parents first
 function sourcesOf(
   source: SourceDefinition,
   selection: Selection,
@@ -212,7 +215,7 @@ function sourcesOf(
   ) => {
     const fields = fieldsOf(source);
     const own = selectedColumns(source, fields, selection.columns);
-    const { related, lists } = plan(source, selection.relationships);
+    const { related, relatedSources } = plan(source, selection.relationships);
     const selected: SelectedSource = {
       index: sources.length,
       path,
@@ -225,11 +228,11 @@ function sourcesOf(
       parent,
     };
     sources.push(selected);
-    for (const list of lists) {
-      add(list.relationship.source, list.selection, [...path, ...list.path], {
+    for (const { path: at, relationship, selection } of relatedSources) {
+      add(relationship.source, selection, [...path, ...at], {
         of: selected,
-        column: pathName([...list.path.slice(0, -1), list.relationship.column]),
-        relatedColumn: list.relationship.relatedColumn,
+        column: pathName([...at.slice(0, -1), relationship.column]),
+        relatedColumn: relationship.relatedColumn,
       });
     }
   };
@@ -239,20 +242,20 @@ function sourcesOf(
 
 // What a selection's relationships ask of a source's rows, at any depth: a
 // relationship to one row is joined onto its row, and its own relationships
-// are planned in turn; a relationship to many rows is a list, read as a
-// source of its own
+// are planned in turn; a relationship to many rows is a related source, read
+// as a source of its own
 function plan(
   source: SourceDefinition,
   relationships: Record<string, Selection> = {},
   path: string[] = [],
   holder: string = StatementName.Rows,
 ): Plan {
-  const planned: Plan = { related: [], lists: [] };
+  const planned: Plan = { related: [], relatedSources: [] };
   for (const [field, selection] of Object.entries(relationships)) {
     const relationship = relationshipOf(source, field);
     const at = [...path, field];
     if (relationship.many) {
-      planned.lists.push({ path: at, relationship, selection });
+      planned.relatedSources.push({ path: at, relationship, selection });
       continue;
     }
     checkNoArguments(field, selection);
@@ -265,7 +268,7 @@ function plan(
     });
     const inner = plan(related, selection.relationships, at, pathName(at));
     planned.related.push(...inner.related);
-    planned.lists.push(...inner.lists);
+    planned.relatedSources.push(...inner.relatedSources);
   }
   return planned;
 }
@@ -292,8 +295,8 @@ function typesOf(
   ]);
 }
 
-// A source's key columns in its CTE, each with its type: a list's parent's
-// keys, which its rows carry as __key_0, __key_1…, then its own key
+// A source's key columns in its CTE, each with its type: a related source's
+// parent's keys, which its rows carry as __key_0, __key_1…, then its own key
 function keyTypesOf(
   source: SourceDefinition,
   fields: Map<string, SourceField>,
@@ -353,16 +356,16 @@ function statementOf(sources: SelectedSource[], numbered: boolean): Query {
         rowOf(name, [...selected.types.keys()]).as(StatementName.Row),
       ]);
   };
-  const [first, ...lists] = sources;
-  const stacked = lists.reduce(
+  const [first, ...rest] = sources;
+  const stacked = rest.reduce(
     (union, selected) => union.unionAll(rowsFrom(db, selected)),
     rowsFrom(withSources, first),
   );
   return numbered ? stacked.orderBy(sql.id(StatementName.RowNumber)) : stacked;
 }
 
-// A source's rows, as its CTE: its own rows, a list's read for each row of
-// its parent, with each related row joined on
+// A source's rows, as its CTE: its own rows, a related source's read for each
+// row of its parent, with each related row joined on
 function rowsOf(selected: SelectedSource, numbered: boolean): Query {
   const rows = sourceRows(selected, numbered);
   const own = selected.parent
@@ -371,8 +374,9 @@ function rowsOf(selected: SelectedSource, numbered: boolean): Query {
   return withRelatedRows(own, selected.related);
 }
 
-// A list's rows, read for each row of its parent, matched on the column of
-// the parent's row that holds the list, each carrying the parent's keys
+// A related source's rows, read for each row of its parent, matched on the
+// column of the parent's row its relationship joins on, each carrying the
+// parent's keys
 function forEachParentRow(
   rows: Query,
   source: SourceDefinition,
@@ -393,7 +397,8 @@ function forEachParentRow(
     .selectAll(StatementName.Rows);
 }
 
-// The column a list's rows carry their parent's key in: __key_0, __key_1…
+// The column a related source's rows carry their parent's key in: __key_0,
+// __key_1…
 function carriedKey(at: number): string {
   return `${StatementName.Key}_${at}`;
 }

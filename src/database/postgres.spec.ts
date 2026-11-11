@@ -106,7 +106,7 @@ describe('readSnapshot', () => {
     await expect(readAll(client)).rejects.toThrow(KeyViolationError);
   });
 
-  describe("a list's rows, by their path and keys", () => {
+  describe("a related source's rows, by their path and keys", () => {
     // Positions, each with its trades and its orders
     const positions: SourceDefinition = {
       name: 'positions',
@@ -115,7 +115,7 @@ describe('readSnapshot', () => {
       relationships: new Map(),
     };
     for (const name of ['trades', 'orders']) {
-      const list: SourceDefinition = {
+      const related: SourceDefinition = {
         name,
         primaryKeyField: 'id',
         fields: [
@@ -124,21 +124,22 @@ describe('readSnapshot', () => {
         ],
         relationships: new Map(),
       };
-      addForeignKey(list, 'position_id', positions);
+      addForeignKey(related, 'position_id', positions);
     }
     const withLists = new Statement(
       positions,
       { relationships: { trades: {}, orders: {} } },
       StreamMode.Snapshot,
     );
-    // Row 5 of a list, under a position: a trade's source is 1, an order's 2
+    // Row 5 of a related source, under a position: a trade's is source 1, an
+    // order's source 2
     const fifth = (source: number, position = '1'): RawRow => ({
       __source: source,
       __keys: [position, '5'],
       __row: { id: '5', position_id: position },
     });
 
-    it("should keep two lists' rows apart, though their keys match: trade 5's and order 5's", async () => {
+    it("should keep two related sources' rows apart, though their keys match: trade 5's and order 5's", async () => {
       const { client } = clientReturning([fifth(1), fifth(2)]);
 
       const [{ events }] = await readAll(client, withLists);
@@ -160,7 +161,7 @@ describe('readSnapshot', () => {
       ]);
     });
 
-    it("should fail when a list has a row twice for one parent, naming the row's key by its path", async () => {
+    it("should fail when a related source has a row twice for one parent, naming the row's key by its path", async () => {
       const { client } = clientReturning([fifth(1), fifth(1)]);
 
       await expect(readAll(client, withLists)).rejects.toThrow(

@@ -424,7 +424,7 @@ describe('Statement', () => {
     });
   });
 
-  describe('lists', () => {
+  describe('related sources', () => {
     // Positions, each with its latest two trades
     const selection: Selection = {
       columns: ['symbol'],
@@ -437,7 +437,7 @@ describe('Statement', () => {
       },
     };
 
-    it("should read each list's rows for each row of its parent, filtered, ordered and limited per parent, tag each source's rows with its number, and stack them, a query's in their numbers' order", () => {
+    it("should read each related source's rows for each row of its parent, filtered, ordered and limited per parent, tag each source's rows with its number, and stack them, a query's in their numbers' order", () => {
       expect(queryOf(positions, selection)).toMatchObject({
         sql:
           'with "__source_0" as (select "__rows".* from (select "instrument_id" as "instrument_id", "symbol" as "symbol", ' +
@@ -460,14 +460,14 @@ describe('Statement', () => {
       });
     });
 
-    it("should leave a subscription's rows unnumbered, as a list's would renumber at every insert", () => {
+    it("should leave a subscription's rows unnumbered, as a related source's would renumber at every insert", () => {
       const { sql } = new Statement(positions, selection, StreamMode.Live);
 
       expect(sql).not.toContain('__row_number');
       expect(sql).toContain('cross join lateral');
     });
 
-    it("should read a list within a list for each row of the inner list's source", () => {
+    it('should read a related source within a related source for each row of the inner one', () => {
       const { sql } = queryOf(instruments, {
         relationships: {
           positions: { relationships: { trades: { columns: ['quantity'] } } },
@@ -482,7 +482,7 @@ describe('Statement', () => {
       );
     });
 
-    it("should read a list under a related row for each row, matched on the related row's key", () => {
+    it("should read a related source under a related row for each row, matched on the related row's key", () => {
       const { sql } = queryOf(trades, {
         relationships: {
           positions: { relationships: { trades: { columns: ['quantity'] } } },
@@ -494,7 +494,7 @@ describe('Statement', () => {
       );
     });
 
-    it("should join a list's own related rows onto its rows, reading each join's column", () => {
+    it("should join a related source's own related rows onto its rows, reading each join's column", () => {
       const { sql } = queryOf(positions, {
         relationships: {
           trades: {
@@ -512,7 +512,7 @@ describe('Statement', () => {
       );
     });
 
-    it("should unpack a list's row by its source's number: its list's path, its parent's keys then its own, and that source's columns", () => {
+    it("should unpack a related source's row by its number: its path, its parent's keys then its own, and that source's columns", () => {
       const statement = queryOf(positions, selection);
 
       expect(
@@ -531,7 +531,7 @@ describe('Statement', () => {
       expect(columnsOf(statement, 1)).toEqual(['id', 'quantity']);
     });
 
-    it("should give a list under a related row its path through the related row, and keys from the selected row's, as a related row adds none", () => {
+    it("should give a related source under a related row its path through the related row, and keys from the selected row's, as a related row adds none", () => {
       const statement = queryOf(trades, {
         relationships: {
           positions: { relationships: { trades: { columns: ['quantity'] } } },

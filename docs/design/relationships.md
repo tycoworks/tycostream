@@ -14,7 +14,7 @@ Six, and no others:
 
 - **Source:** a view or table in `schema.yaml`, as now.
 - **Relationship:** a field that reaches another source's rows, to one row (a trade's position) or to many (a position's trades).
-- **List:** the rows a relationship to many rows gives one row, as GraphQL's list type `[trades!]!` holds them: a position's trades.
+- **List:** the rows a relationship to many rows gives one row, as GraphQL's list type `[trades!]!` holds them: a position's trades. It's the API's word; the database layer reads a list's rows as a related source, a source of its own.
 - **Path:** the fields from a selected row to a row, as GraphQL uses the word: `[]` for a position, `["trades"]` for one of its trades.
 - **Keys:** a row's keys from the selected row down: `[1]` is position 1, `[1, 8]` its trade 8.
 - **Row number:** SQL's `row_number()`, which keeps a query's rows in order.

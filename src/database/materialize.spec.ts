@@ -645,7 +645,7 @@ describe('pairChanges', () => {
       ).toThrow(KeyViolationError);
     });
 
-    it("should name a list's key by its path", () => {
+    it("should name a related source's key by its path", () => {
       const trade = {
         diff: 1,
         row: {
@@ -671,7 +671,7 @@ describe('pairChanges', () => {
       },
     });
 
-    it("should keep two lists' rows apart, though their keys match: trade 5's and order 5's", () => {
+    it("should keep two related sources' rows apart, though their keys match: trade 5's and order 5's", () => {
       expect(
         pairChanges([
           listed('trades', [1, 5], 1),

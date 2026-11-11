@@ -133,8 +133,8 @@ export type OrderBy = Record<string, OrderDirection>[];
 export interface Selection {
   // Every column when absent; the key is always selected
   columns?: string[];
-  // The selection of each related row or list, by its relationship's field;
-  // a related row's takes columns and relationships only
+  // The selection of each relationship, by its field; one to one row takes
+  // columns and relationships only
   relationships?: Record<string, Selection>;
   where?: WhereClause;
   orderBy?: OrderBy;
@@ -159,8 +159,8 @@ export type Row = Record<string, unknown>;
 
 /**
  * Joins the fields of a path in a name: a related row's column, as
- * positions.symbol, or a list's key, as trades.id. No GraphQL name contains
- * it, so a name splits back losslessly.
+ * positions.symbol, or a related source's key, as trades.id. No GraphQL name
+ * contains it, so a name splits back losslessly.
  */
 export const PATH_SEPARATOR = '.';
 
@@ -173,7 +173,8 @@ export function pathName(path: readonly string[]): string {
 
 /**
  * A change to one row, flat, saying where the row sits among the selected
- * rows and their lists. What every reader of changes can rely on:
+ * rows and the rows their relationships to many rows reach. What every
+ * reader of changes can rely on:
  * - A timestamp has at most one change per path and keys.
  * - A query's changes come in the selection's order, and each source's rows
  *   in order under their parent.
@@ -189,11 +190,11 @@ export function pathName(path: readonly string[]): string {
  */
 export interface RowUpdateEvent {
   type: RowUpdateType;
-  // The fields from a selected row to the row's list: [] for a position,
-  // ['trades'] for one of its trades
+  // The fields from a selected row to the row: [] for a position, ['trades']
+  // for one of its trades
   path: readonly string[];
-  // The selected row's key, then one per list on the path; a related row
-  // adds none: [1] for position 1, [1, 8] for its trade 8
+  // The selected row's key, then one per relationship to many rows on the
+  // path; one to one row adds none: [1] for position 1, [1, 8] for its trade 8
   keys: readonly unknown[];
   fields: Set<string>;
   row: Row;
