@@ -12,7 +12,7 @@ This guide shows you how to serve the views in your streaming database as a Grap
 
 First, create a `schema.yaml` file, which tells tycostream which tables and views to serve through your API. You can write it by hand, or use the [schema generator](../scripts/generate-schema.sh) to read their columns from your database.
 
-To describe positions-app's `positions` view, keyed by `instrument_id`:
+For example, to describe positions-app's `positions` view, keyed by `instrument_id`:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
