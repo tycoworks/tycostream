@@ -1,6 +1,6 @@
 # How to set up tycostream
 
-This guide shows you how to serve the views in your streaming database as a GraphQL API. You'll describe the views in a `schema.yaml` file, run tycostream against your database, and then query and subscribe from a GraphQL client, so your app gets every change to a view as it happens. The examples use the `positions` view from [positions-app](https://github.com/tycoworks/positions-app), which holds a trading desk's live positions and which you can run yourself.
+This guide shows you how to serve the views in your streaming database as a GraphQL API. You'll describe the views in a `schema.yaml` file, run tycostream against your database, and then query and subscribe from a GraphQL client, so your app gets every change to a view as it happens. The examples use the `positions` view from [positions-app](https://github.com/tycoworks/positions-app), which you can run yourself. The view holds a trading desk's live positions.
 
 ## What you'll need
 
@@ -10,25 +10,29 @@ This guide shows you how to serve the views in your streaming database as a Grap
 
 ## Step 1: Describe your views
 
-First, create a `schema.yaml` file, which tells tycostream which tables and views to serve through your API. You can write it by hand, or use the [schema generator](../scripts/generate-schema.sh) to read their columns from your database.
+First, create a `schema.yaml` file that lists the tables and views to serve through your API. You can write it by hand, or use the [schema generator](../scripts/generate-schema.sh) to read the columns from your database.
 
-The file has two parts, and positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/main/schema.yaml) is a complete example:
+The file has two parts:
 
-- **`sources`** lists each table or view, with its `primary_key` and its `columns`, and gives each column a Postgres type. Names must match the database exactly, and each primary key must be unique. If tycostream doesn't support a column's type, it says so when it starts, and lists the types it does.
-- **`enums`** is optional, and lists the values of each GraphQL enum. To serve a text column as an enum, give it the enum's name as its type.
+- **`sources`** lists each table or view, with its `primary_key` and its `columns`, and gives each column its Postgres type name, such as `int4` or `timestamptz`. Names must match the database exactly, and each primary key must be unique. tycostream fails to start on an unsupported column type, and lists the supported ones.
+- **`enums`** is an optional list of each GraphQL enum's values. To serve a text column as an enum, set the column's type to the enum's name.
 
-To generate the file for the positions-app example, with its `positions` view keyed by `instrument_id`:
+positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/main/schema.yaml) is a complete example.
+
+For the positions-app example, to generate the file:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
   bash -s -- -s positions -p instrument_id > schema.yaml
 ```
 
-Add `-s` and `-p` again for each other table or view. To add an enum, name it and its values with `-e`, and map a column to it with `-c` after its view's `-s`, as in `-e trade_side "buy,sell" -s trades -p id -c side:trade_side`. By default, the generator connects to Materialize on `localhost:6875`, and to reach another database, you set the `DATABASE_*` settings from step 2 in your environment or a `.env` file.
+Add `-s` and `-p` again for each other table or view. For an enum, add `-e` with the enum's name and values, and `-c column:enum` after the column's view, as in `-e trade_side "buy,sell" -s trades -p id -c side:trade_side`.
+
+The generator connects to `localhost:6875` by default. For another database, set the `DATABASE_*` settings from step 2 in your environment or a `.env` file.
 
 ## Step 2: Run tycostream
 
-Next, start tycostream's Docker image, `ghcr.io/tycoworks/tycostream`, with your `schema.yaml` and your database's connection settings. Mount the file at `/app/schema.yaml`, and pass the settings as environment variables.
+Next, start tycostream's Docker image, `ghcr.io/tycoworks/tycostream`, with your `schema.yaml` and your database's connection settings. Mount the file at `/app/schema.yaml`, and pass the settings with `-e` or `--env-file`.
 
 For the positions-app example, with Materialize running on your own machine:
 
@@ -40,7 +44,9 @@ docker run -p 4000:4000 \
   ghcr.io/tycoworks/tycostream:latest
 ```
 
-When the log shows `=== tycostream ready ===`, your API is at `http://localhost:4000/graphql`. Set any of these settings with `-e`, or put them in a file and pass it with `--env-file`:
+When the log shows `=== tycostream ready ===`, your API is at `http://localhost:4000/graphql`.
+
+tycostream takes these settings:
 
 | Setting | Default | What it sets |
 |---|---|---|
@@ -49,7 +55,7 @@ When the log shows `=== tycostream ready ===`, your API is at `http://localhost:
 | `DATABASE_USER` | `materialize` | The user tycostream connects as |
 | `DATABASE_PASSWORD` | `materialize` | That user's password |
 | `DATABASE_NAME` | `materialize` | The database to connect to |
-| `DATABASE_MAX_CONNECTIONS` | `1000` | How many database connections tycostream can open. Each subscription holds one, and each query borrows one. Past the limit, a new one waits up to 10 seconds, then fails. |
+| `DATABASE_MAX_CONNECTIONS` | `1000` | How many database connections tycostream can open. Each subscription holds one, and each query borrows one. Past the limit, a new query or subscription waits up to 10 seconds, then fails. |
 | `DATABASE_QUERY_TIMEOUT_MS` | `30000` | How long a query can run before it fails, in milliseconds |
 | `GRAPHQL_PORT` | `4000` | The port tycostream serves the API on |
 | `GRAPHQL_UI` | `false` | Whether to serve the GraphQL explorer at `/graphql` |
@@ -58,7 +64,7 @@ When the log shows `=== tycostream ready ===`, your API is at `http://localhost:
 
 ## Step 3: Query and subscribe
 
-Finally, use a query to get the rows as they are now, or a subscription to get them and then every change. Try both in the GraphQL explorer, then connect your app with a GraphQL client that supports subscriptions over server-sent events, such as Apollo Client with Yoga's [Apollo link](https://github.com/graphql-hive/graphql-yoga/tree/main/packages/client/apollo-link).
+Finally, use a query to get the rows as they are now, or a subscription to get them and then every change. Try both in the GraphQL explorer, then from your app.
 
 For the positions-app example, to get every position, sorted by symbol:
 
@@ -106,9 +112,15 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-tycostream only sends the columns that changed in each update. An `INSERT` adds a row, a `DELETE` removes one, and an `UPDATE` changes one, with `fields` listing what changed. Fold each update into the first message's rows by key, so select the key in every subscription, as the example does with `instrument_id`. Each message holds every change at one Materialize timestamp, so all of a transaction's changes arrive in the same message. For the positions-app example, [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js) sets up the client and subscribes, and [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57) applies each message to its grid.
+tycostream only sends the columns that changed in each update. An `INSERT` adds a row, a `DELETE` removes one, and an `UPDATE` changes one, with `fields` listing the key and the columns that changed, and the others `null`.
 
-Updates arrive in no particular order, whatever a subscription's `order_by`. With `limit` and `offset`, `order_by` picks which rows the subscription covers, such as the two largest positions (`order_by: { market_value: desc }, limit: 2`). A row that enters or leaves those rows arrives as an `INSERT` or a `DELETE`.
+A subscription's first message holds every current row as an `INSERT`. Keep those rows, and apply each later update to the row with the same key. Select the key, or updates won't include it. In positions-app, [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57) applies each message to the grid.
+
+Each message holds every change at one Materialize timestamp, so all of a transaction's changes arrive in the same message. Within a message, updates arrive in no particular order, whatever the subscription's `order_by`.
+
+A subscription with `limit` or `offset` covers only the rows `order_by` picks, such as the two largest positions (`order_by: { market_value: desc }, limit: 2`). A position that moves into the top two arrives as an `INSERT`, and one that drops out arrives as a `DELETE`.
+
+tycostream serves subscriptions over server-sent events, not WebSockets. Apollo Client supports them through Yoga's [Apollo link](https://github.com/graphql-hive/graphql-yoga/tree/main/packages/client/apollo-link), as in positions-app's [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js).
 
 Filters, sorting, and paging work as they do in Hasura. The [API reference](api.md) lists every operator, the supported types, and how each type arrives in JSON.
 
@@ -116,10 +128,10 @@ Filters, sorting, and paging work as they do in Hasura. The [API reference](api.
 
 - There's no [authentication](https://github.com/tycoworks/tycostream/issues/36) yet, so anyone who can reach tycostream's port can read every view in `schema.yaml`.
 - There's no setting for an [encrypted connection](https://github.com/tycoworks/tycostream/issues/40) to the database yet.
-- Each view needs a single-column primary key.
-- `int8` and `numeric` values arrive as JSON numbers, so a value with more than about 15 significant digits loses its last ones.
-- If a subscription's database connection drops, the subscription ends with an error. [Reconnecting](https://github.com/tycoworks/tycostream/issues/38) is planned.
+- There's no [reconnection](https://github.com/tycoworks/tycostream/issues/38) yet, so a subscription ends with an error if its database connection drops.
+- Each source in `schema.yaml` needs a single-column primary key.
+- `int8` and `numeric` values arrive as JSON numbers, so values past about 15 significant digits lose precision.
 - tycostream doesn't serve [array columns](https://github.com/tycoworks/tycostream/issues/33) yet.
-- Related rows, such as a position's trades, need their own subscription until [relationships](https://github.com/tycoworks/tycostream/issues/2) land.
+- tycostream doesn't serve [relationships](https://github.com/tycoworks/tycostream/issues/2), such as a position's trades, yet.
 
 If something breaks, open an [issue](https://github.com/tycoworks/tycostream/issues).
