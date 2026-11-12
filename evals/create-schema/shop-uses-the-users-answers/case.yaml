@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: shop-uses-the-users-answers
+expected_outcome: |
+  A schema.yaml that serves customers and orders, each with primary_key id. orders' status is an enum of pending, cancelled, paid, shipped and refunded, in that order, and customers' tier is an enum of standard, silver, gold and platinum, in that order: the user's values and order, including refunded and silver, which the data doesn't hold yet. orders has the foreign key customer_id: customers. The user gave no keys, so the final message lists them as calls to check.

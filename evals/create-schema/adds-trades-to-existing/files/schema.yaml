@@ -1,0 +1,11 @@
+sources:
+  positions:
+    primary_key: instrument_id
+    columns:
+      instrument_id: int4
+      symbol: text
+      net_position: int8
+      latest_price: numeric
+      market_value: numeric
+      avg_cost_basis: numeric
+      theoretical_pnl: numeric

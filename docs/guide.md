@@ -6,11 +6,18 @@ This guide shows you how to serve your streaming database's views as a GraphQL A
 
 - **A streaming database**, with the tables or views you want to serve. tycostream supports [Materialize](https://materialize.com/) today.
 - **Docker**, or another tool that runs container images.
-- **psql**, if you use the schema generator.
+- **psql**, if you use the schema generator or the agent skill.
+- **An AI agent that supports [agent skills](https://agentskills.io)**, such as [Claude Code](https://claude.com/product/claude-code), if you'd like it to write `schema.yaml` for you.
 
 ## Step 1: Describe your views
 
-First, create a `schema.yaml` that lists the tables and views to serve. Write it by hand, or generate it from your database with the [schema generator](../scripts/generate-schema.sh).
+First, create a `schema.yaml` that lists the tables and views to serve. Write it by hand, generate it from your database with the [schema generator](../skills/create-schema/scripts/generate-schema.sh), or have your agent write it with the [create-schema](../skills/create-schema) skill.
+
+The skill reads your views, proposes each primary key, enum and foreign key, checks them against your data, and writes the file with the generator. To use it, install it in your project's folder, then ask your agent to write your `schema.yaml` with the create-schema skill:
+
+```bash
+npx skills add tycoworks/tycostream
+```
 
 The file has two parts:
 
@@ -35,7 +42,7 @@ positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/
 To generate the file for positions-app:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/scripts/generate-schema.sh | \
+curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/skills/create-schema/scripts/generate-schema.sh | \
   bash -s -- -s positions -p instrument_id > schema.yaml
 ```
 
@@ -152,6 +159,7 @@ The [API reference](api.md) covers what each update holds, and every filter, sor
 - There's no setting for an [encrypted connection](https://github.com/tycoworks/tycostream/issues/40) to the database yet.
 - There's no [reconnection](https://github.com/tycoworks/tycostream/issues/38) yet, so a subscription ends with an error if its database connection drops.
 - Each source in `schema.yaml` needs a single-column primary key.
+- Two sources can have only one foreign key between them, and a source can't have one to itself.
 - `int8` and `numeric` values arrive as JSON numbers, so values past about 15 significant digits lose precision.
 - tycostream doesn't serve [array columns](https://github.com/tycoworks/tycostream/issues/33) yet.
 

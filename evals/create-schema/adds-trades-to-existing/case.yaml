@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: adds-trades-to-existing
+expected_outcome: |
+  schema.yaml still serves positions exactly as before (primary_key instrument_id, the same seven columns and types), and now also serves trades with primary_key id, its five columns with their Postgres types, and foreign_keys with instrument_id: positions. Nothing from the original file is lost.
+context:
+  scaffold_script: place-files.sh

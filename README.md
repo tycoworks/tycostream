@@ -12,12 +12,12 @@
   <a href="#licence"><img src="https://img.shields.io/badge/licence-MIT%20or%20Apache%202.0-blue" alt="Licence: MIT or Apache 2.0"></a>
 </p>
 
-tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions, so you can build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming.
+tycostream turns [Materialize](https://materialize.com/) views into GraphQL queries and subscriptions, so you can quickly build real-time, type-safe apps. Like [Hasura](https://hasura.io/), but for streaming.
 
 ## Features
 
-- **Queries and subscriptions** for any table or view over server-sent events
-- **Nested queries** across related tables and views, with Hasura-style filtering, sorting and paging
+- **Queries and subscriptions** over server-sent events
+- **Nested joins** with filtering, sorting and paging
 - **Incremental updates** with only the fields that changed
 - **Batched updates** for transactional consistency
 
@@ -25,7 +25,7 @@ tycostream turns [Materialize](https://materialize.com/) views into GraphQL quer
 
 Follow these three steps, and see the [guide](docs/guide.md) and [API reference](docs/api.md) for more detail.
 
-1. **Describe your views.** Generate a `schema.yaml` that lists the tables and views to serve, with the [schema generator](scripts/generate-schema.sh).
+1. **Describe your views.** Write a `schema.yaml` that lists the tables and views to serve. You can use the [create-schema](skills/create-schema) agent skill (`npx skills add tycoworks/tycostream`), or the [schema generator](skills/create-schema/scripts/generate-schema.sh).
 2. **Run tycostream.** Start the Docker image, `ghcr.io/tycoworks/tycostream`, with your database's connection settings and your `schema.yaml`.
 3. **Query and subscribe.** Try your API in the built-in GraphQL explorer, then connect any GraphQL client.
 
