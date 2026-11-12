@@ -12,11 +12,11 @@ tycostream serves the tables and views listed in `schema.yaml` as a GraphQL API.
 
 ## Connect
 
-The generator connects with tycostream's `DATABASE_*` [settings](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-2-run-tycostream), read from the environment or a `.env` file in the current folder. Run your own queries with the same settings:
+Connect with the database settings the user gave you, or those in a `.env` file in the current folder, and tycostream's [defaults](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-2-run-tycostream) for the rest. Run each query with:
 
 ```bash
-PGPASSWORD="$DATABASE_PASSWORD" PGOPTIONS='--client_min_messages=warning' \
-  psql -h "$DATABASE_HOST" -p "$DATABASE_PORT" -U "$DATABASE_USER" -d "$DATABASE_NAME" -t -A -c "<one query>"
+PGPASSWORD=<password> PGOPTIONS='--client_min_messages=warning' \
+  psql -h <host> -p <port> -U <user> -d <database> -t -A -c "<one query>"
 ```
 
 Run one statement per `-c`: Materialize refuses several in one transaction. `PGOPTIONS` quiets the welcome Materialize prints on every connection. If the connection fails, say which setting to fix and stop.
@@ -38,8 +38,8 @@ If `schema.yaml` already exists, read it first. Keep every source, key, enum and
 ### 2. Read each one's columns
 
 ```sql
-SELECT column_name, data_type FROM information_schema.columns
-WHERE table_name = '<view>' ORDER BY ordinal_position;
+SELECT a.attname, t.typname FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid
+WHERE a.attrelid = '<view>'::regclass AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum;
 ```
 
 Check each column's type against the [types tycostream serves](https://github.com/tycoworks/tycostream/blob/main/docs/api.md#types). Note any column of another type, such as an array: the user can drop it from the view or cast it.
@@ -98,10 +98,11 @@ If the user can't answer, such as when they say they're away, go with your propo
 
 ### 7. Write the file
 
-Run tycostream's schema generator, `scripts/generate-schema.sh` in this skill's directory, with every source and decision. The guide's [step 1](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-1-describe-your-schema) explains its flags.
+Run tycostream's schema generator, `scripts/generate-schema.sh` in this skill's directory, with every source and decision. Pass the user's settings as `DATABASE_*` variables in front of it. The guide's [step 1](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-1-describe-your-schema) explains its flags.
 
 ```bash
-bash <this skill's directory>/scripts/generate-schema.sh -e trade_side "buy,sell" \
+DATABASE_PORT=6878 DATABASE_NAME=positions_app \
+  bash <this skill's directory>/scripts/generate-schema.sh -e trade_side "buy,sell" \
   -s positions -p instrument_id \
   -s trades -p id -c side:trade_side -f instrument_id:positions > schema.yaml
 ```
