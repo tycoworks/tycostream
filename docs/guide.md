@@ -132,7 +132,7 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-After the snapshot, each `UPDATE` sends only the columns that changed, and the rest are `null`. See how positions-app applies them in [`applyUpdates`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js#L34-L57).
+After the snapshot, each `UPDATE` sends only the columns that changed, and the rest are `null`. See how positions-app applies them in its [`main.js`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js).
 
 You can nest related sources in a query or a subscription, and in a subscription you nest them beside `data`. For example, to follow each position with its trades:
 
