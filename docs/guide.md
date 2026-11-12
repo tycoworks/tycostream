@@ -9,7 +9,7 @@ This guide shows you how to serve your streaming database's views as a GraphQL A
 - **psql**, if you use the schema generator or the agent skill.
 - **An AI agent that supports [agent skills](https://agentskills.io)**, such as [Claude Code](https://claude.com/product/claude-code), if you'd like it to write `schema.yaml` for you.
 
-## Step 1: Describe your views
+## Step 1: Describe your schema
 
 First, create a `schema.yaml` that lists the tables and views to serve. Write it by hand, generate it from your database with the [schema generator](../skills/create-schema/scripts/generate-schema.sh), or have your agent write it with the [create-schema](../skills/create-schema) skill.
 

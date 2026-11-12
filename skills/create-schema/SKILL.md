@@ -8,7 +8,7 @@ compatibility: Needs psql, and a connection to the database.
 
 ## What you are making
 
-tycostream serves the tables and views listed in `schema.yaml` as a GraphQL API. The guide's [step 1](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-1-describe-your-views) describes the file. It needs three things the database doesn't record: each view's primary key, which text columns are enums, and which columns reference another view. You find likely answers in the database, check them against the data, confirm them with the user in one question, and write the file with tycostream's schema generator.
+tycostream serves the tables and views listed in `schema.yaml` as a GraphQL API. The guide's [step 1](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-1-describe-your-schema) describes the file. It needs three things the database doesn't record: each view's primary key, which text columns are enums, and which columns reference another view. You find likely answers in the database, check them against the data, confirm them with the user in one question, and write the file with tycostream's schema generator.
 
 ## Connect
 
@@ -98,7 +98,7 @@ If the user can't answer, such as when they say they're away, go with your propo
 
 ### 7. Write the file
 
-Run tycostream's schema generator, `scripts/generate-schema.sh` in this skill's directory, with every source and decision. The guide's [step 1](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-1-describe-your-views) explains its flags.
+Run tycostream's schema generator, `scripts/generate-schema.sh` in this skill's directory, with every source and decision. The guide's [step 1](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-1-describe-your-schema) explains its flags.
 
 ```bash
 bash <this skill's directory>/scripts/generate-schema.sh -e trade_side "buy,sell" \
