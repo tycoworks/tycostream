@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: shop-enums-array-no-unique-key
+expected_outcome: |
+  A schema.yaml in which customers has primary_key id, orders has primary_key id with status served as an enum of cancelled, paid, pending and shipped and a foreign key customer_id: customers, and products has primary_key sku. products' tags column (a text array, which tycostream doesn't serve) is left out or flagged rather than written as a type tycostream refuses. order_lines has no single unique column, so it is not written with a key that isn't unique: it is left out, or the user is told it needs a key column such as one combining order_id and line_no. The final message lists these calls for the user to check.

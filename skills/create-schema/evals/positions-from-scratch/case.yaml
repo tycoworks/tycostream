@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: positions-from-scratch
+expected_outcome: |
+  A schema.yaml with two sources. positions has primary_key instrument_id and its seven columns with their Postgres types (instrument_id int4, symbol text, net_position int8, latest_price, market_value, avg_cost_basis and theoretical_pnl numeric). trades has primary_key id and its columns (id int4, instrument_id int4, quantity int4, price numeric, executed_at timestamp), and foreign_keys with instrument_id: positions. No enums. The final message says which keys and foreign key were chosen and that they were checked against the data.
