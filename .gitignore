@@ -60,4 +60,4 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Agent skill eval runs
 skills/*-workspace/
-!skills/*/evals/**/files/schema.yaml
+!evals/**/files/schema.yaml
