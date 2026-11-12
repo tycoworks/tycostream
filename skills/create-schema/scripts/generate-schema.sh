@@ -22,9 +22,21 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-# Load .env file if it exists
+# Load .env file if it exists, for the settings the environment doesn't set:
+# a variable set in the environment wins, as it does for tycostream itself
 if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        line="${line#export }"
+        case "$line" in ''|'#'*) continue ;; esac
+        key="${line%%=*}"
+        value="${line#*=}"
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        if [[ "$value" =~ ^\"(.*)\"$ || "$value" =~ ^\'(.*)\'$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+        [ -n "${!key+set}" ] || export "$key=$value"
+    done < .env
 fi
 
 # Database connection parameters
