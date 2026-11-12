@@ -8,37 +8,11 @@ compatibility: Needs psql, and a connection to the database.
 
 ## What you are making
 
-tycostream serves the tables and views listed in `schema.yaml` as a GraphQL API. The file needs three things the database doesn't record: each view's primary key, which text columns are enums, and which columns reference another view. You find likely answers in the database, check them against the data, confirm them with the user in one question, and write the file with tycostream's schema generator.
-
-A finished file looks like this:
-
-```yaml
-enums:
-  trade_side:
-    - buy
-    - sell
-
-sources:
-  positions:
-    primary_key: instrument_id
-    columns:
-      instrument_id: int4
-      symbol: text
-      net_position: int8
-  trades:
-    primary_key: id
-    columns:
-      id: int4
-      instrument_id: int4
-      side: trade_side
-      quantity: int4
-    foreign_keys:
-      instrument_id: positions
-```
+tycostream serves the tables and views listed in `schema.yaml` as a GraphQL API. The guide's [step 1](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-1-describe-your-views) describes the file. It needs three things the database doesn't record: each view's primary key, which text columns are enums, and which columns reference another view. You find likely answers in the database, check them against the data, confirm them with the user in one question, and write the file with tycostream's schema generator.
 
 ## Connect
 
-The generator and every query here connect with the same settings, read from the environment or a `.env` file in the current folder: `DATABASE_HOST` (default `localhost`), `DATABASE_PORT` (`6875`), `DATABASE_USER` (`materialize`), `DATABASE_PASSWORD` (`materialize`) and `DATABASE_NAME` (`materialize`). Run queries with:
+The generator connects with tycostream's `DATABASE_*` [settings](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-2-run-tycostream), read from the environment or a `.env` file in the current folder. Run your own queries with the same settings:
 
 ```bash
 PGPASSWORD="$DATABASE_PASSWORD" PGOPTIONS='--client_min_messages=warning' \
@@ -68,7 +42,7 @@ SELECT column_name, data_type FROM information_schema.columns
 WHERE table_name = '<view>' ORDER BY ordinal_position;
 ```
 
-tycostream serves these types: `int2`, `int4`, `int8`, `float4`, `float8`, `numeric`, `text`, `varchar`, `bpchar`, `bool`, `uuid`, `timestamp`, `timestamptz`, `date`, `time`, `interval`, `json`, `jsonb` and `bytea`. A column of any other type, such as an array, stops tycostream at startup. Note which columns that affects: the user can drop them from the view or cast them. Array columns are [tycostream#33](https://github.com/tycoworks/tycostream/issues/33).
+Check each column's type against the [types tycostream serves](https://github.com/tycoworks/tycostream/blob/main/docs/api.md#types). Note any column of another type, such as an array: the user can drop it from the view or cast it.
 
 ### 3. Pick the primary key
 
@@ -80,7 +54,7 @@ SELECT count(*), count(<key>), count(DISTINCT <key>) FROM <view>;
 
 The key is good when all three counts are equal: no nulls, no repeats. A wrong key makes a subscription fail at runtime, so the user confirms every key, even a good one.
 
-tycostream needs a single-column key. If no column is unique, say so, and suggest adding one in the view, such as a column that joins the values that are unique together. Don't write a file with a key that isn't unique.
+If no single column is unique, say so, and suggest adding one in the view, such as a column that joins the values that are unique together. Don't write a file with a key that isn't unique.
 
 ### 4. Spot enums
 
@@ -93,13 +67,13 @@ SELECT DISTINCT <column> FROM <view> ORDER BY 1 LIMIT 50;
 The user decides two things, because the data can't:
 
 - **Every value the column can hold.** The data shows today's values only. A value missing from the enum fails any query or subscription that reads it, so ask about values that haven't appeared yet, such as `refunded`.
-- **Their order.** tycostream compares an enum's values in the order the file lists them, so `status: { _gte: paid }` means paid or later. Propose their natural order, such as a rank or a lifecycle.
+- **Their order.** [Filters](https://github.com/tycoworks/tycostream/blob/main/docs/api.md#filters) compare an enum's values in the file's order, so propose their natural order, such as a rank or a lifecycle.
 
 Name the enum after what it means (`trade_side`), and reuse one enum for columns that share the same values.
 
 ### 5. Spot foreign keys
 
-A foreign key relates two sources, so each gets a nested field for the other. Propose one where a column names another chosen source's key, as `trades.instrument_id` names `positions.instrument_id`, and check that every value has a match:
+Propose a foreign key where a column names another chosen source's key, as `trades.instrument_id` names `positions.instrument_id`, and check that every value has a match:
 
 ```sql
 SELECT count(*) FROM <view> v
@@ -107,7 +81,7 @@ WHERE v.<column> IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM <other> o WHERE o.<other_key> = v.<column>);
 ```
 
-Zero means every value matches. Nulls are fine: a trade with no position gets a null `positions` field. tycostream refuses two foreign keys between the same two sources, so if there are two (a buyer and a seller account), the user picks one.
+Zero means every value that isn't null has a match. The guide's [current limitations](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#current-limitations) rule out some foreign keys, such as two between the same sources (a buyer and a seller account). If a proposal runs into one, the user picks which to keep.
 
 ### 6. Confirm with the user
 
@@ -118,13 +92,13 @@ Ask once, with every proposal together, so the user can correct them all in one 
 | positions | `instrument_id`: 3 rows, no nulls or repeats | | |
 | trades | `id`: 7 rows, no nulls or repeats | `side` as `trade_side`: buy, sell | `instrument_id` → positions: every value matches |
 
-Then list what only the user can answer: values each enum may hold that the data doesn't show yet, the order you proposed, columns tycostream can't serve, views with no unique column, and two foreign keys between the same sources. Leave out anything the user has already told you.
+Then list what only the user can answer: values each enum may hold that the data doesn't show yet, the order you proposed, columns tycostream can't serve, views with no unique column, and foreign keys the limitations rule out. Leave out anything the user has already told you.
 
 If the user can't answer, such as when they say they're away, go with your proposals, and list them in step 8 as calls for the user to check.
 
 ### 7. Write the file
 
-Run tycostream's schema generator, `scripts/generate-schema.sh` in this skill's directory, with every source and decision: `-s` and `-p` for each source, `-e` for each enum, and, after a source's `-p`, `-c column:enum` for each enum column and `-f column:source` for each foreign key. It connects with the same `DATABASE_*` settings.
+Run tycostream's schema generator, `scripts/generate-schema.sh` in this skill's directory, with every source and decision. The guide's [step 1](https://github.com/tycoworks/tycostream/blob/main/docs/guide.md#step-1-describe-your-views) explains its flags.
 
 ```bash
 bash <this skill's directory>/scripts/generate-schema.sh -e trade_side "buy,sell" \

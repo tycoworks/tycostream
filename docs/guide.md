@@ -159,6 +159,7 @@ The [API reference](api.md) covers what each update holds, and every filter, sor
 - There's no setting for an [encrypted connection](https://github.com/tycoworks/tycostream/issues/40) to the database yet.
 - There's no [reconnection](https://github.com/tycoworks/tycostream/issues/38) yet, so a subscription ends with an error if its database connection drops.
 - Each source in `schema.yaml` needs a single-column primary key.
+- Two sources can have only one foreign key between them, and a source can't have one to itself.
 - `int8` and `numeric` values arrive as JSON numbers, so values past about 15 significant digits lose precision.
 - tycostream doesn't serve [array columns](https://github.com/tycoworks/tycostream/issues/33) yet.
 
