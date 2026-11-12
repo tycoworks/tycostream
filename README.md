@@ -25,9 +25,23 @@ tycostream turns [Materialize](https://materialize.com/) views into GraphQL quer
 
 Follow these three steps, and see the [guide](docs/guide.md) and [API reference](docs/api.md) for more detail.
 
-1. **Describe your views.** Write a `schema.yaml` that lists the tables and views to serve. You can use the [create-schema](skills/create-schema) agent skill (`npx skills add tycoworks/tycostream`), or the [schema generator](skills/create-schema/scripts/generate-schema.sh).
-2. **Run tycostream.** Start the Docker image, `ghcr.io/tycoworks/tycostream`, with your database's connection settings and your `schema.yaml`.
-3. **Query and subscribe.** Try your API in the built-in GraphQL explorer, then connect any GraphQL client.
+1. **Describe your schema.** Write a `schema.yaml` that lists the tables and views to serve. You can generate it with the [schema generator script](skills/create-schema/scripts/generate-schema.sh), or with the [create-schema](skills/create-schema) agent skill:
+
+   ```bash
+   npx skills add tycoworks/tycostream
+   ```
+
+2. **Run tycostream.** Start the Docker image with your `schema.yaml` and your database's [connection settings](docs/guide.md#step-2-run-tycostream). To run it against Materialize on your own machine:
+
+   ```bash
+   docker run -p 4000:4000 \
+     -e DATABASE_HOST=host.docker.internal \
+     -e GRAPHQL_UI=true \
+     -v $(pwd)/schema.yaml:/app/schema.yaml \
+     ghcr.io/tycoworks/tycostream:latest
+   ```
+
+3. **Query and subscribe.** Open the GraphQL explorer at http://localhost:4000/graphql, try a query and a subscription, then connect any GraphQL client.
 
 ## See it working
 
