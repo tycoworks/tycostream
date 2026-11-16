@@ -37,9 +37,9 @@ sources:
 
 A foreign key relates both ways, so each trade has a position, and each position has trades.
 
-positions-app's [`schema.yaml`](https://github.com/tycoworks/positions-app/blob/main/schema.yaml) is a complete example.
+For a complete example, see [positions-app](https://github.com/tycoworks/positions-app).
 
-To generate the file for positions-app:
+To generate the file for the `positions` view:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/tycoworks/tycostream/main/skills/create-schema/scripts/generate-schema.sh | \
@@ -132,7 +132,7 @@ subscription {
    "fields": ["instrument_id", "latest_price", "market_value"] }]
 ```
 
-After the snapshot, each `UPDATE` sends only the columns that changed, and the rest are `null`. See how positions-app applies them in its [`main.js`](https://github.com/tycoworks/positions-app/blob/main/ui/main.js).
+After the snapshot, each `UPDATE` sends only the columns that changed, and the rest are `null`. See how [positions-app](https://github.com/tycoworks/positions-app) applies them.
 
 You can nest related sources in a query or a subscription, and in a subscription you nest them beside `data`. For example, to follow each position with its trades:
 
@@ -149,7 +149,7 @@ subscription {
 
 A new trade then arrives in the same message as the change it makes to its position. For a flat row with both sources' columns, join them in a view and serve that. The API reference covers [nested fields](api.md#queries-and-subscriptions) and their [updates](api.md#updates).
 
-tycostream serves subscriptions over server-sent events, not WebSockets. Apollo Client supports them through Yoga's [Apollo link](https://github.com/graphql-hive/graphql-yoga/tree/main/packages/client/apollo-link), as in positions-app's [graphql.js](https://github.com/tycoworks/positions-app/blob/main/ui/graphql.js).
+tycostream serves subscriptions over server-sent events, not WebSockets. Apollo Client supports them through Yoga's [Apollo link](https://github.com/graphql-hive/graphql-yoga/tree/main/packages/client/apollo-link), as [positions-app](https://github.com/tycoworks/positions-app) does.
 
 The [API reference](api.md) covers what each update holds, and every filter, sort, and type.
 
