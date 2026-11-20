@@ -27,7 +27,6 @@ describe('ApiService', () => {
       { name: 'value', type: PostgresType.Int4 },
     ],
   };
-  const ALL_FIELDS = new Set(['id', 'name', 'value']);
   const ROW = { id: '1', name: 'test', value: 7 };
 
   // A view that sends these timestamps' events, then stays open; records
@@ -89,7 +88,6 @@ describe('ApiService', () => {
       type: RowUpdateType.Insert,
       path: [],
       keys: [row.id],
-      fields: ALL_FIELDS,
       row,
     });
 
@@ -194,7 +192,6 @@ describe('ApiService', () => {
           type: RowUpdateType.Insert,
           path: [],
           keys: ['1'],
-          fields: ALL_FIELDS,
           row: ROW,
         },
       ]);
@@ -218,7 +215,6 @@ describe('ApiService', () => {
           type: RowUpdateType.Update,
           path: [],
           keys: ['1'],
-          fields: new Set(['id', 'value']),
           row: ROW,
         },
       ]);
@@ -242,7 +238,6 @@ describe('ApiService', () => {
           type: RowUpdateType.Delete,
           path: [],
           keys: ['1'],
-          fields: new Set(['id']),
           row: ROW,
         },
       ]);
@@ -267,14 +262,12 @@ describe('ApiService', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: ['1'],
-            fields: ALL_FIELDS,
             row: ROW,
           },
           {
             type: RowUpdateType.Insert,
             path: [],
             keys: ['2'],
-            fields: ALL_FIELDS,
             row: { ...ROW, id: '2' },
           },
         ],
@@ -283,7 +276,6 @@ describe('ApiService', () => {
             type: RowUpdateType.Delete,
             path: [],
             keys: ['1'],
-            fields: new Set(['id']),
             row: ROW,
           },
         ],
@@ -318,7 +310,6 @@ describe('ApiService', () => {
           type: RowUpdateType.Insert,
           path: [],
           keys: ['1'],
-          fields: ALL_FIELDS,
           row: ROW,
         },
       ]);

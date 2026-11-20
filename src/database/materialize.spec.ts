@@ -108,7 +108,6 @@ describe('MaterializeAdapter', () => {
               type: RowUpdateType.Insert,
               path: [],
               keys: [1],
-              fields: new Set(['id', 'name']),
               row: { id: 1, name: 'a' },
             },
           ],
@@ -160,14 +159,12 @@ describe('MaterializeAdapter', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [1],
-            fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
           {
             type: RowUpdateType.Insert,
             path: [],
             keys: [2],
-            fields: new Set(['id', 'name']),
             row: { id: 2, name: 'b' },
           },
         ],
@@ -179,14 +176,12 @@ describe('MaterializeAdapter', () => {
             type: RowUpdateType.Update,
             path: [],
             keys: [1],
-            fields: new Set(['id', 'name']),
             row: { id: 1, name: 'c' },
           },
           {
             type: RowUpdateType.Delete,
             path: [],
             keys: [2],
-            fields: new Set(['id']),
             row: { id: 2, name: 'b' },
           },
         ],
@@ -212,7 +207,6 @@ describe('MaterializeAdapter', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [1],
-            fields: new Set(['id']),
             row: { id: 1 },
           },
         ],
@@ -225,7 +219,6 @@ describe('MaterializeAdapter', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [2],
-            fields: new Set(['id']),
             row: { id: 2 },
           },
         ],
@@ -251,7 +244,6 @@ describe('MaterializeAdapter', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [1],
-            fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
         ],
@@ -286,7 +278,6 @@ describe('MaterializeAdapter', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [1],
-            fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
         ],
@@ -298,7 +289,6 @@ describe('MaterializeAdapter', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: ['AAPL'],
-            fields: new Set(['symbol', 'price']),
             row: { symbol: 'AAPL', price: 1.5 },
           },
         ],
@@ -325,7 +315,6 @@ describe('MaterializeAdapter', () => {
             type: RowUpdateType.Delete,
             path: [],
             keys: [1],
-            fields: new Set(['id']),
             row: { id: 1, name: 'a' },
           },
         ],
@@ -445,8 +434,6 @@ describe('ProgressBatcher', () => {
 });
 
 describe('pairChanges', () => {
-  const FIELDS = ['id', 'symbol', 'qty', 'traded_at'];
-
   const row = (id: number, symbol: string, qty: number | null, at = 'T1') => ({
     id,
     symbol,
@@ -467,25 +454,23 @@ describe('pairChanges', () => {
   });
 
   describe('one row per key', () => {
-    it('should make a lone +1 an insert with every field', () => {
+    it('should make a lone +1 an insert with its row', () => {
       expect(pairChanges([add(row(1, 'AAPL', 10))])).toEqual([
         {
           type: RowUpdateType.Insert,
           path: [],
           keys: [1],
-          fields: new Set(FIELDS),
           row: row(1, 'AAPL', 10),
         },
       ]);
     });
 
-    it('should make a lone -1 a delete of the key', () => {
+    it('should make a lone -1 a delete with its row', () => {
       expect(pairChanges([remove(row(1, 'AAPL', 10))])).toEqual([
         {
           type: RowUpdateType.Delete,
           path: [],
           keys: [1],
-          fields: new Set(['id']),
           row: row(1, 'AAPL', 10),
         },
       ]);
@@ -493,7 +478,7 @@ describe('pairChanges', () => {
   });
 
   describe('updates', () => {
-    it('should pair a -1 and a +1 into an update of the changed fields', () => {
+    it('should pair a -1 and a +1 into an update with the new row', () => {
       expect(
         pairChanges([
           remove(row(1, 'AAPL', 10)),
@@ -504,7 +489,6 @@ describe('pairChanges', () => {
           type: RowUpdateType.Update,
           path: [],
           keys: [1],
-          fields: new Set(['id', 'qty', 'traded_at']),
           row: row(1, 'AAPL', 15, 'T2'),
         },
       ]);
@@ -518,13 +502,12 @@ describe('pairChanges', () => {
           type: RowUpdateType.Update,
           path: [],
           keys: [1],
-          fields: new Set(['id', 'qty']),
           row: row(1, 'AAPL', 15),
         },
       ]);
     });
 
-    it('should count a field changing to or from null as a change', () => {
+    it('should pair a field changing to or from null as an update with the new row', () => {
       expect(
         pairChanges([remove(row(1, 'AAPL', 10)), add(row(1, 'AAPL', null))]),
       ).toEqual([
@@ -532,14 +515,12 @@ describe('pairChanges', () => {
           type: RowUpdateType.Update,
           path: [],
           keys: [1],
-          fields: new Set(['id', 'qty']),
           row: row(1, 'AAPL', null),
         },
       ]);
       expect(
-        pairChanges([remove(row(1, 'AAPL', null)), add(row(1, 'AAPL', 0))])[0]
-          .fields,
-      ).toEqual(new Set(['id', 'qty']));
+        pairChanges([remove(row(1, 'AAPL', null)), add(row(1, 'AAPL', 0))]),
+      ).toMatchObject([{ type: RowUpdateType.Update, row: row(1, 'AAPL', 0) }]);
     });
 
     it('should compare JSON values by their content', () => {
@@ -553,9 +534,10 @@ describe('pairChanges', () => {
         pairChanges([remove(before), add({ ...before, qty: { lots: [1] } })]),
       ).toEqual([]);
       expect(
-        pairChanges([remove(before), add({ ...before, qty: { lots: [2] } })])[0]
-          .fields,
-      ).toEqual(new Set(['id', 'qty']));
+        pairChanges([remove(before), add({ ...before, qty: { lots: [2] } })]),
+      ).toMatchObject([
+        { type: RowUpdateType.Update, row: { ...before, qty: { lots: [2] } } },
+      ]);
     });
   });
 

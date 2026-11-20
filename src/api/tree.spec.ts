@@ -39,7 +39,6 @@ const insert = (path: string[], keys: unknown[], row: Row): RowUpdateEvent => ({
   type: RowUpdateType.Insert,
   path,
   keys,
-  fields: new Set(Object.keys(row)),
   row,
 });
 
@@ -193,7 +192,6 @@ describe('toUpdates', () => {
     type,
     path: [],
     keys,
-    fields: new Set(Object.keys(row)),
     row,
   });
   const position = { instrument_id: 1, symbol: 'AAPL', net_position: 600 };
@@ -209,14 +207,11 @@ describe('toUpdates', () => {
   });
 
   it("should send an update's whole row, the columns that didn't change too, its related row folded in", () => {
-    // Only the position's net_position changed
-    const event: RowUpdateEvent = {
-      ...change(RowUpdateType.Update, {
-        ...trade,
-        'positions.net_position': 700,
-      }),
-      fields: new Set(['id', 'positions.net_position']),
-    };
+    // Only the position's net_position changed, but the row is whole
+    const event = change(RowUpdateType.Update, {
+      ...trade,
+      'positions.net_position': 700,
+    });
 
     expect(toUpdates(trades, [event])).toEqual([
       {
@@ -251,11 +246,8 @@ describe('toUpdates', () => {
   });
 
   it("should send an unchanged related row whole in an update that changed only the row's own columns", () => {
-    // Only quantity changed, and the position didn't
-    const event: RowUpdateEvent = {
-      ...change(RowUpdateType.Update, { ...trade, quantity: 150 }),
-      fields: new Set(['id', 'quantity']),
-    };
+    // Only quantity changed, and the position didn't, but the row is whole
+    const event = change(RowUpdateType.Update, { ...trade, quantity: 150 });
 
     expect(toUpdates(trades, [event])).toEqual([
       {
@@ -321,7 +313,6 @@ describe('toUpdates', () => {
       type,
       path,
       keys,
-      fields: new Set(Object.keys(row)),
       row,
     });
     const update = (
