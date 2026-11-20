@@ -6,40 +6,33 @@ describe('SubscriptionProcessor', () => {
 
   // Helper to create properly formatted events: a timestamp's list of
   // updates, here holding one
-  const createEvent = (operation: string, rowData: any, fields: string[]) => ({
-    data: [
-      {
-        operation,
-        data: rowData,
-        fields,
-      },
-    ],
+  const createEvent = (operation: string, key: unknown, rowData: any) => ({
+    data: [{ operation, key, data: rowData }],
   });
+
+  const alice = { id: 1, name: 'Alice', age: 30 };
+  const bob = { id: 2, name: 'Bob', age: 25 };
+  const charlie = { id: 3, name: 'Charlie', age: 35 };
 
   describe('with Map-based expected state', () => {
     beforeEach(() => {
       const expectedState = new Map([
-        [1, { id: 1, name: 'Alice', age: 30 }],
-        [2, { id: 2, name: 'Bob', age: 25 }],
-        [3, { id: 3, name: 'Charlie', age: 35 }],
+        [1, alice],
+        [2, bob],
+        [3, charlie],
       ]);
 
       processor = new SubscriptionProcessor(
         expectedState,
         'data', // dataPath
-        'id', // idField
       );
     });
 
     describe('INSERT operations', () => {
       it('should process INSERT for expected item', () => {
-        const event = createEvent(
-          GraphQLRowOperation.Insert,
-          { id: 1, name: 'Alice', age: 30 },
-          ['id', 'name', 'age'],
+        processor.processEvent(
+          createEvent(GraphQLRowOperation.Insert, 1, alice),
         );
-
-        processor.processEvent(event);
 
         const stats = processor.getStats();
         expect(stats.totalExpected).toBe(3);
@@ -48,13 +41,13 @@ describe('SubscriptionProcessor', () => {
       });
 
       it('should track unexpected INSERT', () => {
-        const event = createEvent(
-          GraphQLRowOperation.Insert,
-          { id: 99, name: 'Unknown', age: 40 },
-          ['id', 'name', 'age'],
+        processor.processEvent(
+          createEvent(GraphQLRowOperation.Insert, 99, {
+            id: 99,
+            name: 'Unknown',
+            age: 40,
+          }),
         );
-
-        processor.processEvent(event);
 
         const stats = processor.getStats();
         expect(stats.totalExpected).toBe(3);
@@ -63,38 +56,53 @@ describe('SubscriptionProcessor', () => {
       });
 
       it('should detect state mismatch on wrong data', () => {
-        const event = createEvent(
-          GraphQLRowOperation.Insert,
-          { id: 1, name: 'Alice', age: 31 }, // Wrong age
-          ['id', 'name', 'age'],
+        processor.processEvent(
+          createEvent(GraphQLRowOperation.Insert, 1, { ...alice, age: 31 }),
         );
-
-        processor.processEvent(event);
 
         expect(processor.isComplete()).toBe(false);
         // State doesn't match expected
       });
 
       it('should throw on duplicate INSERT', () => {
-        // First INSERT
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 1, name: 'Alice', age: 30 },
-            ['id', 'name', 'age'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 1, alice),
         );
 
-        // Duplicate INSERT should throw
         expect(() => {
           processor.processEvent(
-            createEvent(
-              GraphQLRowOperation.Insert,
-              { id: 1, name: 'Alice', age: 30 },
-              ['id', 'name', 'age'],
-            ),
+            createEvent(GraphQLRowOperation.Insert, 1, alice),
           );
         }).toThrow('Received duplicate INSERT for item 1');
+      });
+
+      it('should throw on INSERT without data', () => {
+        expect(() => {
+          processor.processEvent(
+            createEvent(GraphQLRowOperation.Insert, 1, null),
+          );
+        }).toThrow('Received INSERT for item 1 without data');
+      });
+
+      it('should throw on an update without a key', () => {
+        expect(() => {
+          processor.processEvent(
+            createEvent(GraphQLRowOperation.Insert, undefined, alice),
+          );
+        }).toThrow('Invalid operation key');
+      });
+
+      it('should key a row by its update key, 0 included, not by a column', () => {
+        const zero = new SubscriptionProcessor(
+          new Map([[0, { code: 'x' }]]),
+          'data',
+        );
+
+        zero.processEvent(
+          createEvent(GraphQLRowOperation.Insert, 0, { code: 'x' }),
+        );
+
+        expect(zero.isComplete()).toBe(true);
       });
     });
 
@@ -104,19 +112,11 @@ describe('SubscriptionProcessor', () => {
           data: [
             {
               operation: GraphQLRowOperation.Insert,
-              data: { id: 1, name: 'Alice', age: 29 },
-              fields: ['id', 'name', 'age'],
+              key: 1,
+              data: { ...alice, age: 29 },
             },
-            {
-              operation: GraphQLRowOperation.Update,
-              data: { id: 1, age: 30 },
-              fields: ['id', 'age'],
-            },
-            {
-              operation: GraphQLRowOperation.Insert,
-              data: { id: 2, name: 'Bob', age: 25 },
-              fields: ['id', 'name', 'age'],
-            },
+            { operation: GraphQLRowOperation.Update, key: 1, data: alice },
+            { operation: GraphQLRowOperation.Insert, key: 2, data: bob },
           ],
         });
 
@@ -131,117 +131,80 @@ describe('SubscriptionProcessor', () => {
     });
 
     describe('UPDATE operations', () => {
-      it('should merge UPDATE with existing data', () => {
-        // First INSERT
+      it('should replace the row with the UPDATE as a whole', () => {
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 1, name: 'Alice', age: 30 },
-            ['id', 'name', 'age'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 1, alice),
+        );
+        processor.processEvent(
+          createEvent(GraphQLRowOperation.Update, 1, {
+            ...alice,
+            name: 'Alice Updated',
+          }),
+        );
+        processor.processEvent(createEvent(GraphQLRowOperation.Insert, 2, bob));
+        processor.processEvent(
+          createEvent(GraphQLRowOperation.Insert, 3, charlie),
         );
 
-        // Then UPDATE with partial data
+        // The row is the updated one, not the first
+        expect(processor.getStats().totalReceived).toBe(3);
+        expect(processor.isComplete()).toBe(false);
+      });
+
+      it('should leave the row as it is when the UPDATE has no data', () => {
+        for (const [key, row] of [
+          [1, alice],
+          [2, bob],
+          [3, charlie],
+        ] as const) {
+          processor.processEvent(
+            createEvent(GraphQLRowOperation.Insert, key, row),
+          );
+        }
+
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Update,
-            { id: 1, name: 'Alice Updated' },
-            ['id', 'name'],
-          ),
+          createEvent(GraphQLRowOperation.Update, 1, null),
         );
 
-        // Should still track as one item with merged data
-        const stats = processor.getStats();
-        expect(stats.totalExpected).toBe(3);
-        expect(stats.totalReceived).toBe(1);
+        expect(processor.getStats().totalReceived).toBe(3);
+        expect(processor.isComplete()).toBe(true);
       });
 
       it('should throw on UPDATE before INSERT', () => {
-        // UPDATE for item we haven't seen yet should throw
         expect(() => {
           processor.processEvent(
-            createEvent(GraphQLRowOperation.Update, { id: 1, name: 'Alice' }, [
-              'id',
-              'name',
-            ]),
+            createEvent(GraphQLRowOperation.Update, 1, alice),
           );
         }).toThrow('Received UPDATE for non-existent item 1');
       });
 
-      it('should accumulate partial updates after INSERT', () => {
-        // First INSERT the item (partial data)
-        processor.processEvent(
-          createEvent(GraphQLRowOperation.Insert, { id: 1, name: 'Alice' }, [
-            'id',
-            'name',
-          ]),
-        );
-
-        // Then UPDATE with additional field
-        processor.processEvent(
-          createEvent(GraphQLRowOperation.Update, { id: 1, age: 30 }, [
-            'id',
-            'age',
-          ]),
-        );
-
-        // Should merge into complete record
-        const stats = processor.getStats();
-        expect(stats.totalReceived).toBe(1);
-
-        // Not complete yet - we have 3 expected items but only processed 1
-        expect(processor.isComplete()).toBe(false);
-
-        // Process the other expected items
-        processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 2, name: 'Bob', age: 25 },
-            ['id', 'name', 'age'],
-          ),
-        );
-
-        processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 3, name: 'Charlie', age: 35 },
-            ['id', 'name', 'age'],
-          ),
-        );
-
-        // NOW it should be complete
-        expect(processor.isComplete()).toBe(true);
+      it('should throw on UPDATE with no data before INSERT', () => {
+        expect(() => {
+          processor.processEvent(
+            createEvent(GraphQLRowOperation.Update, 1, null),
+          );
+        }).toThrow('Received UPDATE for non-existent item 1');
       });
     });
 
     describe('DELETE operations', () => {
-      it('should remove item on DELETE', () => {
-        // First INSERT
+      it('should remove item on DELETE, by its key alone', () => {
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 1, name: 'Alice', age: 30 },
-            ['id', 'name', 'age'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 1, alice),
         );
 
-        // Then DELETE
         processor.processEvent(
-          createEvent(GraphQLRowOperation.Delete, { id: 1 }, ['id']),
+          createEvent(GraphQLRowOperation.Delete, 1, null),
         );
 
-        // Item should be removed
-        const stats = processor.getStats();
-        expect(stats.totalReceived).toBe(0);
+        expect(processor.getStats().totalReceived).toBe(0);
       });
 
       it('should handle DELETE for non-existent item', () => {
-        // DELETE for item we never saw
         processor.processEvent(
-          createEvent(GraphQLRowOperation.Delete, { id: 99 }, ['id']),
+          createEvent(GraphQLRowOperation.Delete, 99, null),
         );
 
-        // Should not affect state
         const stats = processor.getStats();
         expect(stats.totalReceived).toBe(0);
         expect(processor.isComplete()).toBe(false);
@@ -250,104 +213,53 @@ describe('SubscriptionProcessor', () => {
 
     describe('completion detection', () => {
       it('should detect completion when state matches exactly', () => {
-        // Insert all expected items
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 1, name: 'Alice', age: 30 },
-            ['id', 'name', 'age'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 1, alice),
         );
-
-        processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 2, name: 'Bob', age: 25 },
-            ['id', 'name', 'age'],
-          ),
-        );
+        processor.processEvent(createEvent(GraphQLRowOperation.Insert, 2, bob));
 
         expect(processor.isComplete()).toBe(false);
 
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 3, name: 'Charlie', age: 35 },
-            ['id', 'name', 'age'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 3, charlie),
         );
 
         expect(processor.isComplete()).toBe(true);
       });
 
       it('should not be complete with extra items', () => {
-        // Insert all expected items
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 1, name: 'Alice', age: 30 },
-            ['id', 'name', 'age'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 1, alice),
+        );
+        processor.processEvent(createEvent(GraphQLRowOperation.Insert, 2, bob));
+        processor.processEvent(
+          createEvent(GraphQLRowOperation.Insert, 3, charlie),
         );
 
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 2, name: 'Bob', age: 25 },
-            ['id', 'name', 'age'],
-          ),
-        );
-
-        processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 3, name: 'Charlie', age: 35 },
-            ['id', 'name', 'age'],
-          ),
-        );
-
-        // Add unexpected item
-        processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 4, name: 'David', age: 40 },
-            ['id', 'name', 'age'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 4, {
+            id: 4,
+            name: 'David',
+            age: 40,
+          }),
         );
 
         expect(processor.isComplete()).toBe(false); // Has extra item
       });
 
       it('should handle completion through updates', () => {
-        // Build up state through partial updates
         processor.processEvent(
-          createEvent(GraphQLRowOperation.Insert, { id: 1, name: 'Alice' }, [
-            'id',
-            'name',
-          ]),
+          createEvent(GraphQLRowOperation.Insert, 1, {
+            ...alice,
+            age: 29,
+          }),
         );
-
         processor.processEvent(
-          createEvent(GraphQLRowOperation.Update, { id: 1, age: 30 }, [
-            'id',
-            'age',
-          ]),
+          createEvent(GraphQLRowOperation.Update, 1, alice),
         );
-
+        processor.processEvent(createEvent(GraphQLRowOperation.Insert, 2, bob));
         processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 2, name: 'Bob', age: 25 },
-            ['id', 'name', 'age'],
-          ),
-        );
-
-        processor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            { id: 3, name: 'Charlie', age: 35 },
-            ['id', 'name', 'age'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 3, charlie),
         );
 
         expect(processor.isComplete()).toBe(true);
@@ -356,48 +268,29 @@ describe('SubscriptionProcessor', () => {
 
     describe('edge cases', () => {
       it('should handle null/undefined fields', () => {
-        const event = createEvent(
-          GraphQLRowOperation.Insert,
-          { id: 1, name: 'Alice', age: null },
-          ['id', 'name', 'age'],
+        processor.processEvent(
+          createEvent(GraphQLRowOperation.Insert, 1, {
+            id: 1,
+            name: 'Alice',
+            age: null,
+          }),
         );
 
-        processor.processEvent(event);
-
-        const stats = processor.getStats();
-        expect(stats.totalReceived).toBe(1);
+        expect(processor.getStats().totalReceived).toBe(1);
       });
 
       it('should handle complex nested objects', () => {
+        const profile = {
+          id: 1,
+          profile: { name: 'Alice', settings: { theme: 'dark' } },
+        };
         const complexProcessor = new SubscriptionProcessor(
-          new Map([
-            [
-              1,
-              {
-                id: 1,
-                profile: {
-                  name: 'Alice',
-                  settings: { theme: 'dark' },
-                },
-              },
-            ],
-          ]),
+          new Map([[1, profile]]),
           'data',
-          'id',
         );
 
         complexProcessor.processEvent(
-          createEvent(
-            GraphQLRowOperation.Insert,
-            {
-              id: 1,
-              profile: {
-                name: 'Alice',
-                settings: { theme: 'dark' },
-              },
-            },
-            ['id', 'profile'],
-          ),
+          createEvent(GraphQLRowOperation.Insert, 1, profile),
         );
 
         expect(complexProcessor.isComplete()).toBe(true);
@@ -410,7 +303,6 @@ describe('SubscriptionProcessor', () => {
       processor = new SubscriptionProcessor(
         new Map(), // Empty expected state
         'data',
-        'id',
       );
     });
 
@@ -420,10 +312,7 @@ describe('SubscriptionProcessor', () => {
 
     it('should not be complete after receiving events', () => {
       processor.processEvent(
-        createEvent(GraphQLRowOperation.Insert, { id: 1, name: 'Alice' }, [
-          'id',
-          'name',
-        ]),
+        createEvent(GraphQLRowOperation.Insert, 1, { id: 1, name: 'Alice' }),
       );
 
       expect(processor.isComplete()).toBe(false); // Has unexpected item

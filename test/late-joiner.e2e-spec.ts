@@ -21,13 +21,13 @@ const QUERY = `
   subscription {
     stress_test(where: { id: { _in: [${WATCHED_IDS.join(', ')}] } }) {
       operation
+      key
       data {
         id
         value
         status
         department
       }
-      fields
     }
   }
 `;
@@ -109,7 +109,6 @@ describe('Late joiners', () => {
         query: QUERY,
         expectedState,
         dataPath: 'stress_test',
-        idField: 'id',
       });
       return client;
     };

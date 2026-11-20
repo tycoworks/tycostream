@@ -1,4 +1,4 @@
-import { buildSchema } from 'graphql';
+import { buildSchema, parse, validate } from 'graphql';
 import { PostgresType } from '../common/types.js';
 import type {
   GraphQLEnumType,
@@ -66,6 +66,88 @@ describe('generateSchema', () => {
       subscription.args.map((arg) => [arg.name, arg.type.toString()]),
     ).toEqual(selectionArgs);
     expect(schema.getQueryType()!.getFields().ping).toBeUndefined();
+  });
+
+  it("should give each update type a key of its source's key type, non-null, and no fields", () => {
+    const source = (
+      name: string,
+      type: PostgresType,
+    ): [string, SourceDefinition] => [
+      name,
+      { name, primaryKeyField: 'id', fields: [{ name: 'id', type }] },
+    ];
+    const schema = buildSchema(
+      generateSchema(
+        createConfig(
+          new Map([
+            source('counts', PostgresType.Int4),
+            source('names', PostgresType.Text),
+            source('ids', PostgresType.Uuid),
+          ]),
+        ),
+      ),
+    );
+
+    expect(
+      ['counts', 'names', 'ids'].map((name) => {
+        const update = schema.getType(`${name}_update`) as GraphQLObjectType;
+        return update.getFields().key.type.toString();
+      }),
+    ).toEqual(['Int!', 'String!', 'uuid!']);
+    expect(
+      Object.keys(
+        (schema.getType('counts_update') as GraphQLObjectType).getFields(),
+      ),
+    ).toEqual(['operation', 'key', 'data']);
+  });
+
+  it("should give an update of an enum key the enum's type, non-null", () => {
+    const side = { name: 'side', values: ['buy', 'sell'] };
+    const config: SourceConfiguration = {
+      sources: new Map([
+        [
+          'sides',
+          {
+            name: 'sides',
+            primaryKeyField: 'side',
+            fields: [{ name: 'side', type: PostgresType.Text, enumType: side }],
+          },
+        ],
+      ]),
+      enums: new Map([['side', side]]),
+    };
+    const schema = buildSchema(generateSchema(config));
+
+    const update = schema.getType('sides_update') as GraphQLObjectType;
+    expect(update.getFields().key.type.toString()).toBe('side!');
+  });
+
+  it("should fail validation on a subscription that selects an update's fields, and pass one that selects its key", () => {
+    const schema = buildSchema(
+      generateSchema(
+        createConfig(
+          new Map([
+            [
+              'trades',
+              {
+                name: 'trades',
+                primaryKeyField: 'id',
+                fields: [{ name: 'id', type: PostgresType.Int4 }],
+              },
+            ],
+          ]),
+        ),
+      ),
+    );
+    const errors = (query: string) =>
+      validate(schema, parse(query)).map((e) => e.message);
+
+    expect(
+      errors('subscription { trades { operation key data { id } } }'),
+    ).toEqual([]);
+    expect(errors('subscription { trades { fields } }')).toEqual([
+      'Cannot query field "fields" on type "trades_update".',
+    ]);
   });
 
   it('should give each source an order_by input: each column, and the way it sorts', () => {
@@ -263,7 +345,8 @@ describe('generateSchema', () => {
     expect(schema).toContain('type trades_update {');
     expect(schema).toContain('operation: row_operation!');
     expect(schema).toContain('data: trades');
-    expect(schema).toContain('fields: [String!]');
+    expect(schema).toContain('key: Int!');
+    expect(schema).not.toContain('fields: [String!]');
 
     // Should have subscription field
     expect(schema).toContain(

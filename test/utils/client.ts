@@ -16,7 +16,6 @@ export interface TestClientOptions {
 export interface SubscriptionOptions<TData = any> {
   query: string;
   dataPath: string; // Path to data in GraphQL response, e.g. "users" or "all_types"
-  idField: string; // Field name for ID in the data (e.g., "id", "user_id")
   expectedState: Map<string | number, TData>; // Required - what state we expect to reach
 }
 
@@ -60,7 +59,6 @@ export class TestClient<TData = any> implements StatefulItem {
       clientId: this.options.clientId,
       query: options.query,
       dataPath: options.dataPath,
-      idField: options.idField,
       expectedState: options.expectedState,
       graphqlClient: this.graphqlClient,
       onStateChange: () => this.handleStateChange(),

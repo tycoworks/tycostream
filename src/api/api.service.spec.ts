@@ -205,14 +205,14 @@ describe('ApiService', () => {
         [
           {
             operation: RowUpdateType.Insert,
+            key: '1',
             data: ROW,
-            fields: ['id', 'name', 'value'],
           },
         ],
       ]);
     });
 
-    it('should send an update with the key and the changed fields only', async () => {
+    it('should send an update with its key and the whole row, the unchanged columns too', async () => {
       viewOf([
         {
           type: RowUpdateType.Update,
@@ -229,14 +229,14 @@ describe('ApiService', () => {
         [
           {
             operation: RowUpdateType.Update,
-            data: { id: '1', value: 7 },
-            fields: ['id', 'value'],
+            key: '1',
+            data: ROW,
           },
         ],
       ]);
     });
 
-    it('should send a delete with the key only', async () => {
+    it('should send a delete with its key and no row', async () => {
       viewOf([
         {
           type: RowUpdateType.Delete,
@@ -253,8 +253,8 @@ describe('ApiService', () => {
         [
           {
             operation: RowUpdateType.Delete,
-            data: { id: '1' },
-            fields: ['id'],
+            key: '1',
+            data: null,
           },
         ],
       ]);
@@ -293,7 +293,7 @@ describe('ApiService', () => {
 
       expect(
         ((await take(updates, 2)) as GraphQLUpdate[][]).map((list) =>
-          list.map((u) => [u.operation, u.data.id]),
+          list.map((u) => [u.operation, u.key]),
         ),
       ).toEqual([
         [
