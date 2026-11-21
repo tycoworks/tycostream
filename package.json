@@ -1,6 +1,6 @@
 {
   "name": "tycostream",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Turn Materialize views into real-time GraphQL APIs",
   "author": "tycoworks",
   "homepage": "https://github.com/tycoworks/tycostream",
