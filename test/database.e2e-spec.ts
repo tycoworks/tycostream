@@ -39,8 +39,6 @@ const tradesTable = (name: string): SourceDefinition => ({
 // Short, so the test of the time limit is quick
 const QUERY_TIMEOUT_MS = 2000;
 
-const ALL_FIELDS = new Set(tradesTable('').fields.map((field) => field.name));
-
 const sleep = (ms: number) =>
   new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), ms));
 
@@ -165,7 +163,6 @@ describe('DatabaseService on Materialize', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [1],
-            fields: ALL_FIELDS,
             row: {
               id: 1,
               symbol: 'AAPL',
@@ -181,7 +178,6 @@ describe('DatabaseService on Materialize', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [2],
-            fields: ALL_FIELDS,
             row: {
               id: 2,
               symbol: 'MSFT',
@@ -196,7 +192,6 @@ describe('DatabaseService on Materialize', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [3],
-            fields: ALL_FIELDS,
             row: {
               id: 3,
               symbol: null,
@@ -235,7 +230,6 @@ describe('DatabaseService on Materialize', () => {
             type: RowUpdateType.Update,
             path: [],
             keys: [1],
-            fields: new Set(['id', 'qty']),
             row: expect.objectContaining({ id: 1, qty: 15 }),
           },
         ]);
@@ -246,7 +240,6 @@ describe('DatabaseService on Materialize', () => {
             type: RowUpdateType.Delete,
             path: [],
             keys: [2],
-            fields: new Set(['id']),
             row: expect.objectContaining({ id: 2 }),
           },
         ]);

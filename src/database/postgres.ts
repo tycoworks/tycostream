@@ -94,22 +94,20 @@ export class KeyViolationError extends Error {
 }
 
 /**
- * A change to one row: its type, its path and keys, the fields it sends, and
- * the row
+ * A change to one row: its type, its path and keys, and the row
  */
 export function changeOf(
   type: RowUpdateType,
   { path, keys, row }: UnpackedRow,
-  fields: Iterable<string>,
 ): RowUpdateEvent {
-  return { type, path, keys, fields: new Set(fields), row };
+  return { type, path, keys, row };
 }
 
 /**
- * A row arriving whole: an insert of every column
+ * A row arriving whole: an insert
  */
 export function insertOf(unpacked: UnpackedRow): RowUpdateEvent {
-  return changeOf(RowUpdateType.Insert, unpacked, Object.keys(unpacked.row));
+  return changeOf(RowUpdateType.Insert, unpacked);
 }
 
 /**

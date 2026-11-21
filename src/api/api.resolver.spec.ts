@@ -260,7 +260,7 @@ describe('buildResolvers', () => {
           operation
           data { id }
           data { symbol }
-          fields
+          key
         }
       }`);
 
@@ -293,7 +293,7 @@ describe('buildResolvers', () => {
           data { symbol }
           trades(order_by: [{ id: desc }], limit: 2) {
             operation
-            fields
+            key
             data { id }
           }
         }
@@ -318,8 +318,8 @@ describe('buildResolvers', () => {
       const trades = resolvers.positions_update.trades as (
         update: unknown,
       ) => unknown[];
-      const update = { operation: 'UPDATE', data: { id: 1 }, fields: ['id'] };
-      const inserted = { operation: 'INSERT', data: { id: 8 }, fields: ['id'] };
+      const update = { operation: 'UPDATE', key: 1, data: null };
+      const inserted = { operation: 'INSERT', key: 8, data: { id: 8 } };
 
       expect(trades(update)).toEqual([]);
       expect(trades({ ...update, lists: { trades: [inserted] } })).toEqual([
@@ -369,7 +369,7 @@ describe('buildResolvers', () => {
     });
 
     it("should give each timestamp's updates as the field's value", () => {
-      const sent = [{ operation: 'INSERT', data: {}, fields: [] }] as never;
+      const sent = [{ operation: 'INSERT', key: 1, data: {} }] as never;
       expect(resolvers[RootType.Subscription].prices.resolve(sent)).toBe(sent);
     });
   });

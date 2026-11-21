@@ -78,8 +78,10 @@ class SubscriptionStream implements EventStream<any> {
 }
 
 /**
- * Processes subscription events by maintaining a state map. Each event is
- * one timestamp's list of INSERT/UPDATE/DELETE updates.
+ * Processes subscription events by maintaining a state map, by each row's
+ * key. Each event is one timestamp's list of INSERT/UPDATE/DELETE updates. An
+ * INSERT or an UPDATE brings the whole row, and an UPDATE with no row leaves
+ * it as it is.
  */
 export class SubscriptionProcessor<
   TData = any,
@@ -89,7 +91,6 @@ export class SubscriptionProcessor<
   constructor(
     private expectedState: Map<string | number, TData>,
     private dataPath: string,
-    private idField: string,
   ) {}
 
   processEvent(data: any): void {
@@ -107,18 +108,18 @@ export class SubscriptionProcessor<
   }
 
   private applyUpdate(update: any): void {
-    const { operation, data: rowData, fields } = update;
+    const { operation, key: id, data: rowData } = update;
 
-    if (!rowData) {
-      console.error(`Received ${operation} operation without data`);
-      throw new Error(`Invalid operation data`);
+    if (id === undefined || id === null) {
+      console.error(`Received ${operation} operation without a key`);
+      throw new Error(`Invalid operation key`);
     }
 
     // Apollo 4 always adds __typename - filter it out for clean state comparison
-    const cleanData = { ...rowData };
-    delete cleanData.__typename;
-
-    const id = cleanData[this.idField];
+    const cleanData = rowData && { ...rowData };
+    if (cleanData) {
+      delete cleanData.__typename;
+    }
 
     // Update current state directly
     switch (operation) {
@@ -133,22 +134,22 @@ export class SubscriptionProcessor<
             `Received duplicate INSERT for item ${id} - this indicates a tycostream bug. Each item should only be INSERTed once.`,
           );
         }
+        if (!cleanData) {
+          throw new Error(`Received INSERT for item ${id} without data`);
+        }
         this.currentState.set(id, cleanData);
         break;
 
       case 'UPDATE': {
-        const existing = this.currentState.get(id);
-        if (!existing) {
+        if (!this.currentState.has(id)) {
           throw new Error(
             `Received UPDATE for non-existent item ${id} - this indicates a tycostream bug. Every UPDATE must be preceded by an INSERT.`,
           );
         }
-        // Merge with existing data
-        const updated = { ...existing };
-        for (const field of fields) {
-          updated[field as keyof TData] = cleanData[field];
+        // No data: the row is unchanged, though its lists may be
+        if (cleanData) {
+          this.currentState.set(id, cleanData);
         }
-        this.currentState.set(id, updated);
         break;
       }
 
@@ -187,7 +188,6 @@ export interface SubscriptionConfig<TData = any> {
   clientId: string;
   query: string;
   dataPath: string; // Path to data in GraphQL response, e.g. "users" or "all_types"
-  idField: string; // Field name for ID in the data (e.g., "id", "user_id")
   expectedState: Map<string | number, TData>;
   graphqlClient: ApolloClient;
   onStateChange?: () => void;
@@ -205,7 +205,6 @@ export function createSubscriptionHandler<TData = any>(
   const processor = new SubscriptionProcessor<TData>(
     config.expectedState,
     config.dataPath,
-    config.idField,
   );
 
   // Create the stream

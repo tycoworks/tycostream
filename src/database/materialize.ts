@@ -164,11 +164,8 @@ export class ProgressBatcher {
  * - Identical rows are netted first: their diffs are summed, and rows that
  *   come to zero are dropped.
  * - Then, per path and keys: a -1 alone is a delete, a +1 alone is an insert, and a
- *   -1 with a +1 is an update of the columns that differ. Anything else
- *   means a key isn't unique.
- *
- * An update's and a delete's `fields` follow RowUpdateEvent: the key plus the
- * changed columns, and the key alone.
+ *   -1 with a +1 is an update, carrying the new row. Anything else means a
+ *   key isn't unique.
  */
 export function pairChanges(rows: DiffRow<UnpackedRow>[]): RowUpdateEvent[] {
   const byRow = new Map<string, DiffRow<UnpackedRow>[]>();
@@ -190,13 +187,10 @@ function toEvent(forRow: DiffRow<UnpackedRow>[]): RowUpdateEvent {
     return insertOf(added);
   }
   if (forRow.length === 1 && removed) {
-    return changeOf(RowUpdateType.Delete, removed, [removed.keyField]);
+    return changeOf(RowUpdateType.Delete, removed);
   }
   if (forRow.length === 2 && removed && added) {
-    const changed = Object.keys(added.row).filter(
-      (column) => valueKey(removed.row[column]) !== valueKey(added.row[column]),
-    );
-    return changeOf(RowUpdateType.Update, added, [added.keyField, ...changed]);
+    return changeOf(RowUpdateType.Update, added);
   }
   throw new KeyViolationError(forRow[0].row);
 }

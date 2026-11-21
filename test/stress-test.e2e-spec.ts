@@ -282,19 +282,18 @@ describe('Stress Test - Concurrent GraphQL Subscriptions', () => {
                 ]
               }) {
                 operation
+                key
                 data {
                   id
                   value
                   status
                   department
                 }
-                fields
               }
             }
           `,
             expectedState: departmentExpectedState,
             dataPath: 'stress_test',
-            idField: 'id',
           });
 
           // Stagger client creation

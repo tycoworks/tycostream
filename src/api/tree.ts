@@ -9,13 +9,13 @@ import type { SourceDefinition } from '../config/source.types.js';
  */
 
 /**
- * A subscription's update of one row, and its lists' updates, which GraphQL
- * sends beside its data
+ * A subscription's update of one row: its key, its whole row or null, and its
+ * lists' updates, which GraphQL sends beside its data
  */
 export interface GraphQLUpdate {
   operation: RowUpdateType;
-  data: Row;
-  fields: string[];
+  key: unknown;
+  data: Row | null;
   lists?: Record<string, GraphQLUpdate[]>; // By each list's field
 }
 
@@ -64,7 +64,7 @@ export function toRows(
  *   each change as an update                                   updateOf
  *   each list's update put under its parent's, the parent
  *     found by its path and keys                               add, parentPathOf
- *   a parent with no change of its own: an UPDATE of its key   keyUpdateOf
+ *   a parent with no change of its own: an UPDATE, no row      keyUpdateOf
  *
  * So a parent's INSERT carries its rows' INSERTs, its DELETE their DELETEs,
  * and its UPDATE their changes. Updates are unordered.
@@ -98,7 +98,7 @@ export function toUpdates(
     const id = pathAndKeysOf(parentPath, parentKeys);
     let parent = updates.get(id);
     if (!parent) {
-      parent = keyUpdateOf(sourceAt(source, parentPath), parentKeys.at(-1));
+      parent = keyUpdateOf(parentKeys.at(-1));
       updates.set(id, parent);
       add(parent, parentPath, parentKeys);
     }
@@ -110,20 +110,15 @@ export function toUpdates(
   return selected;
 }
 
-// An event as a GraphQL update, sending only the event's fields: the whole
-// row for an insert, the key and the changed fields for an update, and the
-// key alone for a delete. A related row is one field, named when any of its
-// columns is, and sent whole.
+// An event as a GraphQL update: the row's key, and its whole row with its
+// related rows folded in, or none for a delete
 function updateOf(event: RowUpdateEvent): GraphQLUpdate {
-  const row = foldRelatedRows(event.row);
-  // A column's field: its own name, or its related row's field
-  const fields = [
-    ...new Set(
-      [...event.fields].map((column) => column.split(PATH_SEPARATOR)[0]),
-    ),
-  ];
-  const data = Object.fromEntries(fields.map((field) => [field, row[field]]));
-  return { operation: event.type, data, fields };
+  return {
+    operation: event.type,
+    key: event.keys.at(-1),
+    data:
+      event.type === RowUpdateType.Delete ? null : foldRelatedRows(event.row),
+  };
 }
 
 // A row with each related row's columns, named by its path, folded into an
@@ -180,24 +175,8 @@ function listAt(row: Row, path: readonly string[]): Row[] {
   return holder[field] as Row[];
 }
 
-// An UPDATE of a row's key alone: a parent whose lists changed, but not
+// An UPDATE of a row's key with no row: a parent whose lists changed, but not
 // itself
-function keyUpdateOf(source: SourceDefinition, key: unknown): GraphQLUpdate {
-  const keyField = source.primaryKeyField;
-  return {
-    operation: RowUpdateType.Update,
-    data: { [keyField]: key },
-    fields: [keyField],
-  };
-}
-
-// The source at a path of relationships from a source
-function sourceAt(
-  source: SourceDefinition,
-  path: readonly string[],
-): SourceDefinition {
-  return path.reduce(
-    (from, field) => from.relationships!.get(field)!.source,
-    source,
-  );
+function keyUpdateOf(key: unknown): GraphQLUpdate {
+  return { operation: RowUpdateType.Update, key, data: null };
 }

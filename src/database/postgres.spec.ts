@@ -76,14 +76,12 @@ describe('readSnapshot', () => {
             type: RowUpdateType.Insert,
             path: [],
             keys: [1],
-            fields: new Set(['id', 'name']),
             row: { id: 1, name: 'a' },
           },
           {
             type: RowUpdateType.Insert,
             path: [],
             keys: [2],
-            fields: new Set(['id', 'name']),
             row: { id: 2, name: null },
           },
         ],
@@ -249,7 +247,6 @@ describe('insertOf', () => {
       type: RowUpdateType.Insert,
       path: [],
       keys: [1],
-      fields: new Set(['id', 'name']),
       row: { id: 1, name: 'a' },
     });
   });

@@ -42,8 +42,8 @@ export enum SelectionArgument {
  */
 export enum UpdateField {
   Operation = 'operation',
+  Key = 'key',
   Data = 'data',
-  Fields = 'fields',
 }
 
 // The generated types' names
@@ -351,17 +351,21 @@ function buildSourceTypes(sources: Map<string, SourceDefinition>): string {
       buildFieldDefinitions(sourceDefinition),
       ...buildRelationshipFields(sourceDefinition),
     ].join('\n');
+    const keyField = sourceDefinition.fields.find(
+      (field) => field.name === sourceDefinition.primaryKeyField,
+    )!;
 
     types.push(`    # ${sourceName} type
     type ${sourceName} {
 ${fields}
     }
     
-    # ${sourceName} update event, its lists' updates beside its data
+    # ${sourceName} update event: its key, its whole row or null, and its
+    # lists' updates beside them
     type ${updateTypeName(sourceName)} {
       ${UpdateField.Operation}: ${ROW_OPERATION_TYPE}!
+      ${UpdateField.Key}: ${getFieldType(keyField)}!
       ${UpdateField.Data}: ${sourceName}
-      ${UpdateField.Fields}: [${GraphQLString.name}!]!
 ${buildListFields(sourceDefinition, updateTypeName).join('\n')}
     }`);
   }
@@ -490,16 +494,20 @@ function getComparisonType(field: SourceField): string {
 }
 
 /**
+ * Get the GraphQL type for a field: its enum, or its scalar
+ */
+function getFieldType(field: SourceField): string {
+  return field.enumType ? field.enumType.name : SCALARS[field.type];
+}
+
+/**
  * Build field definitions for a source type
  * Maps source fields to GraphQL fields with appropriate types and nullability
  */
 function buildFieldDefinitions(sourceDefinition: SourceDefinition): string {
   return sourceDefinition.fields
     .map((field) => {
-      // Use enum type if this field has one, otherwise use scalar type
-      const graphqlTypeName = field.enumType
-        ? field.enumType.name
-        : SCALARS[field.type];
+      const graphqlTypeName = getFieldType(field);
       const nullable =
         field.name !== sourceDefinition.primaryKeyField ? '' : '!';
       return `      ${field.name}: ${graphqlTypeName}${nullable}`;

@@ -132,6 +132,7 @@ describe('Integration Test', () => {
             ]
           }) {
             operation
+            key
             data {
               user_id
               name
@@ -139,13 +140,11 @@ describe('Integration Test', () => {
               active
               rank
             }
-            fields
           }
         }
       `,
       expectedState,
       dataPath: 'users',
-      idField: 'user_id',
     });
 
     // === BASIC OPERATIONS ===
@@ -346,8 +345,8 @@ describe('Integration Test', () => {
   it('should send only the columns a subscription selects, so a change to any other column sends nothing', async () => {
     type Update = {
       operation: string;
+      key: number;
       data: { id: number; name: string };
-      fields: string[];
     };
     // Rows no other test writes. The columns are selected through an alias
     // and a fragment, as clients write them.
@@ -355,8 +354,8 @@ describe('Integration Test', () => {
       `subscription {
         users(where: { user_id: { _gte: 7000, _lt: 8000 } }) {
           operation
+          key
           data { id: user_id ...named }
-          fields
         }
       }
       fragment named on users { name }`,
@@ -372,8 +371,8 @@ describe('Integration Test', () => {
       expect(await subscription.next()).toEqual([
         {
           operation: 'INSERT',
+          key: 7001,
           data: { id: 7001, name: 'a' },
-          fields: ['user_id', 'name'],
         },
       ]);
 
@@ -388,9 +387,56 @@ describe('Integration Test', () => {
       expect(await subscription.next()).toEqual([
         {
           operation: 'UPDATE',
+          key: 7001,
           data: { id: 7001, name: 'b' },
-          fields: ['user_id', 'name'],
         },
+      ]);
+    } finally {
+      subscription.close();
+    }
+  }, 30000);
+
+  it("should send an update's whole row, the columns that didn't change too", async () => {
+    type Update = {
+      operation: string;
+      key: number;
+      data: { user_id: number; name: string; email: string } | null;
+    };
+    // Rows no other test writes
+    const subscription = await subscribeOverSse<Update>(
+      `subscription {
+        users(where: { user_id: { _gte: 6000, _lt: 7000 } }) {
+          operation
+          key
+          data { user_id name email }
+        }
+      }`,
+      'users',
+    );
+
+    try {
+      expect(await subscription.next()).toEqual([]);
+
+      await testEnv.executeSql(
+        `INSERT INTO users (user_id, name, email) VALUES (6001, 'a', 'a@test.com')`,
+      );
+      await subscription.next();
+
+      // Only email changes, and name arrives with its value
+      await testEnv.executeSql(
+        `UPDATE users SET email = 'b@test.com' WHERE user_id = 6001`,
+      );
+      expect(await subscription.next()).toEqual([
+        {
+          operation: 'UPDATE',
+          key: 6001,
+          data: { user_id: 6001, name: 'a', email: 'b@test.com' },
+        },
+      ]);
+
+      await testEnv.executeSql(`DELETE FROM users WHERE user_id = 6001`);
+      expect(await subscription.next()).toEqual([
+        { operation: 'DELETE', key: 6001, data: null },
       ]);
     } finally {
       subscription.close();
@@ -647,11 +693,11 @@ describe('Integration Test', () => {
     // A subscription's update, and any of its lists' updates beside its data
     type Update = {
       operation?: string;
-      fields?: string[];
-      data: Record<string, unknown>;
+      key?: unknown;
+      data: Record<string, unknown> | null;
       [list: string]: unknown;
     };
-    // Updates, and their lists' updates, in one order, by their data, as
+    // Updates, and their lists' updates, in one order, by their key, as
     // updates are unordered
     const inOrder = (updates: Update[]): Update[] =>
       updates
@@ -667,7 +713,7 @@ describe('Integration Test', () => {
             ) as Update,
         )
         .sort((a, b) =>
-          JSON.stringify(a.data).localeCompare(JSON.stringify(b.data)),
+          JSON.stringify(a.key).localeCompare(JSON.stringify(b.key)),
         );
 
     it("should nest each position's latest trades under it, each with its account, and give a position with none []", async () => {
@@ -754,11 +800,11 @@ describe('Integration Test', () => {
         `subscription {
           positions(where: { instrument_id: { _eq: 7 } }) {
             operation
-            fields
+            key
             data { instrument_id symbol }
             trades(order_by: [{ id: desc }], limit: 2) {
               operation
-              fields
+              key
               data { id quantity }
             }
           }
@@ -770,39 +816,39 @@ describe('Integration Test', () => {
         expect(inOrder(await subscription.next())).toEqual([
           {
             operation: 'INSERT',
-            fields: ['instrument_id', 'symbol'],
+            key: 7,
             data: { instrument_id: 7, symbol: 'TSLA' },
             trades: [
               {
                 operation: 'INSERT',
-                fields: ['id', 'quantity'],
+                key: 30,
                 data: { id: 30, quantity: 10 },
               },
               {
                 operation: 'INSERT',
-                fields: ['id', 'quantity'],
+                key: 31,
                 data: { id: 31, quantity: 20 },
               },
             ],
           },
         ]);
 
-        // The position's row doesn't change, so it comes as its key alone
+        // The position's row doesn't change, so its data is null
         await testEnv.executeSql(`INSERT INTO trades VALUES (32, 7, 2, 30)`);
         expect(inOrder(await subscription.next())).toEqual([
           {
             operation: 'UPDATE',
-            fields: ['instrument_id'],
-            data: { instrument_id: 7, symbol: null },
+            key: 7,
+            data: null,
             trades: [
               {
                 operation: 'DELETE',
-                fields: ['id'],
-                data: { id: 30, quantity: null },
+                key: 30,
+                data: null,
               },
               {
                 operation: 'INSERT',
-                fields: ['id', 'quantity'],
+                key: 32,
                 data: { id: 32, quantity: 30 },
               },
             ],
@@ -813,7 +859,7 @@ describe('Integration Test', () => {
       }
     }, 30000);
 
-    it("should send a trade's position inside its data, and each change to the position as an update of each of its trades, naming positions and sending it whole", async () => {
+    it("should send a trade's position inside its data, and each change to the position as an update of each of its trades, with the whole row", async () => {
       // Rows the queries don't read: two NVDA trades, and one whose position
       // doesn't exist yet
       await testEnv.executeSql(`INSERT INTO positions VALUES (5, 'NVDA', 300)`);
@@ -824,7 +870,7 @@ describe('Integration Test', () => {
         `subscription {
           trades(where: { id: { _in: [20, 21, 22] } }) {
             operation
-            fields
+            key
             data { id positions { symbol net_position } }
           }
         }`,
@@ -836,17 +882,17 @@ describe('Integration Test', () => {
         expect(inOrder(await subscription.next())).toEqual([
           {
             operation: 'INSERT',
-            fields: ['id', 'positions'],
+            key: 20,
             data: { id: 20, positions: nvda },
           },
           {
             operation: 'INSERT',
-            fields: ['id', 'positions'],
+            key: 21,
             data: { id: 21, positions: nvda },
           },
           {
             operation: 'INSERT',
-            fields: ['id', 'positions'],
+            key: 22,
             data: { id: 22, positions: null },
           },
         ]);
@@ -858,12 +904,12 @@ describe('Integration Test', () => {
         expect(inOrder(await subscription.next())).toEqual([
           {
             operation: 'UPDATE',
-            fields: ['id', 'positions'],
+            key: 20,
             data: { id: 20, positions: changed },
           },
           {
             operation: 'UPDATE',
-            fields: ['id', 'positions'],
+            key: 21,
             data: { id: 21, positions: changed },
           },
         ]);
@@ -873,7 +919,7 @@ describe('Integration Test', () => {
         expect(await subscription.next()).toEqual([
           {
             operation: 'UPDATE',
-            fields: ['id', 'positions'],
+            key: 22,
             data: { id: 22, positions: { symbol: 'AMD', net_position: 50 } },
           },
         ]);
@@ -888,9 +934,9 @@ describe('Integration Test', () => {
         `subscription {
           positions(where: ${where}) {
             operation
-            fields
+            key
             data { instrument_id symbol }
-            trades { operation fields data { id quantity } }
+            trades { operation key data { id quantity } }
           }
         }`,
         'positions',
@@ -915,12 +961,12 @@ describe('Integration Test', () => {
         expect(await subscription.next()).toEqual([
           {
             operation: 'UPDATE',
-            fields: ['instrument_id'],
-            data: { instrument_id: 40, symbol: null },
+            key: 40,
+            data: null,
             trades: [
               {
                 operation: 'UPDATE',
-                fields: ['id', 'quantity'],
+                key: 40,
                 data: { id: 40, quantity: 15 },
               },
             ],
@@ -948,18 +994,18 @@ describe('Integration Test', () => {
           inOrder([
             {
               operation: 'DELETE',
-              fields: ['instrument_id'],
-              data: { instrument_id: 45, symbol: null },
+              key: 45,
+              data: null,
               trades: [
                 {
                   operation: 'DELETE',
-                  fields: ['id'],
-                  data: { id: 45, quantity: null },
+                  key: 45,
+                  data: null,
                 },
                 {
                   operation: 'DELETE',
-                  fields: ['id'],
-                  data: { id: 46, quantity: null },
+                  key: 46,
+                  data: null,
                 },
               ],
             },
@@ -987,24 +1033,24 @@ describe('Integration Test', () => {
           inOrder([
             {
               operation: 'UPDATE',
-              fields: ['instrument_id'],
-              data: { instrument_id: 50, symbol: null },
+              key: 50,
+              data: null,
               trades: [
                 {
                   operation: 'DELETE',
-                  fields: ['id'],
-                  data: { id: 50, quantity: null },
+                  key: 50,
+                  data: null,
                 },
               ],
             },
             {
               operation: 'UPDATE',
-              fields: ['instrument_id'],
-              data: { instrument_id: 51, symbol: null },
+              key: 51,
+              data: null,
               trades: [
                 {
                   operation: 'INSERT',
-                  fields: ['id', 'quantity'],
+                  key: 50,
                   data: { id: 50, quantity: 10 },
                 },
               ],
@@ -1024,13 +1070,13 @@ describe('Integration Test', () => {
         `subscription {
           positions(where: { instrument_id: { _eq: 60 } }) {
             operation
-            fields
+            key
             data { instrument_id }
             trades {
               operation
-              fields
+              key
               data { id }
-              fills { operation fields data { id quantity } }
+              fills { operation key data { id quantity } }
             }
           }
         }`,
@@ -1043,17 +1089,17 @@ describe('Integration Test', () => {
         expect(await subscription.next()).toEqual([
           {
             operation: 'UPDATE',
-            fields: ['instrument_id'],
-            data: { instrument_id: 60 },
+            key: 60,
+            data: null,
             trades: [
               {
                 operation: 'UPDATE',
-                fields: ['id'],
-                data: { id: 60 },
+                key: 60,
+                data: null,
                 fills: [
                   {
                     operation: 'INSERT',
-                    fields: ['id', 'quantity'],
+                    key: 601,
                     data: { id: 601, quantity: 5 },
                   },
                 ],
@@ -1081,9 +1127,9 @@ describe('Integration Test', () => {
             limit: 2
           ) {
             operation
-            fields
+            key
             data { instrument_id }
-            trades { operation fields data { id } }
+            trades { operation key data { id } }
           }
         }`,
         'positions',
@@ -1094,19 +1140,15 @@ describe('Integration Test', () => {
           inOrder([
             {
               operation: 'INSERT',
-              fields: ['instrument_id'],
+              key: 70,
               data: { instrument_id: 70 },
-              trades: [
-                { operation: 'INSERT', fields: ['id'], data: { id: 70 } },
-              ],
+              trades: [{ operation: 'INSERT', key: 70, data: { id: 70 } }],
             },
             {
               operation: 'INSERT',
-              fields: ['instrument_id'],
+              key: 71,
               data: { instrument_id: 71 },
-              trades: [
-                { operation: 'INSERT', fields: ['id'], data: { id: 71 } },
-              ],
+              trades: [{ operation: 'INSERT', key: 71, data: { id: 71 } }],
             },
           ]),
         );
@@ -1119,19 +1161,15 @@ describe('Integration Test', () => {
           inOrder([
             {
               operation: 'INSERT',
-              fields: ['instrument_id'],
+              key: 72,
               data: { instrument_id: 72 },
-              trades: [
-                { operation: 'INSERT', fields: ['id'], data: { id: 72 } },
-              ],
+              trades: [{ operation: 'INSERT', key: 72, data: { id: 72 } }],
             },
             {
               operation: 'DELETE',
-              fields: ['instrument_id'],
-              data: { instrument_id: 71 },
-              trades: [
-                { operation: 'DELETE', fields: ['id'], data: { id: 71 } },
-              ],
+              key: 71,
+              data: null,
+              trades: [{ operation: 'DELETE', key: 71, data: null }],
             },
           ]),
         );
@@ -1182,7 +1220,7 @@ describe('Integration Test', () => {
       ).toEqual(["Subscriptions select 'trades' beside 'data', not inside it"]);
       expect(
         await refusal(
-          'subscription { positions { a: trades(limit: 1) { fields } b: trades(limit: 2) { fields } } }',
+          'subscription { positions { a: trades(limit: 1) { key } b: trades(limit: 2) { key } } }',
         ),
       ).toEqual([
         "'trades' is selected twice with different arguments; select it once",

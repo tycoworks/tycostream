@@ -182,10 +182,6 @@ export function pathName(path: readonly string[]): string {
  *   position's positions.symbol.
  * - A related row whose columns are all null matched nothing, as its key is
  *   always selected and its join matches on it.
- * fields: the columns this event names
- *   - INSERT: every column
- *   - UPDATE: the key, and the changed columns
- *   - DELETE: the key alone
  * row: every column, as it is now, or as it was for a delete
  */
 export interface RowUpdateEvent {
@@ -196,7 +192,6 @@ export interface RowUpdateEvent {
   // The selected row's key, then one per relationship to many rows on the
   // path; one to one row adds none: [1] for position 1, [1, 8] for its trade 8
   keys: readonly unknown[];
-  fields: Set<string>;
   row: Row;
 }
 
