@@ -18,7 +18,6 @@ tycostream turns [Materialize](https://materialize.com/) views into GraphQL quer
 
 - **Queries and subscriptions** over server-sent events
 - **Nested joins** with filtering, sorting and paging
-- **Incremental updates** with only the fields that changed
 - **Batched updates** for transactional consistency
 
 ## Getting started

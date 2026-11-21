@@ -31,7 +31,7 @@ client ◀─JSON──── API ◀─flat changes── view ◀─ database 
 **A tree goes down, flat changes come up,** as SQL takes a nested question and gives flat rows. The API never sees SQL, and the database layer never builds a tree.
 
 - **Down, a `Selection`:** a source's columns, `where`, `order_by`, `limit` and `offset`, and each relationship as a selection of its own, at any depth.
-- **Up, `RowUpdateEvent`s:** one per row, one complete timestamp at a time, a snapshot as one timestamp of inserts. Each has its type (INSERT, UPDATE or DELETE), its path and keys, the fields it names, and its row, flat: a related row's columns named by their path, as `positions.symbol`. What both layers rely on is stated once, on the type in `common/types.ts`: at most one change per path and keys at a timestamp; a query's changes in the selection's order; a related row whose columns are all null matched nothing.
+- **Up, `RowUpdateEvent`s:** one per row, one complete timestamp at a time, a snapshot as one timestamp of inserts. Each has its type (INSERT, UPDATE or DELETE), its path and keys, and its row, flat: a related row's columns named by their path, as `positions.symbol`. What both layers rely on is stated once, on the type in `common/types.ts`: at most one change per path and keys at a timestamp; a query's changes in the selection's order; a related row whose columns are all null matched nothing.
 
 ### Database Module (`src/database/`)
 
@@ -60,7 +60,7 @@ Both modes yield the same thing: tycostream's row events, each with its path and
 
 The names the statement adds all start with `__`, which GraphQL reserves, so none can be a source's, a column's or a path's; a path's fields are joined by `.`, which no GraphQL name contains. A query and a subscription's snapshot are the same rows by construction.
 
-**Pairing.** Materialize's `SUBSCRIBE` sends bare diffs, so its adapter nets identical rows, then pairs each path and keys' rows: a +1 alone is an INSERT, a −1 alone a DELETE, a −1 and a +1 an UPDATE of the columns that differ. Anything else, or a query with a path and keys twice, is a `KeyViolationError`: a declared key, a parent's or a related row's, isn't unique. Pairing is Materialize's; a database that sends each row's operation, such as RisingWave, would need none.
+**Pairing.** Materialize's `SUBSCRIBE` sends bare diffs, so its adapter nets identical rows, then pairs each path and keys' rows: a +1 alone is an INSERT, a −1 alone a DELETE, a −1 and a +1 an UPDATE carrying the new row. Anything else, or a query with a path and keys twice, is a `KeyViolationError`: a declared key, a parent's or a related row's, isn't unique. Pairing is Materialize's; a database that sends each row's operation, such as RisingWave, would need none.
 
 ### View Module (`src/view/`)
 
@@ -69,13 +69,13 @@ The domain layer. `ViewService` is a pass-through to the database layer for now;
 ### API Module (`src/api/`)
 
 - Generates the GraphQL schema from `schema.yaml` (`schema.ts`): per source, a type, an update type, a filter input, an `order_by` input, and a query and a subscription that both take `where`, `order_by`, `limit` and `offset`. A relationship to one row is a field of the source's type; one to many rows is a list, taking the same four arguments, in the source's type and, of updates, in its update type beside `data`.
-- `ApiService` (`api.service.ts`) is the layer's one service. `query` opens a `Snapshot` stream on the view and returns its rows. `subscribe` opens a `Live` stream and turns each timestamp's events into one list of GraphQL updates, each sending only the fields its event names.
+- `ApiService` (`api.service.ts`) is the layer's one service. `query` opens a `Snapshot` stream on the view and returns its rows. `subscribe` opens a `Live` stream and turns each timestamp's events into one list of GraphQL updates, each with its key and its whole row, or no row for a DELETE or a parent whose lists alone changed.
 - `api.resolver.ts` builds each source's query and subscription resolvers, reading the request's selection set into a `Selection` with GraphQL's own field collection (fragments, `@skip`, `@include`) and `getArgumentValues`: a query's fields, or a subscription's update type, `data`'s columns and related rows and each list beside it. Aliases of one relationship merge; with different arguments they're refused, and so is a list inside a subscription's `data`. Each list has a resolver giving `[]` when a row or update has none. A subscription resolver hands GraphQL the service's iterator directly, so a client that disconnects closes its database connection at once; a query resolver passes on the request's signal, which aborts when the client leaves, so the query ends in the database.
 - `tree.ts` builds the responses from the flat changes, with the source's relationships to tell a list from a related row on a path:
   - each related row's columns are folded into an object, null when it matched nothing;
   - each list's row or update goes under its parent's, found by its path and keys, the keys less their last;
-  - in a subscription, a parent with no change of its own gets an UPDATE of its key alone, so a parent's INSERT carries its rows' INSERTs, its DELETE their DELETEs, and its UPDATE their changes;
-  - an update sends only the fields its change names, a related row as one field, sent whole. `toRows` gives a query's answer, `toUpdates` a subscription's message.
+  - in a subscription, a parent with no change of its own gets an UPDATE with its key and no row, so a parent's INSERT carries its rows' INSERTs, its DELETE their DELETEs, and its UPDATE their changes;
+  - an update sends its key and its whole row, a related row folded in, or no row for a DELETE. `toRows` gives a query's answer, `toUpdates` a subscription's message.
 
 ### Configuration & Common (`src/config/` and `src/common/`)
 
@@ -89,7 +89,7 @@ The domain layer. `ViewService` is a pass-through to the database layer for now;
 1. **A client subscribes** over SSE, with the fields it selects and an optional `where`, `order_by`, `limit`, and `offset`, at any level. (A query follows the same path as a `Snapshot` stream, which ends after step 3's snapshot.)
 2. **The selection becomes one statement.** It passes through the view layer to `DatabaseService`, which builds it into SQL, with names quoted and values as bind parameters. An unknown field or relationship, a comparison with null, a value not in its enum, or a negative limit or offset fails here, before any connection opens.
 3. **The client gets its own connection from the pool, and its own `SUBSCRIBE`.** Materialize sends the matching rows at every level as of one timestamp (the snapshot), then every change after it, with a progress row whenever a timestamp is complete.
-4. **Each complete timestamp becomes events.** The rows are unpacked, identical rows netted, then each path and keys' −1 and +1 paired: a +1 alone is an insert, a −1 alone a delete, both an update of the columns that differ. A row entering or leaving the client's filter, or its `limit` and `offset` window, at any level, arrives as a lone +1 or −1, so it's an insert or a delete.
+4. **Each complete timestamp becomes events.** The rows are unpacked, identical rows netted, then each path and keys' −1 and +1 paired: a +1 alone is an insert, a −1 alone a delete, both an update with the new row. A row entering or leaving the client's filter, or its `limit` and `offset` window, at any level, arrives as a lone +1 or −1, so it's an insert or a delete.
 5. **The client gets each timestamp's events** as one list of GraphQL updates, nested. A slow client holds the next `FETCH` back, so its backlog queues in Materialize, which caps it.
 6. **The client disconnects,** and its connection is discarded, which drops the `SUBSCRIBE` in Materialize.
 
@@ -145,6 +145,12 @@ A database error ends that one query or subscription with a GraphQL error, and s
 
 - Type names (`_bool_exp`, `_comparison_exp`, `_order_by`, `query_root`), scalars, and root fields follow Hasura v2, the nearest thing to a standard for GraphQL over Postgres. A Hasura query runs unchanged, as far as tycostream's features go, relationships included. v3 lets each project shape its own schema, so there's no v3 standard to follow.
 - Subscriptions differ on purpose: they send changes keyed by row. Sending the whole result on every change would be a live query (`@live`), not a subscription.
+
+### Why whole rows in updates?
+
+- GraphQL returns every field a client selects, so an update can't leave a column out, only send it as null.
+- A client, a grid, or a normalized cache replaces a row by its key, so a whole row needs no merging.
+- The cost is larger updates on wide rows.
 
 ### Why `Repeater` and not RxJS?
 

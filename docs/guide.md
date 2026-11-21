@@ -116,23 +116,21 @@ And to follow the AAPL position as it changes:
 subscription {
   positions(where: { symbol: { _eq: "AAPL" } }) {
     operation
+    key
     data { instrument_id symbol net_position latest_price market_value }
-    fields
   }
 }
 ```
 
 ```json
-[{ "operation": "INSERT",
-   "data": { "instrument_id": 1, "symbol": "AAPL", "net_position": 19410, "latest_price": 200.48, "market_value": 3891316.8 },
-   "fields": ["instrument_id", "symbol", "net_position", "latest_price", "market_value"] }]
+[{ "operation": "INSERT", "key": 1,
+   "data": { "instrument_id": 1, "symbol": "AAPL", "net_position": 19410, "latest_price": 200.48, "market_value": 3891316.8 } }]
 
-[{ "operation": "UPDATE",
-   "data": { "instrument_id": 1, "symbol": null, "net_position": null, "latest_price": 200.77, "market_value": 3896945.7 },
-   "fields": ["instrument_id", "latest_price", "market_value"] }]
+[{ "operation": "UPDATE", "key": 1,
+   "data": { "instrument_id": 1, "symbol": "AAPL", "net_position": 19410, "latest_price": 200.77, "market_value": 3896945.7 } }]
 ```
 
-After the snapshot, each `UPDATE` sends only the columns that changed, and the rest are `null`. See how [positions-app](https://github.com/tycoworks/positions-app) applies them.
+After the snapshot, each `UPDATE` sends the whole row, so a client replaces the row with the same `key`. See how [positions-app](https://github.com/tycoworks/positions-app) applies them.
 
 You can nest related sources in a query or a subscription, and in a subscription you nest them beside `data`. For example, to follow each position with its trades:
 
@@ -140,9 +138,9 @@ You can nest related sources in a query or a subscription, and in a subscription
 subscription {
   positions {
     operation
+    key
     data { instrument_id symbol net_position }
-    fields
-    trades { operation data { id quantity price } fields }
+    trades { operation key data { id quantity price } }
   }
 }
 ```

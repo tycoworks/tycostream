@@ -17,8 +17,8 @@ type subscription_root {
 
 type positions_update {
   operation: row_operation!  # INSERT, UPDATE, or DELETE
+  key: Int!
   data: positions
-  fields: [String!]!
 }
 ```
 
@@ -42,17 +42,17 @@ A trade's `positions` is `null` if it has no position, and a position's `trades`
 
 A subscription sends a snapshot as `INSERT`s, then each change as an `INSERT`, `UPDATE`, or `DELETE`. Each message holds every change at one Materialize timestamp, so a transaction's changes arrive together. Messages arrive in timestamp order, but the updates within a message are unordered, whatever the `order_by`.
 
-Each update is one row's change. `fields` lists the columns it sends, always including the key, and every other column in `data` is `null`. `data` holds the key only if you select it.
+Each update is one row's change. `key` is the row's key, with the type of its key column, and `data` is the whole row or `null`. `data` holds the key only if you select it.
 
-- An `INSERT` sends the key and every selected column.
-- An `UPDATE` sends the key and the selected columns that changed. A change to a column you didn't select sends nothing.
-- A `DELETE` sends only the key.
+- An `INSERT` sends every selected column.
+- An `UPDATE` sends every selected column, with its current value. A change to a column you didn't select sends nothing.
+- A `DELETE` sends `null` as `data`.
 
 A row that enters or leaves the results, through `where`, `limit`, or `offset`, arrives as an `INSERT` or a `DELETE`. For example, with `order_by: [{ market_value: desc }], limit: 2`, a position that moves into the top two arrives as an `INSERT`, and the one it displaces as a `DELETE`.
 
-A nested row, such as a trade's `positions`, counts as one column. If any of its columns change, `fields` names it and `data` sends it whole.
+A nested row, such as a trade's `positions`, is always sent whole in `data`.
 
-A nested list sits beside `data` and holds its own updates. A position's `INSERT` includes its trades' `INSERT`s, and its `DELETE` their `DELETE`s. If only a position's trades change, the position arrives as an `UPDATE` of its key alone. A trade that moves between positions arrives as a `DELETE` under one and an `INSERT` under the other, in the same message.
+A nested list sits beside `data` and holds its own updates. A position's `INSERT` includes its trades' `INSERT`s, and its `DELETE` their `DELETE`s. If only a position's trades change, the position arrives as an `UPDATE` with `null` as `data`. A trade that moves between positions arrives as a `DELETE` under one and an `INSERT` under the other, in the same message.
 
 ## Filters
 
