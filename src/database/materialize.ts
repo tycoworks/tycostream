@@ -69,7 +69,8 @@ export class MaterializeAdapter extends DatabaseAdapter {
 
   /**
    * Reads SUBSCRIBE (<statement>) WITH (SNAPSHOT, PROGRESS) through a cursor.
-   * Never ends by itself; it stops when the connection closes.
+   * Ends when Materialize ends the subscription, as it does once the result
+   * can never change, and otherwise stops when the connection closes.
    */
   private async *readLive(
     client: pg.ClientBase,
@@ -86,14 +87,17 @@ export class MaterializeAdapter extends DatabaseAdapter {
       [...statement.parameters],
     );
 
-    // FETCH without a timeout returns as soon as rows exist
+    // FETCH without a timeout returns as soon as rows exist, or with none
+    // once the subscription has ended
     const batcher = new ProgressBatcher();
     let snapshot = true;
     while (true) {
       const { rows } = await client.query<RawRow>(
         `FETCH ${FETCH_SIZE} ${CURSOR}`,
       );
-      for (const { timestamp, rows: changes } of batcher.take(rows)) {
+      const ended = rows.length === 0;
+      const complete = ended ? batcher.release() : batcher.take(rows);
+      for (const { timestamp, rows: changes } of complete) {
         const events = pairChanges(
           changes.map(({ diff, row }) => ({
             diff,
@@ -106,6 +110,9 @@ export class MaterializeAdapter extends DatabaseAdapter {
           yield { timestamp, events };
         }
         snapshot = false;
+      }
+      if (ended) {
+        return;
       }
     }
   }
@@ -152,6 +159,18 @@ export class ProgressBatcher {
         this.pending.set(timestamp, batch);
       }
     }
+    return complete;
+  }
+
+  /**
+   * Returns every timestamp still held, oldest first. The stream has ended,
+   * so no progress row will come to complete them.
+   */
+  release(): TimestampRows[] {
+    const complete = [...this.pending.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([timestamp, rows]) => ({ timestamp, rows }));
+    this.pending.clear();
     return complete;
   }
 }

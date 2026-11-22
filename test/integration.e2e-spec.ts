@@ -342,6 +342,22 @@ describe('Integration Test', () => {
     }
   }, 30000);
 
+  it('should send an empty snapshot, then complete, for a subscription whose result can never change', async () => {
+    type Update = { operation: string; data: { user_id: number } };
+    const subscription = await subscribeOverSse<Update>(
+      'subscription { users(limit: 0) { operation data { user_id } } }',
+      'users',
+    );
+
+    try {
+      expect(await subscription.next()).toEqual([]);
+      // The complete event, then the end of the stream
+      await expect(subscription.next()).rejects.toThrow('The stream ended');
+    } finally {
+      subscription.close();
+    }
+  }, 30000);
+
   it('should send only the columns a subscription selects, so a change to any other column sends nothing', async () => {
     type Update = {
       operation: string;

@@ -321,6 +321,51 @@ describe('MaterializeAdapter', () => {
       });
     });
 
+    describe('when Materialize ends the subscription, with an empty FETCH', () => {
+      it('should yield the snapshot even when it is empty, then finish', async () => {
+        const { client } = fakeClient([[progress(1)], []]);
+        const batches = readAll(client);
+
+        expect(await batches.next()).toEqual({
+          done: false,
+          value: { timestamp: 1n, events: [] },
+        });
+        expect((await batches.next()).done).toBe(true);
+      });
+
+      it('should release the rows at the last timestamp, then finish', async () => {
+        const { client } = fakeClient([
+          [progress(5), change(5, 1, { id: 1, name: 'a' })],
+          [],
+        ]);
+        const batches = readAll(client);
+
+        expect((await batches.next()).value).toEqual({
+          timestamp: 5n,
+          events: [
+            {
+              type: RowUpdateType.Insert,
+              path: [],
+              keys: [1],
+              row: { id: 1, name: 'a' },
+            },
+          ],
+        });
+        expect((await batches.next()).done).toBe(true);
+      });
+
+      it('should send no FETCH after the empty one', async () => {
+        const { client, queries } = fakeClient([[progress(1)], []]);
+        const batches = readAll(client);
+        await batches.next();
+        await batches.next();
+
+        expect(
+          queries.filter(([sql]) => (sql as string).startsWith('FETCH')),
+        ).toHaveLength(2);
+      });
+    });
+
     it('should fail when a key is not unique', async () => {
       const { client } = fakeClient([
         [
@@ -414,6 +459,25 @@ describe('ProgressBatcher', () => {
     it('should release nothing for progress on an idle view after the snapshot', () => {
       batcher.take([progress(1), progress(2)]);
       expect(batcher.take([progress(3), progress(4)])).toEqual([]);
+    });
+
+    it('should release every timestamp still held, oldest first, once', () => {
+      batcher.take([
+        change(3, 1, { id: 2, name: 'b' }),
+        progress(1),
+        change(1, 1, { id: 1, name: 'a' }),
+      ]);
+      expect(batcher.release()).toEqual([
+        {
+          timestamp: 1n,
+          rows: [{ diff: 1, row: packed({ id: 1, name: 'a' }) }],
+        },
+        {
+          timestamp: 3n,
+          rows: [{ diff: 1, row: packed({ id: 2, name: 'b' }) }],
+        },
+      ]);
+      expect(batcher.release()).toEqual([]);
     });
 
     it('should keep the count in diffs above one', () => {
