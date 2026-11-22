@@ -40,7 +40,7 @@ A trade's `positions` is `null` if it has no position, and a position's `trades`
 
 ## Updates
 
-A subscription sends a snapshot as `INSERT`s, then each change as an `INSERT`, `UPDATE`, or `DELETE`. Each message holds every change at one Materialize timestamp, so a transaction's changes arrive together. Messages arrive in timestamp order, but the updates within a message are unordered, whatever the `order_by`.
+A subscription sends a snapshot as `INSERT`s, then each change as an `INSERT`, `UPDATE`, or `DELETE`. Each message holds every change at one Materialize timestamp, so a transaction's changes arrive together. Messages arrive in timestamp order, but the updates within a message are unordered, whatever the `order_by`. A subscription whose rows can never change, such as one with `limit: 0`, sends its snapshot and then completes.
 
 Each update is one row's change. `key` is the row's key, with the type of its key column, and `data` is the whole row or `null`. `data` holds the key only if you select it.
 
